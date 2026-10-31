@@ -1,0 +1,254 @@
+From b5c8f94d92446b83d8ece1de143d4c8c9c036696 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sat, 31 Oct 2026 19:47:01 -0400
+Subject: [PATCH] sunfish: low CPU clocks with the screen off, sweetdarkclk
+ (0257)
+
+---
+ bsd/dev/sweet_cpufreq.c               | 96 ++++++++++++++++++++++++---
+ bsd/dev/sweet_dark.c                  |  4 ++
+ iokit/Kernel/arm/SweetFramebuffer.cpp |  4 ++
+ 3 files changed, 95 insertions(+), 9 deletions(-)
+
+diff --git a/bsd/dev/sweet_cpufreq.c b/bsd/dev/sweet_cpufreq.c
+index c46e86e..f34e32e 100644
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -17,6 +17,10 @@
+  *
+  * 0256: sweet_cpufreq_cap(), called only from that thread (policy in sweet_thermal.c), moves the desired
+  * index within floor..boot row, where the boot row is what init left. Voltage stays with OSM/CPR.
++ *
++ * 0257: boot-arg sweetdarkclk=1 (default 0: off; sweetdark=0 also stops it: no dark state): while the display is dark
++ * (bsd/dev/sweet_dark.c) A55 row 4 (1248 MHz), A76 row 1 (652 MHz). Effective row = the lower of cap row and dark row:
++ * the cap keeps stepping while dark, and leaving dark restores the cap row. Busy line: "dark 0|1" after "cap N".
+  */
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
+ #include <sys/param.h>
+@@ -26,6 +30,7 @@
+ #include <kern/clock.h>
+ #include <kern/thread.h>
+ #include <kern/sched_prim.h>
++#include <kern/locks.h>
+ #include <machine/machine_routines.h>
+ #include <pexpert/pexpert.h>
+ #include <mach/mach_time.h>
+@@ -33,9 +38,11 @@
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern uint64_t sweet_cpu_idle_abs(int cpu);    /* osfmk/kern/sched_prim.c (0255) */
+ extern void sweet_thermal_start(void);          /* bsd/dev/sweet_thermal.c (0255) */
++extern int sweet_display_dark;                  /* bsd/dev/sweet_dark.c (0242) */
+ void sweet_cpufreq_init(void);
+ void sweet_cpufreq_log(void);
+ void sweet_cpufreq_cap(int dir, const char *temp);
++void sweet_cpufreq_dark(int dark);
+ 
+ #define OSM_FREQ_REG    0x110u          /* + 32 * index */
+ #define OSM_ROW         32u
+@@ -54,9 +61,10 @@ static const struct {
+ 	const char *tag;
+ 	uint32_t lmh_pa;
+ 	unsigned cap_floor;     /* 0256: lowest row of the thermal cap */
++	unsigned dark_row;      /* 0257: highest row while the display is dark */
+ } osm_clusters[] = {
+-	{"pwrcl (A55 x6)", 0x18323000u, "a55", 0x18358800u + LMH_REG, 4},       /* 1248 MHz */
+-	{"perfcl (A76 x2)", 0x18325800u, "a76", 0x18350800u + LMH_REG, 1},      /* 652 MHz */
++	{"pwrcl (A55 x6)", 0x18323000u, "a55", 0x18358800u + LMH_REG, 4, 4},    /* 1248 MHz */
++	{"perfcl (A76 x2)", 0x18325800u, "a76", 0x18350800u + LMH_REG, 1, 1},   /* 652 MHz */
+ };
+ 
+ /* 0255: what sweet_cpufreq_log() needs; each block is mapped once, in sweet_cpufreq_init */
+@@ -66,10 +74,16 @@ static struct {
+ 	uint32_t khz[OSM_ROWS];
+ 	bool cap_on;            /* 0256 */
+ 	unsigned boot_row, cap_row, cap_floor;
++	unsigned cur_row;       /* 0257: the row last written; osm_rows_lock */
+ } osm_state[2];
+ static vm_offset_t osm_l3;
+ static unsigned osm_therm_caps; /* 0256: rounds that changed a row, one "SWEET THERM: cap" line each */
+ 
++static unsigned osm_dark_clk;    /* 0257: sweetdarkclk */
++static unsigned osm_dark;        /* 0257: dark rows in force; written under osm_rows_lock */
++static LCK_GRP_DECLARE(osm_rows_grp, "sweet_cpufreq");
++static LCK_MTX_DECLARE(osm_rows_lock, &osm_rows_grp);
++
+ static unsigned osm_real_mhz[2]; /* 0256: a55, a76; 0 = no reading */
+ 
+ SYSCTL_UINT(_kern, OID_AUTO, sweet_mhz_a55, CTLFLAG_RD | CTLFLAG_LOCKED, &osm_real_mhz[0], 0, "SWEET THERM: measured A55 MHz");
+@@ -89,7 +103,7 @@ static void
+ osm_cap_init(unsigned c, unsigned row)
+ {
+ 	if (row < osm_state[c].n) {
+-		osm_state[c].boot_row = osm_state[c].cap_row = row;
++		osm_state[c].boot_row = osm_state[c].cap_row = osm_state[c].cur_row = row;
+ 		osm_state[c].cap_floor = row < osm_clusters[c].cap_floor ? row : osm_clusters[c].cap_floor;
+ 		osm_state[c].cap_on = true;
+ 	}
+@@ -100,6 +114,7 @@ sweet_cpufreq_init(void)
+ {
+ 	unsigned want = 1;
+ 	(void)PE_parse_boot_argn("flamecpufreq", &want, sizeof(want));
++	(void)PE_parse_boot_argn("sweetdarkclk", &osm_dark_clk, sizeof(osm_dark_clk));
+ 	for (unsigned c = 0; c < sizeof(osm_clusters) / sizeof(osm_clusters[0]); ++c) {
+ 		vm_offset_t base = ml_io_map(osm_clusters[c].pa, 0x1000);
+ 		if (!base) {
+@@ -248,13 +263,78 @@ sweet_cpufreq_log(void)
+ 	} else {
+ 		len += snprintf(line + len, sizeof(line) - len, " l3 --");
+ 	}
+-	len += snprintf(line + len, sizeof(line) - len, " cap %u", osm_therm_caps);
++	len += snprintf(line + len, sizeof(line) - len, " cap %u dark %u", osm_therm_caps,
++	    __atomic_load_n(&osm_dark, __ATOMIC_ACQUIRE));      /* 0257 */
++	printf("%s\n", line);
++}
++
++/*
++ * 0257: the only writer of the desired index after init. Computes each domain's effective row and writes it if it
++ * changed. dark < 0 keeps the dark state; dark > 0 counts only while sweet_display_dark is still set (read under the
++ * lock, so a late "dark" call can't undo a wake that already ran). Returns whether the dark state changed.
++ * Callers are plain threads (thermal thread, RequestPowerChange), so a mutex is allowed; it is held for a posted store
++ * and a dsb, as in flamecpufreq: no read-back and no wait for OSM to reach the row.
++ */
++static bool
++osm_rows_apply(int dark)
++{
++	const unsigned ndom = sizeof(osm_clusters) / sizeof(osm_clusters[0]);
++	bool changed = false;
++	lck_mtx_lock(&osm_rows_lock);
++	if (dark >= 0) {
++		unsigned want = dark > 0 && __atomic_load_n(&sweet_display_dark, __ATOMIC_SEQ_CST);
++		changed = want != osm_dark;
++		__atomic_store_n(&osm_dark, want, __ATOMIC_RELEASE);
++	}
++	for (unsigned d = 0; d < ndom; ++d) {
++		if (!osm_state[d].cap_on) {
++			continue;
++		}
++		unsigned row = __atomic_load_n(&osm_state[d].cap_row, __ATOMIC_ACQUIRE);
++		if (osm_dark && row > osm_clusters[d].dark_row) {
++			row = osm_clusters[d].dark_row;
++		}
++		if (row != osm_state[d].cur_row) {
++			__asm__ volatile("dmb oshst" ::: "memory");
++			*(volatile uint32_t *)(osm_state[d].base + OSM_DESIRED) = row;
++			__asm__ volatile("dsb osh" ::: "memory");
++			osm_state[d].cur_row = row;
++		}
++	}
++	lck_mtx_unlock(&osm_rows_lock);
++	return changed;
++}
++
++/*
++ * 0257: display dark (1) or waking (0); sweetdarkclk=0: nothing. Blocking context only: called from sweet_dark_set()
++ * and from the top of RequestPowerChange, on the caller's thread with no locks held. One line per change.
++ */
++void
++sweet_cpufreq_dark(int dark)
++{
++	const unsigned ndom = sizeof(osm_clusters) / sizeof(osm_clusters[0]);
++	if (!osm_dark_clk || !osm_rows_apply(dark ? 1 : 0)) {
++		return;
++	}
++	char line[96];
++	unsigned len = 0;
++	len += snprintf(line + len, sizeof(line) - len, "SWEET THERM: %s", dark ? "dark" : "bright");
++	for (unsigned d = 0; d < ndom; ++d) {
++		if (!osm_state[d].cap_on) {
++			len += snprintf(line + len, sizeof(line) - len, " %s --", osm_clusters[d].tag);
++			continue;
++		}
++		unsigned row = osm_state[d].cur_row;
++		len += snprintf(line + len, sizeof(line) - len, " %s %u=%u", osm_clusters[d].tag, row,
++		    osm_state[d].khz[row] / 1000);
++	}
+ 	printf("%s\n", line);
+ }
+ 
+ /*
+  * 0256: one thermal cap step in both domains: dir < 0 a row down, dir > 0 a row up (never above the boot
+- * row), 0 straight to the floor. temp is only for the log; "rising" = rows going down. No locks.
++ * row), 0 straight to the floor. temp is only for the log; "rising" = rows going down. 0257: only this thread
++ * moves cap_row; the write is in osm_rows_apply(), so while dark the hardware stays at or below the dark row.
+  */
+ void
+ sweet_cpufreq_cap(int dir, const char *temp)
+@@ -278,16 +358,14 @@ sweet_cpufreq_cap(int dir, const char *temp)
+ 			row--;
+ 		}
+ 		if (row != osm_state[d].cap_row) {
+-			__asm__ volatile("dmb oshst" ::: "memory");
+-			*(volatile uint32_t *)(osm_state[d].base + OSM_DESIRED) = row;
+-			__asm__ volatile("dsb osh" ::: "memory");
+-			osm_state[d].cap_row = row;
++			__atomic_store_n(&osm_state[d].cap_row, row, __ATOMIC_RELEASE);
+ 			changed = true;
+ 		}
+ 		len += snprintf(line + len, sizeof(line) - len, " %s %u=%u", osm_clusters[d].tag, row,
+ 		    osm_state[d].khz[row] / 1000);
+ 	}
+ 	if (changed) {
++		(void)osm_rows_apply(-1);
+ 		osm_therm_caps++;
+ 		printf("%s at %s C (%s)\n", line, temp, dir > 0 ? "falling" : "rising");
+ 	}
+diff --git a/bsd/dev/sweet_dark.c b/bsd/dev/sweet_dark.c
+index fc62a95..9beb3b1 100644
+--- a/bsd/dev/sweet_dark.c
++++ b/bsd/dev/sweet_dark.c
+@@ -7,6 +7,7 @@
+  *   touch 8 ms -> stopped (no finger down), keys 20 -> 40 ms (no key down),
+  *   FB vsync 16.7 ms -> 500 ms (after 5 s dark).
+  * Boot-arg sweetdark=0: the flag stays 0, every poller as before. kern.sweet_display_dark (read-only).
++ * 0257: sweetdarkclk=1 also lowers the CPU rows while dark (sweet_cpufreq_dark, bsd/dev/sweet_cpufreq.c).
+  */
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
+ #include <sys/param.h>
+@@ -19,6 +20,7 @@
+ 
+ void sweet_dark_set(int dark);
+ void sweet_dark_sleep(uint32_t ms);
++extern void sweet_cpufreq_dark(int dark);       /* 0257 */
+ 
+ int sweet_display_dark;                 /* 1 while the display is off (and sweetdark=1) */
+ const uint32_t sweet_dark_usb_ms = 20;
+@@ -44,12 +46,14 @@ sweet_dark_set(int dark)
+ 	}
+ 	int was = __atomic_exchange_n(&sweet_display_dark, dark ? 1 : 0, __ATOMIC_SEQ_CST);
+ 	if (!dark) {
++		sweet_cpufreq_dark(0);  /* 0257: RequestPowerChange did this first; again after the flag for a racing dark */
+ 		thread_wakeup((event_t)&sweet_display_dark);    /* slowed pollers restart now */
+ 	}
+ 	if (was == !!dark) {
+ 		return;
+ 	}
+ 	if (dark) {
++		sweet_cpufreq_dark(1);  /* 0257 */
+ 		printf("SWEET DARK: on: usb %u ms (no traffic 2 s), usblog %u ms, touch stopped, keys %u ms, "
+ 		    "fb %u ms after %u ms\n", sweet_dark_usb_ms, sweet_dark_usblog_ms, sweet_dark_keys_ms,
+ 		    sweet_dark_fb_ms, sweet_dark_fb_after_ms);
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index 26724c4..1b62cb4 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -42,6 +42,7 @@ extern "C" int sweet_console_muted;     /* osfmk/console/serial_console.c */
+ extern "C" int sweet_display_dark;
+ extern "C" const uint32_t sweet_dark_fb_ms, sweet_dark_fb_after_ms;
+ extern "C" void sweet_dark_set(int dark);
++extern "C" void sweet_cpufreq_dark(int dark);   /* 0257: bsd/dev/sweet_cpufreq.c */
+ 
+ /* bsd/dev/sweet_gpu.c: the Adreno 640's 2D engine scales each frame onto the panel (boot-arg sweetgpu=1). */
+ extern "C" {
+@@ -1409,6 +1410,9 @@ IOMobileFramebufferUserClient::externalMethod(uint32_t selector, IOExternalMetho
+ 	case kSweetFBRequestPowerChange:
+ 		if (args->scalarInputCount >= 1) {
+ 			bool off = args->scalarInput[0] == 0;
++			if (!off) {
++				sweet_cpufreq_dark(0);  /* 0257: normal rows before the panel thread or any poller wakes */
++			}
+ 			IOLockLock(fFB->fLock);
+ 			bool asleep = fFB->fPanelAsleep, change = off != fFB->fPowerOff;	/* 0203 */
+ 			uint32_t fade = fFB->fFadeStep;
+-- 
+2.56.0
+

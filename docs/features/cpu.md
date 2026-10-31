@@ -15,6 +15,9 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-10-31 19:46 xnu 0257 sunfish-dark-clk written, not built, not run
+- `sweetdarkclk=1` (default 0; needs `sweetdark` on): while dark A55 row 4 (1248 MHz), A76 row 1 (652 MHz); effective row = lower of cap row and dark row; leaving dark restores the cap row. Log `SWEET THERM: dark a55 4=1248 a76 1=652`, `SWEET THERM: bright a55 9=1804 a76 12=2208`, `dark 0|1` after `cap N` on the busy line. Rows are lowered as soon as the off request arrives, while the panel thread's sleep-in (about 200-350 ms) is still running, not after it ends. Raised at the top of RequestPowerChange(on); the key press that leads there still runs at dark rows.
+
 ### 2026-10-31 18:57 db1, db2: both idle burners stopped by moving their data aside
 - db1, kernel137, boot 20261031-182504: PowerLog files moved. aggregated 4.75 CPU s in 10 min (was ~53 s per min). coreduetd unchanged at 0.88 core, biomed 0.14; hottest 66-70 C. coreduetd's stack: `_DKBiomeQuery`, BPS publishers, `-[NSDate descriptionWithLocale:]`, formatting a date per event. Old PowerLog archive was at powerlog_1985-04-10 with about 1950 files: walking day by day, dates from old 1970-clock boots is a guess.
 - db2: /var/mobile/Library/Biome moved too. Boot 20261031-185506: at 90 s and at 120 s of uptime coreduetd 8.26 -> 8.28 CPU s, aggregated 2.26 -> 2.54, biomed 2.13 -> 2.14; 67-68 C, busy `40 33 31 11 6 4 | 8 10` % at 131 s (still settling).
