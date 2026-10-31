@@ -271,7 +271,7 @@ app_cycle() {
 		short=${bid##*.}
 		[ "${INWIN:-0}" = 1 ] && OPENS+="${OPENS:+,}$short=$ms"
 		sleep 3
-		C H; sleep 1
+		go_home
 	done
 }
 lead_in() {	# setup, then ~5 s of motion outside the window
@@ -302,8 +302,8 @@ run_screen() {	# config index, boot number, screen
 		INWIN=1
 		motion "$s" $((SECONDS + SECS))
 		mark "$name b$b $s end"
-		[ "$s" = settings ] && timeout 30 tools/flame-shot "$OUT/$name-b$b-$s.png" >/dev/null 2>&1
-		C H; sleep 1
+		{ [ "$s" = settings ] || [ "$b" = 1 ]; } && timeout 30 tools/flame-shot "$OUT/$name-b$b-$s.png" >/dev/null 2>&1
+		go_home
 		pid1=$(bb_pid) || SSH_LOST=1
 		[ -z "$SSH_LOST" ] && [ "$pid0" != "$pid1" ] && flags+=(--restart)
 	fi
