@@ -4,7 +4,7 @@
 # "=== link up <time>" marker is written, so one file holds every boot.
 # Each boot also gets its own file, DIR/boots/YYYYMMDD-HHMMSS.log (DIR = LOGFILE's
 # directory), with DIR/boots/current.log pointing at the newest: a new boot is a
-# kernel uptime that drops back under 30 s, or by more than 20 s (the first line of a
+# kernel uptime that drops back under 30 s, or by more than 20 s, or jumps ahead by more than 60 s (the first line of a
 # boot can arrive late). Search those, not the whole LOGFILE.
 #   tools/sunfish-livelog.sh LOGFILE
 set -u
@@ -22,7 +22,7 @@ function newboot() {
 	print >> lf; fflush(lf)
 	if (match($0, /^\[ *([0-9]+)\./, m)) {
 		up = m[1] + 0
-		if (cur == "" || (up < 30 && up + 5 < prev) || up + 20 < prev) newboot()	# 2026-10-31: boots whose first line comes after 30 s
+		if (cur == "" || (up < 30 && up + 5 < prev) || up + 20 < prev || up > prev + 60) newboot()	# 2026-10-31: boots whose first line comes after 30 s; uptime keeps counting through a long fastboot wait, so a forward jump is a new boot too
 		prev = up
 	}
 	if (cur != "") { print >> cur; fflush(cur) }
