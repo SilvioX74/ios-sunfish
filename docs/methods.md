@@ -48,7 +48,7 @@ SE9 is shared with haptics: touch /var/local/haptics.off and kill hapticd (launc
 ## App soak
 - `tools/sunfish-appsoak.sh TAG SECONDS` opens 6 stock apps in cycles. Stopping an agent does not stop the background scripts it started: check `ps` for scratchpad scripts after every TaskStop.
 
-Subagents that run these: `.claude/agents/` (phone-runner, ci-builder, implementer, investigator); see CLAUDE.md "Delegation".
+Subagents that run these: `.claude/agents/` (phone-runner, builder, implementer, investigator); see CLAUDE.md "Delegation".
 ### Where the data comes from
 - **Live kernel log:**
   - `tools/sunfish-livelog.sh ../logs/usb-live.log` runs on the PC in the background and appends every kernel log

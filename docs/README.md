@@ -6,6 +6,7 @@ feature changes state). Rules: [CLAUDE.md](../CLAUDE.md).
 | Where | What |
 |---|---|
 | [plan.md](plan.md) | the current plan: priorities, questions for the user, tasks at the phone, dev speed; old plans in [plans/](plans/) |
+| [gpu-bugs.md](gpu-bugs.md) | known GPU bugs with log lines and rates, and the daily soak results |
 | [backlog.md](backlog.md), [completed.md](completed.md), [user-tasks.md](user-tasks.md) | the Broken, Later and Optimize lists (read when idle or picking the next item) |
 | [features/](features/) | one file per feature: facts and a dated, append-only Log (newest first); older entries in [archive/features/](archive/features/) |
 | [journal/](journal/) | one file per day of work |

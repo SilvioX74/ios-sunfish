@@ -69,15 +69,18 @@ This file is the one home for the project's rules (AGENTS.md and the memory note
 # How to work (the user's rules, 2026-10-29; keep these across compactions)
 - **Goal:** keep iterating until everything on iOS works (except iCloud). Getting as many systems working as
   possible comes first.
+- **Speed focus** (the user, 2026-10-31, until they end it): GPU/CPU speed and smoothness come first, stability later,
+  and reduce heat. Pick work by the frame time or heat it should save, not by how easy it is.
 - **Focus:** a couple of systems at a time, from the Priority list in `docs/plan.md` (at most 5, the active one
   marked). Easy things go first: the user loves seeing progress.
-- **After each finished priority item:** scan the Broken list in `docs/backlog.md` for low-hanging fruit and move the easiest items up
+- **After each finished priority item** (paused during the speed focus): scan the Broken list in `docs/backlog.md` for low-hanging fruit and move the easiest items up
   into the Priority list.
 - **Wins:** push-notify the user every time something starts working.
 - **Backlog:** the Broken, Later and Optimize lists are in `docs/backlog.md`, not auto-loaded. Read it when waiting
   on a test or build, after finishing a priority item, and when adding something newly found broken (add it, then
   carry on).
-- **While waiting** (tests, builds, boots): work on other Broken items instead of idling.
+- **While waiting** (tests, builds, boots): work on other Broken items instead of idling; during the speed focus, on
+  the next speed item or its read-only research.
 - **Never idle in /loop** (the user, 2026-10-30): always keep at least one agent or build/test running; when the next
   step of an item needs the user or it is quiet hours, start the next item that doesn't. Wake-ups ~10 min while work
   is in flight.
@@ -85,7 +88,11 @@ This file is the one home for the project's rules (AGENTS.md and the memory note
   choice made) to the "Questions for you" list in `docs/plan.md`, so they can answer later. Don't wait.
 - **Needs the user's hands at the phone** (feel, listen, look, plug in; the user, 2026-10-30): add it to
   `docs/user-tasks.md` (not the plan's priority list), push-notify, and move straight on to the next item.
-- **Reliability:** if checking a fix needs repeated tests of an hour or more, move it to the "Later" list (`docs/backlog.md`) and move on.
+- **Reliability** (the user, 2026-10-31): normal test runs are 15 min at most, plus one 1 h soak per day, overnight.
+  Runs with a hang, a backboardd restart, the panel off or 0 swaps are void. Outside the speed focus, a fix needing
+  repeated tests of an hour or more goes to the "Later" list (`docs/backlog.md`).
+- **GPU bugs** (the user, 2026-10-31): list each one with its log line and rate in `docs/gpu-bugs.md`. Fix one now only
+  if it voids benches, stops phone testing, or doubles in rate after a change (turn that change off first).
 - **Time limit:** if a priority item shows no visible progress in about half a day, write down where it stands in
   its feature Log, park it in `docs/backlog.md` and take the next item.
 - **Hard items** (days, uncertain): do their read-only research in the background while phone tests run; keep
@@ -114,23 +121,24 @@ This file is the one home for the project's rules (AGENTS.md and the memory note
   `tools/sunfish-upstream-check.sh`, surveys the new commits with investigators, writes
   `research/notes/upstream-YYYY-MM-DD.md`, adds takeaways to `docs/backlog.md` and marks them surveyed
   (`--mark NAME`). Add a project to the list when a new related port turns up.
-- **Other optimization:** make systems usable, not fast. Once something works and could be faster, add it to the
+- **Other optimization** (GPU/CPU speed and heat are exempt during the speed focus): make systems usable, not fast. Once something works and could be faster, add it to the
   "Optimize (last)" list (`docs/backlog.md`) and move on.
 
 # Delegation and sessions (tokens)
-- **Every agent starts cold:** it loads this file and the plan (~4K tokens) and re-reads what it needs. So:
+- **Every agent starts cold:** it starts at ~13K tokens of context (measured 2026-10-31) and re-reads what it needs. So:
   - Do short things directly in the main session: up to ~5 commands, a quick SSH check, a small edit.
-  - Delegate the bulky ones: builds, boot + test runs, reverse engineering, long logs, big patches.
+  - Delegate the bulky ones: builds and installs (even short ones, to `builder`), boot + test runs, reverse
+    engineering, long logs, big patches.
+  - Don't use `general-purpose` when an agent below fits: it starts at ~67K tokens and averaged 2.5M per run.
 - **Main session (Opus):** picks the next step from `docs/plan.md`, writes precise specs, judges results, updates the
   docs and plan.
-- **Sessions:** start a fresh session per day or per big milestone instead of one session over several
-  compactions; `docs/plan.md` and today's journal are the hand-off.
+- **Sessions:** start a fresh session per day, per big milestone or at about 300K tokens of context, whichever comes
+  first (the main session is the biggest token cost: one ran 36 h at a median of 507K); `docs/plan.md` and today's journal are the hand-off.
 - **Agents in `.claude/agents/`:**
-  - `phone-runner` (sonnet, low effort): boots, benches, webcam, log slicing; checks itself and Reads a webcam frame after every boot and visible change. It is the only agent that touches the phone.
-  - `ci-builder` (haiku): commit/export patches, push, CI, download, install.
-  - `implementer` (opus, low effort): writes one patch from a spec.
-  - `investigator` (opus, low effort): read-only source, binary and log analysis.
-  - `net-prober` (haiku): read-only router and Wi-Fi scan probing (never changes router settings).
+  - `phone-runner` (sonnet, medium effort): boots, benches, webcam, log slicing; checks itself and Reads a webcam frame after every boot and visible change. It is the only agent that touches the phone.
+  - `builder` (haiku): commit/export patches, push, local builds, install.
+  - `implementer` (opus, medium effort): writes one patch from a spec.
+  - `investigator` (opus, high effort): read-only source, binary and log analysis.
 - **Specs:**
   - Every spec says exactly what to return: numbers and tables, never raw logs.
   - phone-runner specs say "foreground only, no `&` or background runs, don't end the turn until done": it stalls

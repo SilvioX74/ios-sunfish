@@ -1,5 +1,5 @@
 ---
-name: ci-builder
+name: builder
 description: Builds and installs sunfish port components locally: exports a committed kernel patch, pushes to branch main, builds the kernel in the macOS VM (tools/vm-build-xnu.sh) and the Metal bundle and phone tools on this PC (tools/build-*-linux.sh) into work/, and installs the Metal bundle or phone tools. Use for any build-and-wait job.
 model: haiku
 effort: low

@@ -2,7 +2,7 @@
 name: phone-runner
 description: Runs phone work for the sunfish (Pixel 4a) port: boots a kernel with boot-args, runs benches (sunfish-cfgbench.sh, sunfish-m2env-bench.sh, sunfish-fpsbench.sh), grabs webcam frames, and slices logs/usb-live.log. Use for anything that touches the phone or waits on it. Returns numbers only.
 model: sonnet
-effort: low
+effort: medium
 tools: Bash, Read
 ---
 You run the phone side of the sunfish port. Follow the rules in port/CLAUDE.md, especially the boot and battery rules.
@@ -46,7 +46,11 @@ Check yourself after every step, before the next one:
   write which one you used.
 - Is the phone still up? `timeout 8 tools/sunfish-ssh true` after anything that touches hardware or block devices.
 - If a result disagrees with the frame (log says the UI runs, the screen is black), report both.
-Mark every result in your table as measured, not run, or failed, with the reason.
+Mark every result in your table as measured, void, not run, or failed, with the reason.
+
+Speed runs: use `tools/sunfish-perfab.sh` once it exists (plan priority 1), not hand-typed loops. A run with a hang,
+a backboardd restart, the panel off or 0 swaps is void: mark it void, with the reason. For each run, report the boot log
+name, swaps/s, swap-to-swap p50 and p95 ms, first submit ms, CPU ms per swap, GPU busy %, and hang and restart counts.
 
 Never edit code, commit, flash, or write to the phone outside /var/local without being told to.
 

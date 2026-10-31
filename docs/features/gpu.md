@@ -1,5 +1,5 @@
 # GPU
-**State:** ✅ Adreno 618 at 565 MHz; full recovery from injected and real hangs (~26 ms). **Updated:** 2026-10-28.
+**State:** 🟡 Adreno 618 at 565 MHz; injected and SMMU-fault hangs recover (~28 ms); real no-fault hangs don't (0 of 8; reboot needed). **Updated:** 2026-10-31.
 
 ## How to use
 - Default clock 565 MHz (`sweetgpufreq=5`); 430 MHz = `sweetgpufreq=4`; stock levels 650/800/825 = `sweetgpufreq=6..8` (xnu 0148).
@@ -12,15 +12,20 @@
 - Metal goes through SweetMetal2 (metal2vulkan + Turnip): see [metal](metal.md).
 - xnu 0174: Linux-style Fabia PLL0 restore after the DCVS vote (GX collapse wipes GPU_CC_PLL0; GMU DCVS zeroes PLL0 L).
 - xnu 0181: early CB_RESUME at the start of recovery; 0182: SMMU stall-on-fault (CFCFG) by default.
-- Real-hang recovery proven: bc1 (kernel70, 2026-10-28), 2 real hangs recovered in 26.5/26.4 ms.
+- Real-hang recovery: bc1 (kernel70, 2026-10-28), 2 real hangs recovered in 26.5/26.4 ms; no-fault hangs at the stuck TLB sync still fail (gpu-bugs.md G1).
 - 565 vs 430 MHz: 430 is not safer (sk430 had 1 hang in 1 h); 565 kept.
 
 ## Open
+- Bug list and rates: [gpu-bugs.md](../gpu-bugs.md).
 - The Reduce Transparency hang cause is unproven (did not reproduce on kernel52 + nbproto bridge).
 - Silent resets during the 2026-10-25 soaks (565 MHz at 468 s, 430 MHz at ~179 s) were never explained; none since 0175/0176.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-10-31 16:45 Bug list and test schedule (the user's choice; no phone run)
+- Added docs/gpu-bugs.md: G1-G8 with log lines and rates, plus a soak table seeded with soak1 and z1. Hangs wait unless they void benches, stop testing or double in rate after a change. Normal runs 15 min at most, one 1 h soak per day overnight. The ✅ state was wrong (0 of 8 no-fault hangs recovered): now 🟡.
+- GPU clock governor waits until these hangs are under control.
 
 ### 2026-10-31 08:10 z1: kernel135 soak, stopped early by the user at ~34 min: 151 k submits, 0 no-fault hangs
 - 20261031-073304.log, kernel135 sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, soak.sh. TLB sync histogram: lt10us 83667, lt100us 38314, lt1ms 241, lt10ms 7, timeout 0, max 2144 us, busy_before 0. Map 69243, unmap 52985 flushes.
