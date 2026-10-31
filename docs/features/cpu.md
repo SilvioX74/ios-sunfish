@@ -1,5 +1,5 @@
 # CPU
-**State:** ✅ 8 cores; A55 1804 MHz, A76 2208 MHz (read from OSM registers), temperature and real MHz logged every 5 s (xnu 0255); runs hot, idle 79-85 C with two stuck daemons, 63 C with them paused. **Updated:** 2026-10-31.
+**State:** ✅ 8 cores; A55 1804 MHz, A76 2208 MHz (read from OSM registers), temperature and real MHz logged every 5 s (xnu 0255); idle was 79-85 C with two stuck daemons, about 67 C with their data moved aside (long idle not measured). **Updated:** 2026-10-31.
 
 ## Facts
 - 8 cores; A55 1804 MHz, A76 2208 MHz (read from OSM registers) (status.md).
@@ -14,6 +14,11 @@
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
+
+### 2026-10-31 18:57 db1, db2: both idle burners stopped by moving their data aside
+- db1, kernel137, boot 20261031-182504: PowerLog files moved. aggregated 4.75 CPU s in 10 min (was ~53 s per min). coreduetd unchanged at 0.88 core, biomed 0.14; hottest 66-70 C. coreduetd's stack: `_DKBiomeQuery`, BPS publishers, `-[NSDate descriptionWithLocale:]`, formatting a date per event. Old PowerLog archive was at powerlog_1985-04-10 with about 1950 files: walking day by day, dates from old 1970-clock boots is a guess.
+- db2: /var/mobile/Library/Biome moved too. Boot 20261031-185506: at 90 s and at 120 s of uptime coreduetd 8.26 -> 8.28 CPU s, aggregated 2.26 -> 2.54, biomed 2.13 -> 2.14; 67-68 C, busy `40 33 31 11 6 4 | 8 10` % at 131 s (still settling).
+- Not checked: long idle, apps after the Biome move (stopped for the show-off). Whether the burn returns as the stores refill is unknown. The moved files are in /var/local/idlefix-db.
 
 ### 2026-10-31 18:05 idle1, sigstop test: two daemons burn 105 of 126 CPU s/min at idle
 - kernel136, everyday args. `psx` CPU s per 60 s, screen on / off: aggregated 53.6 / 55.4, coreduetd 52.4 / 52.3, biomed 9.3 / 9.3, backboardd 0.9 / 20.1, adspboot 2.4 / 3.3, kernel_task 1.3 / 3.3. Totals 126 / 149. Boot logs 20261031-173536 (idle1b), 20261031-174422 (idle1c).

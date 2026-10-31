@@ -102,3 +102,5 @@ output in /var/local.
 2026-10-31 18:30: moved BatteryLife/Archives, CurrentPowerlog.PLSQL* and CoreDuet/Knowledge/knowledgeC.db* to /var/local/idlefix-db (nothing deleted), to stop the idle CPU burn; reproduce with `tools/sunfish-idlefix-db.sh`, undo with `--undo`. Being tested (db1).
 
 2026-10-31 18:50: db1 result: moving PowerLog aside stopped aggregated (4.75 CPU s in 10 min); coreduetd unchanged. Moving /var/mobile/Library/Biome to /var/local/idlefix-db/biome next (`tools/sunfish-idlefix-db.sh --biome`, `--biome --undo` restores).
+
+2026-10-31 18:57: Biome moved to /var/local/idlefix-db/biome (db2). coreduetd stopped burning, so `tools/sunfish-install-idlefix.sh` was not run: launchd.plist is unchanged.
