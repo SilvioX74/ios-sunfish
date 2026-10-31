@@ -77,6 +77,7 @@ Subagents that run these: `.claude/agents/` (phone-runner, builder, implementer,
   - Prints one table per screen (swaps/s, p50, p95, share <= 17 ms, >100 ms gaps, void runs, B-A row); rows are in
     `work/perfab/TAG/results.tsv`. Adds a row to "Bench runs" in `docs/gpu-bugs.md` and restores the phone's env and
     bundle at the end. Run it in the background; it stops below 3600 mV.
+  - Each screen waits up to 3 min for the hottest CPU to read below `MAXSTART` (75 C), then goes on regardless; adds start and max temperature and the lowest measured A76 MHz; void on a `SWEET THERM: cap` line in the window or at 95 C.
 - **Soak logger:** `tools/sunfish-soak.sh ../logs/soak.log` logs up / unreachable / REBOOTED, battery and new
   crash lines every 60 s. Use it to catch reboots and hangs while away.
 - **Battery in fastboot:** `fastboot getvar battery-voltage`.

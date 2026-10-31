@@ -15,6 +15,11 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-10-31 17:30 xnu 0256 sunfish-thermal-cap written, not built, not run
+- Finding (kernel136 logs): the `cyc` counter is 32 bits and wraps within 5 s; real A76 cycles per 5 s = delta + 2 x 2^32. So 2452M = 2208 MHz, the "fall" to 1279M = about 1974 MHz, A55 436M = 1805 MHz. The A76 runs about 10 % slow at cpu6 94-95 C while the row and `+0x704` don't show it, and swaps/s fell by the same 10 %. Guess: a hardware throttle; what drives it is not known.
+- Cap as a last resort above that, `sweetthermcap=0` off: hottest of a55, cpu6, cpu7, cpuss, gpu at or above 98 C lowers both domains a row per second, floors A76 row 1 (652 MHz), A55 row 4 (1248 MHz); at or below 92 C raises a row per 5 s, up to the boot rows. At or above 100 C for 5 samples: `SWEET THERM: CRITICAL` and straight to the floors (no reset: the only reset path is inline in the USB command loop). Samples every 1 s from 90 C. Log `SWEET THERM: cap a55 R=MHz a76 R=MHz at T C (rising|falling)`, `kern.sweet_therm_caps`, `cap N` on the busy line. The GPU clock is not capped.
+- The busy line's `cyc N` becomes `real N`: MHz measured over about 100 ms, `kern.sweet_mhz_{a55,a76}`.
+
 ### 2026-10-31 17:10 xnu 0255 sunfish-thermal-clocks written, not built, not run
 - Temperatures, busy %, OSM index, raw cycle delta, raw LMh and L3 registers every 5 s (redfin 0960, 0961, without PMIC parts or "w" commands). Unverified on sunfish: whether TSENS, L3 and LMh reads can fault (watch the first boot for a reset), 0x9c0, 0x704, the L3 offsets.
 

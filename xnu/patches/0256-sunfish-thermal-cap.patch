@@ -1,0 +1,420 @@
+From a951bdc56d28f219b96c25bee217de9ae9263d7e Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sat, 31 Oct 2026 17:30:04 -0400
+Subject: [PATCH] sunfish: last-resort thermal cap and real MHz (0256)
+
+---
+ bsd/dev/sweet_cpufreq.c | 137 +++++++++++++++++++++++++++++++++++-----
+ bsd/dev/sweet_thermal.c |  80 +++++++++++++++++++++--
+ 2 files changed, 196 insertions(+), 21 deletions(-)
+
+diff --git a/bsd/dev/sweet_cpufreq.c b/bsd/dev/sweet_cpufreq.c
+index 9d318cc..c46e86e 100644
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -9,14 +9,23 @@
+  * frequency, N > 1 the highest entry at or below N MHz.
+  *
+  * 0255 (ios-redfin 0961, MIT; read only): sweet_cpufreq_log(), called from the 5 s thread in
+- * bsd/dev/sweet_thermal.c, prints busy %, the desired index, the raw OSM cycle counter delta, the raw
+- * LMh register and four L3 registers. sweettherm=0: L3 and LMh not mapped, no thread.
++ * bsd/dev/sweet_thermal.c, prints busy %, the desired index, the raw LMh register and four L3 registers.
++ * sweettherm=0: L3 and LMh not mapped, no thread.
++ * 0256: "real" on that line is the MHz measured from the OSM cycle counter over about 100 ms (32 bits, wraps within
++ * 5 s). The hardware cut the A76 by about 10 % at cpu6 94-95 C with the row and LMh register unchanged.
++ * sysctl kern.sweet_mhz_{a55,a76}: the same values.
++ *
++ * 0256: sweet_cpufreq_cap(), called only from that thread (policy in sweet_thermal.c), moves the desired
++ * index within floor..boot row, where the boot row is what init left. Voltage stays with OSM/CPR.
+  */
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
+ #include <sys/param.h>
+ #include <sys/systm.h>
+ #include <sys/sysctl.h>
+ #include <sys/errno.h>
++#include <kern/clock.h>
++#include <kern/thread.h>
++#include <kern/sched_prim.h>
+ #include <machine/machine_routines.h>
+ #include <pexpert/pexpert.h>
+ #include <mach/mach_time.h>
+@@ -26,13 +35,15 @@ extern uint64_t sweet_cpu_idle_abs(int cpu);    /* osfmk/kern/sched_prim.c (0255
+ extern void sweet_thermal_start(void);          /* bsd/dev/sweet_thermal.c (0255) */
+ void sweet_cpufreq_init(void);
+ void sweet_cpufreq_log(void);
++void sweet_cpufreq_cap(int dir, const char *temp);
+ 
+ #define OSM_FREQ_REG    0x110u          /* + 32 * index */
+ #define OSM_ROW         32u
+ #define OSM_ROWS        40u
+ #define OSM_DESIRED     0x920u          /* + 4 * core in cluster; core 0 drives the policy */
+ #define OSM_XO_KHZ      19200u
+-#define OSM_CYCLES      0x9c0u          /* 0255: unverified on sunfish, printed raw */
++#define OSM_CYCLES      0x9c0u          /* 0256: 32 bits, core 0 of the cluster */
++#define OSM_REAL_MS     100u            /* 0256: the real MHz window; TS_LOG_MS in sweet_thermal.c */
+ #define OSM_L3_PA       0x18321000u     /* 0255: the L3 domain, read only */
+ #define OSM_L3_VOTES    0x920u          /* 0255: + 4 * voter (a guess, heat-2026-10-31.md), printed raw */
+ #define LMH_REG         0x704u          /* 0255: unverified on sunfish: 0 no cap, else (raw & 0x3ff) * 19.2 MHz */
+@@ -42,9 +53,10 @@ static const struct {
+ 	uint32_t pa;
+ 	const char *tag;
+ 	uint32_t lmh_pa;
++	unsigned cap_floor;     /* 0256: lowest row of the thermal cap */
+ } osm_clusters[] = {
+-	{"pwrcl (A55 x6)", 0x18323000u, "a55", 0x18358800u + LMH_REG},
+-	{"perfcl (A76 x2)", 0x18325800u, "a76", 0x18350800u + LMH_REG},
++	{"pwrcl (A55 x6)", 0x18323000u, "a55", 0x18358800u + LMH_REG, 4},       /* 1248 MHz */
++	{"perfcl (A76 x2)", 0x18325800u, "a76", 0x18350800u + LMH_REG, 1},      /* 652 MHz */
+ };
+ 
+ /* 0255: what sweet_cpufreq_log() needs; each block is mapped once, in sweet_cpufreq_init */
+@@ -52,9 +64,17 @@ static struct {
+ 	vm_offset_t base, lmh;
+ 	unsigned n;
+ 	uint32_t khz[OSM_ROWS];
+-	uint32_t cyc_prev;
++	bool cap_on;            /* 0256 */
++	unsigned boot_row, cap_row, cap_floor;
+ } osm_state[2];
+ static vm_offset_t osm_l3;
++static unsigned osm_therm_caps; /* 0256: rounds that changed a row, one "SWEET THERM: cap" line each */
++
++static unsigned osm_real_mhz[2]; /* 0256: a55, a76; 0 = no reading */
++
++SYSCTL_UINT(_kern, OID_AUTO, sweet_mhz_a55, CTLFLAG_RD | CTLFLAG_LOCKED, &osm_real_mhz[0], 0, "SWEET THERM: measured A55 MHz");
++SYSCTL_UINT(_kern, OID_AUTO, sweet_mhz_a76, CTLFLAG_RD | CTLFLAG_LOCKED, &osm_real_mhz[1], 0, "SWEET THERM: measured A76 MHz");
++SYSCTL_UINT(_kern, OID_AUTO, sweet_therm_caps, CTLFLAG_RD | CTLFLAG_LOCKED, &osm_therm_caps, 0, "SWEET THERM: thermal cap steps, up or down");
+ 
+ static uint32_t
+ osm_rd(vm_offset_t base, uint32_t off)
+@@ -64,6 +84,17 @@ osm_rd(vm_offset_t base, uint32_t off)
+ 	return v;
+ }
+ 
++/* 0256: the row init left is the cap's ceiling; a row outside the table leaves the domain uncapped */
++static void
++osm_cap_init(unsigned c, unsigned row)
++{
++	if (row < osm_state[c].n) {
++		osm_state[c].boot_row = osm_state[c].cap_row = row;
++		osm_state[c].cap_floor = row < osm_clusters[c].cap_floor ? row : osm_clusters[c].cap_floor;
++		osm_state[c].cap_on = true;
++	}
++}
++
+ void
+ sweet_cpufreq_init(void)
+ {
+@@ -107,6 +138,7 @@ sweet_cpufreq_init(void)
+ 		printf("SWEET CPUFREQ: %s table (MHz, *=1-core boost):%s\n", osm_clusters[c].name, line);
+ 		if (want == 0 || best_khz == 0 || best >= n) {
+ 			printf("SWEET CPUFREQ: %s index %u kept\n", osm_clusters[c].name, cur);
++			osm_cap_init(c, cur);
+ 			continue;
+ 		}
+ 		__asm__ volatile("dmb oshst" ::: "memory");
+@@ -114,6 +146,7 @@ sweet_cpufreq_init(void)
+ 		__asm__ volatile("dsb osh" ::: "memory");
+ 		printf("SWEET CPUFREQ: %s index %u -> %u (%u MHz), reads back %u\n",
+ 		    osm_clusters[c].name, cur, best, best_khz / 1000, osm_rd(base, OSM_DESIRED));
++		osm_cap_init(c, best);
+ 	}
+ 	/* 0255: only maps here; the first reads of these blocks are in the thread (sweettherm=0: none of it) */
+ 	unsigned therm = 1;
+@@ -127,6 +160,42 @@ sweet_cpufreq_init(void)
+ 	sweet_thermal_start();
+ }
+ 
++/* 0256: the counter and its time, with interrupts off so nothing lands between the two reads */
++static uint32_t
++osm_cyc_stamp(unsigned d, uint64_t *t)
++{
++	boolean_t s = ml_set_interrupts_enabled(FALSE);
++	uint32_t cyc = osm_rd(osm_state[d].base, OSM_CYCLES);
++	*t = mach_absolute_time();
++	(void)ml_set_interrupts_enabled(s);
++	return cyc;
++}
++
++/* 0256: blocks this thread for about OSM_REAL_MS; the 32-bit difference can't wrap in that time */
++static void
++osm_measure_mhz(void)
++{
++	static int osm_chan;
++	const unsigned ndom = sizeof(osm_clusters) / sizeof(osm_clusters[0]);
++	uint32_t c0[2] = {0, 0};
++	uint64_t t0[2] = {0, 0}, t1, ns, deadline;
++	for (unsigned d = 0; d < ndom; ++d) {
++		if (osm_state[d].base) {
++			c0[d] = osm_cyc_stamp(d, &t0[d]);
++		}
++	}
++	clock_interval_to_deadline(OSM_REAL_MS, NSEC_PER_MSEC, &deadline);
++	(void)assert_wait_deadline(&osm_chan, THREAD_UNINT, deadline);
++	thread_block(THREAD_CONTINUE_NULL);
++	for (unsigned d = 0; d < ndom; ++d) {
++		if (osm_state[d].base) {
++			uint32_t delta = osm_cyc_stamp(d, &t1) - c0[d];
++			absolutetime_to_nanoseconds(t1 - t0[d], &ns);
++			osm_real_mhz[d] = ns ? (unsigned)((uint64_t)delta * 1000 / ns) : 0;
++		}
++	}
++}
++
+ /*
+  * 0255: the first call only takes the baseline and prints nothing, so every line covers a full 5 s.
+  * Only the 5 s thread calls this; no locks.
+@@ -147,11 +216,6 @@ sweet_cpufreq_log(void)
+ 	}
+ 	t_prev = now;
+ 	if (first) {
+-		for (unsigned d = 0; d < ndom; ++d) {
+-			if (osm_state[d].base) {
+-				osm_state[d].cyc_prev = osm_rd(osm_state[d].base, OSM_CYCLES);
+-			}
+-		}
+ 		return;
+ 	}
+ 	static bool announced;
+@@ -159,6 +223,7 @@ sweet_cpufreq_log(void)
+ 		announced = true;
+ 		printf("SWEET THERM: first L3 and LMh read\n");
+ 	}
++	osm_measure_mhz();
+ 	char line[256];
+ 	unsigned len = 0;
+ 	len += snprintf(line + len, sizeof(line) - len, "SWEET THERM: busy %u %u %u %u %u %u | %u %u %%;",
+@@ -168,11 +233,9 @@ sweet_cpufreq_log(void)
+ 			len += snprintf(line + len, sizeof(line) - len, " %s --;", osm_clusters[d].tag);
+ 			continue;
+ 		}
+-		uint32_t idx = osm_rd(osm_state[d].base, OSM_DESIRED), cyc = osm_rd(osm_state[d].base, OSM_CYCLES);
+-		uint32_t delta = cyc - osm_state[d].cyc_prev;
+-		osm_state[d].cyc_prev = cyc;
+-		len += snprintf(line + len, sizeof(line) - len, " %s %u=%u cyc %u lmh ", osm_clusters[d].tag, idx,
+-		    idx < osm_state[d].n ? osm_state[d].khz[idx] / 1000 : 0, delta);
++		uint32_t idx = osm_rd(osm_state[d].base, OSM_DESIRED);
++		len += snprintf(line + len, sizeof(line) - len, " %s %u=%u real %u lmh ", osm_clusters[d].tag, idx,
++		    idx < osm_state[d].n ? osm_state[d].khz[idx] / 1000 : 0, osm_real_mhz[d]);
+ 		if (osm_state[d].lmh) {
+ 			len += snprintf(line + len, sizeof(line) - len, "%x;", osm_rd(osm_state[d].lmh, 0));
+ 		} else {
+@@ -185,9 +248,51 @@ sweet_cpufreq_log(void)
+ 	} else {
+ 		len += snprintf(line + len, sizeof(line) - len, " l3 --");
+ 	}
++	len += snprintf(line + len, sizeof(line) - len, " cap %u", osm_therm_caps);
+ 	printf("%s\n", line);
+ }
+ 
++/*
++ * 0256: one thermal cap step in both domains: dir < 0 a row down, dir > 0 a row up (never above the boot
++ * row), 0 straight to the floor. temp is only for the log; "rising" = rows going down. No locks.
++ */
++void
++sweet_cpufreq_cap(int dir, const char *temp)
++{
++	const unsigned ndom = sizeof(osm_clusters) / sizeof(osm_clusters[0]);
++	bool changed = false;
++	char line[96];
++	unsigned len = 0;
++	len += snprintf(line + len, sizeof(line) - len, "SWEET THERM: cap");
++	for (unsigned d = 0; d < ndom; ++d) {
++		if (!osm_state[d].cap_on) {
++			len += snprintf(line + len, sizeof(line) - len, " %s --", osm_clusters[d].tag);
++			continue;
++		}
++		unsigned row = osm_state[d].cap_row;
++		if (dir == 0) {
++			row = osm_state[d].cap_floor;
++		} else if (dir > 0 && row < osm_state[d].boot_row) {
++			row++;
++		} else if (dir < 0 && row > osm_state[d].cap_floor) {
++			row--;
++		}
++		if (row != osm_state[d].cap_row) {
++			__asm__ volatile("dmb oshst" ::: "memory");
++			*(volatile uint32_t *)(osm_state[d].base + OSM_DESIRED) = row;
++			__asm__ volatile("dsb osh" ::: "memory");
++			osm_state[d].cap_row = row;
++			changed = true;
++		}
++		len += snprintf(line + len, sizeof(line) - len, " %s %u=%u", osm_clusters[d].tag, row,
++		    osm_state[d].khz[row] / 1000);
++	}
++	if (changed) {
++		osm_therm_caps++;
++		printf("%s at %s C (%s)\n", line, temp, dir > 0 ? "falling" : "rising");
++	}
++}
++
+ /*
+  * 0238 (ios-redfin 1041, MIT): kern.sweet_ui_bigcore MASK (osfmk/kern/sched_prim.c, choose_processor): 1 CA display
+  * threads, 2 render-server threads on the A76 cores (CPU6/7); default 1, boot-arg sweetuibig=N, 0 off.
+diff --git a/bsd/dev/sweet_thermal.c b/bsd/dev/sweet_thermal.c
+index 79de6f5..f67adae 100644
+--- a/bsd/dev/sweet_thermal.c
++++ b/bsd/dev/sweet_thermal.c
+@@ -12,6 +12,14 @@
+  *
+  * Every 5 s: two "SWEET THERM:" lines, the second from sweet_cpufreq_log() (bsd/dev/sweet_cpufreq.c);
+  * sysctl kern.sweet_temp_* in deci-C (-9999 = no reading). Boot-arg sweettherm=0: off.
++ *
++ * 0256: thermal cap, boot-arg sweetthermcap=0 off (sweettherm=0 also stops it: no thread). A last resort above the
++ * hardware's own A76 cut (about 10 % at cpu6 94-95 C), so it must not act first; Linux's trips do not apply.
++ * Hot = hottest of a55, cpu6, cpu7, cpuss, gpu. Sampled every 1 s from 90 C on a CPU sensor (or the cap's 98 C on the
++ * GPU), else every 5 s; the two log lines stay at 5 s. Hot >= 98 C: both domains a row down per sample, to A76 row 1
++ * and A55 row 4; <= 92 C: a row up per 5 s, back to the boot rows; between: no change. >= 100 C for 5 samples in a row: "SWEET THERM: CRITICAL", straight to
++ * those rows. No reset here: the only reset path is inline in the USB command loop (bsd/dev/sweet_usb.c).
++ * CPU rows only; the GPU and DDR keep their clocks. No reading: rows stay as they are.
+  */
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
+ #include <sys/param.h>
+@@ -27,6 +35,7 @@ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
+ extern void thread_deallocate(thread_t);
+ extern void sweet_cpufreq_log(void);
++extern void sweet_cpufreq_cap(int dir, const char *temp);
+ void sweet_thermal_start(void);
+ 
+ #define TS0_TM_PA       0x0c263000u
+@@ -37,9 +46,20 @@ void sweet_thermal_start(void);
+ #define TS_VALID        (1u << 21)
+ #define TS_NONE         (-9999)
+ #define TS_PERIOD_MS    5000u
++/* 0256: deci-C, ms */
++#define TS_CAP_FAST     900
++#define TS_CAP_UP       920
++#define TS_CAP_DOWN     980
++#define TS_CAP_CRIT     1000
++#define TS_CAP_CRIT_N   5u
++#define TS_CAP_FAST_MS  1000u
++#define TS_CAP_UP_MS    5000u
++#define TS_LOG_MS       100u    /* sweet_cpufreq_log() blocks this long (OSM_REAL_MS) */
+ 
+ static vm_offset_t ts_tm[2];
+ static int t_a55 = TS_NONE, t_a76 = TS_NONE, t_gpu = TS_NONE, t_ddr = TS_NONE, t_max = TS_NONE;
++static int t_cpu = TS_NONE, t_cap = TS_NONE;    /* 0256: hottest CPU sensor; that or the GPU */
++static unsigned ts_cap_on = 1;                  /* 0256: sweetthermcap */
+ 
+ SYSCTL_INT(_kern, OID_AUTO, sweet_temp_a55, CTLFLAG_RD | CTLFLAG_LOCKED, &t_a55, 0, "SWEET THERM: hottest A55, deci-C");
+ SYSCTL_INT(_kern, OID_AUTO, sweet_temp_a76, CTLFLAG_RD | CTLFLAG_LOCKED, &t_a76, 0, "SWEET THERM: hottest A76, deci-C");
+@@ -95,7 +115,7 @@ ts_fmt(char *buf, size_t len, int v)
+ }
+ 
+ static void
+-ts_round(void)
++ts_round(bool log)
+ {
+ 	int s0[15], wlan = TS_NONE, ddr = TS_NONE, cam = TS_NONE, aoss1 = TS_NONE;
+ 	bool ready = ts_ready(0);
+@@ -115,12 +135,17 @@ ts_round(void)
+ 	int cpuss = ts_hot(s0[7], s0[8]), cpu6 = ts_hot(s0[9], s0[10]), cpu7 = ts_hot(s0[11], s0[12]);
+ 	int gpu = ts_hot(s0[13], s0[14]), aoss = ts_hot(s0[0], aoss1);
+ 	int m = ts_hot(ts_hot(a55, cpuss), ts_hot(cpu6, cpu7));
++	t_cpu = m;
++	t_cap = ts_hot(m, gpu);
+ 	m = ts_hot(ts_hot(m, gpu), ts_hot(aoss, ts_hot(wlan, ts_hot(ddr, cam))));
+ 	t_a55 = a55;
+ 	t_a76 = ts_hot(cpu6, cpu7);
+ 	t_gpu = gpu;
+ 	t_ddr = ddr;
+ 	t_max = m;
++	if (!log) {
++		return;
++	}
+ 
+ 	char a[9][12];
+ 	printf("SWEET THERM: a55 %s cpu6 %s cpu7 %s cpuss %s gpu %s ddr %s cam %s wlan %s aoss %s C\n",
+@@ -129,16 +154,52 @@ ts_round(void)
+ 	    ts_fmt(a[8], 12, aoss));
+ }
+ 
++/* 0256: one sample's policy (top of this file); elapsed_ms = time since the last sample */
++static void
++ts_cap_policy(unsigned elapsed_ms)
++{
++	static unsigned cool_ms, crit_n;
++	char b[12];
++	if (t_cap == TS_NONE) {
++		cool_ms = crit_n = 0;
++		return;
++	}
++	ts_fmt(b, sizeof(b), t_cap);
++	if (t_cap >= TS_CAP_DOWN) {
++		cool_ms = 0;
++		sweet_cpufreq_cap(-1, b);
++	} else if (t_cap <= TS_CAP_UP) {
++		cool_ms += elapsed_ms;
++		if (cool_ms >= TS_CAP_UP_MS) {
++			cool_ms = 0;
++			sweet_cpufreq_cap(1, b);
++		}
++	} else {
++		cool_ms = 0;
++	}
++	crit_n = t_cap >= TS_CAP_CRIT ? crit_n + 1 : 0;
++	if (crit_n == TS_CAP_CRIT_N) {
++		printf("SWEET THERM: CRITICAL %s C for %u samples, CPU rows to the floor\n", b, crit_n);
++		sweet_cpufreq_cap(0, b);
++	}
++}
++
+ /* Starts only after the maps exist; holds no lock across the reads. */
+ static void
+ ts_thread(void *arg __unused, wait_result_t wr __unused)
+ {
+ 	static int ts_chan;
+ 	bool probed = false;
++	unsigned since_log = 0; /* 0256: ms; slow samples land on the 5 s log rounds */
+ 	sweet_cpufreq_log();    /* baseline for busy % and cycles, prints nothing */
+ 	for (;;) {
+ 		uint64_t deadline;
+-		clock_interval_to_deadline(TS_PERIOD_MS, NSEC_PER_MSEC, &deadline);
++		bool fast = ts_cap_on && (t_cpu >= TS_CAP_FAST || t_cap >= TS_CAP_DOWN);
++		unsigned wait_ms = TS_PERIOD_MS - since_log;
++		if (fast && wait_ms > TS_CAP_FAST_MS) {
++			wait_ms = TS_CAP_FAST_MS;
++		}
++		clock_interval_to_deadline(wait_ms, NSEC_PER_MSEC, &deadline);
+ 		(void)assert_wait_deadline(&ts_chan, THREAD_UNINT, deadline);
+ 		thread_block(THREAD_CONTINUE_NULL);
+ 		if (!probed) {
+@@ -149,8 +210,16 @@ ts_thread(void *arg __unused, wait_result_t wr __unused)
+ 			    ts_rd(ts_tm[0], TS_TRDY), ts_rd(ts_tm[0], TS_SN_STATUS + 4), ts_rd(ts_tm[1], TS_TRDY),
+ 			    ts_rd(ts_tm[1], TS_SN_STATUS + 12));
+ 		}
+-		ts_round();
+-		sweet_cpufreq_log();
++		since_log += wait_ms;
++		bool log = since_log >= TS_PERIOD_MS;
++		ts_round(log);
++		if (ts_cap_on) {
++			ts_cap_policy(wait_ms);
++		}
++		if (log) {
++			sweet_cpufreq_log();
++			since_log = TS_LOG_MS;
++		}
+ 	}
+ }
+ 
+@@ -163,6 +232,7 @@ sweet_thermal_start(void)
+ 		printf("SWEET THERM: off (sweettherm=0)\n");
+ 		return;
+ 	}
++	(void)PE_parse_boot_argn("sweetthermcap", &ts_cap_on, sizeof(ts_cap_on));
+ 	ts_tm[0] = ml_io_map(TS0_TM_PA, 0x1000);
+ 	ts_tm[1] = ml_io_map(TS1_TM_PA, 0x1000);
+ 	if (!ts_tm[0] || !ts_tm[1]) {
+@@ -175,6 +245,6 @@ sweet_thermal_start(void)
+ 		return;
+ 	}
+ 	thread_deallocate(t);
+-	printf("SWEET THERM: on, every 5 s (sweettherm=0 off)\n");
++	printf("SWEET THERM: on, every 5 s (sweettherm=0 off); thermal cap %s (sweetthermcap=0 off)\n", ts_cap_on ? "on" : "off");
+ }
+ #endif /* ARM64_BOARD_CONFIG_SWEET */
+-- 
+2.56.0
+

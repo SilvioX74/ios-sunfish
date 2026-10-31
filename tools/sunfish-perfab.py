@@ -3,7 +3,7 @@
 
   tools/sunfish-perfab.py screen --log L --offset N --out RESULTS.tsv --tag T --name A --boot 1 --screen S
                                  [--secs 15] [--kernel K] [--batt MV] [--bootlog F] [--opens a=1,b=2]
-                                 [--restart] [--ssh-lost] [--open-failed] [--void REASON]
+                                 [--restart] [--ssh-lost] [--open-failed] [--too-hot] [--void REASON]
       appends one row, prints "OK swaps/s", "VOID reason" or "ABORT reason" (ABORT = the rest of the boot is void too)
   tools/sunfish-perfab.py table RESULTS.tsv
   tools/sunfish-perfab.py counts --log L --offset N --tag T --results RESULTS.tsv --doc docs/gpu-bugs.md --configs TEXT
@@ -19,10 +19,13 @@ tl = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tl)
 
 COLS = ('tag config boot screen status reason swaps_s p50 p95 le17 gaps100 busy_pct first_submit copies_per_swap '
-        'tl_swaps fb_swaps opens batt_mv bootlog kernel').split()
+        'tl_swaps fb_swaps opens batt_mv bootlog kernel start_c max_c caps a76_real_min').split()
 FB = re.compile(r'SWEET FB: 5s: (\d+) swaps .*?, (\d+) panel copies')
 GPU = re.compile(r'SWEET GPU: 5s: (\d+) submits .*?GPU busy (\d+) ms \((\d+)%\)')
 HANG = re.compile(r'GPU hang or fault|fence wait|device refused')
+THERM = re.compile(r'SWEET THERM: a55 (\S+) cpu6 (\S+) cpu7 (\S+) ')
+CAP = 'SWEET THERM: cap '
+REAL = re.compile(r'SWEET THERM: busy .* a76 \d+=\d+ real (\d+) ')
 G1 = re.compile(r'GPU hang or fault.*\bfsr 0 ')
 G2 = 'submit failed: 0xe00002c2'
 G4 = re.compile(r'GPU hang or fault.*\bfsr 40000002')
@@ -38,6 +41,11 @@ def read_from(path, offset):
 
 def num(x, fmt='%.2f'):
     return '' if x is None else fmt % x
+
+def hottest(m):
+    """Hottest of a THERM match's sensors in C; None if all read "--"."""
+    v = [float(x) for x in m.groups() if x != '--']
+    return max(v) if v else None
 
 def timeline_stats(recs):
     """swaps/s, p50, p95, share <= 17 ms, gaps > 100 ms: same definitions as sunfish-timeline.py main()."""
@@ -97,6 +105,7 @@ def screen(a):
     # 5 s stats lines inside the window; hang and restart lines from the lead-in on, to the end of what has arrived
     on = False
     fb, gpu, hang, failed = [], [], None, False
+    temps, caps, reals = [], 0, []
     for line in text.splitlines():
         if line.startswith(start):
             on = True
@@ -112,6 +121,13 @@ def screen(a):
             m = GPU.search(line)
             if m:
                 gpu.append((int(m[2]), int(m[3])))
+            m = THERM.search(line)
+            if m and hottest(m) is not None:
+                temps.append(hottest(m))
+            caps += CAP in line
+            m = REAL.search(line)
+            if m:
+                reals.append(int(m[1]))
     swaps_fb, copies = sum(x[0] for x in fb), sum(x[1] for x in fb)
     swaps = max(swaps_tl, swaps_fb)
     if rate is None and swaps_fb:
@@ -128,6 +144,10 @@ def screen(a):
         reason, abort = 'submit failed', True
     elif a.restart:
         reason, abort = 'backboardd restarted', True
+    elif a.too_hot:
+        reason = 'too hot'
+    elif caps:
+        reason = 'thermal cap'              # the clocks moved inside the window
     elif a.open_failed:
         reason = 'openapp failed'
     elif swaps == 0:
@@ -140,7 +160,9 @@ def screen(a):
         reason = 'GPU busy 0 ms (CPU drawing)'  # the kernel drops the line altogether when nothing was submitted
     row.update(status='VOID' if reason else 'OK', reason=reason or '', swaps_s=num(rate), p50=num(p50), p95=num(p95),
                le17=num(le17, '%.1f'), gaps100='' if gaps is None else gaps, busy_pct=num(busy, '%.0f'),
-               first_submit=num(first_submit(recs)), copies_per_swap=num(ratio), tl_swaps=swaps_tl, fb_swaps=swaps_fb)
+               first_submit=num(first_submit(recs)), copies_per_swap=num(ratio), tl_swaps=swaps_tl, fb_swaps=swaps_fb,
+               start_c=num(temps[0] if temps else None, '%.1f'), max_c=num(max(temps) if temps else None, '%.1f'), caps=caps,
+               a76_real_min=min(reals) if reals else '')
     append_row(a.out, row)
     print(('ABORT ' if abort else 'VOID ') + reason if reason else 'OK ' + num(rate, '%.1f'))
 
@@ -167,7 +189,7 @@ def table(a):
         if r['config'] not in configs:
             configs.append(r['config'])
     w = max(8, *(len(c) for c in configs))
-    head = f'{"config":{w}s} {"ok/void":7s} {"swaps/s (min-max)":19s} {"frame":>6s} {"p50":>6s} {"p95":>6s} {"<=17%":>6s} {">100/run":>8s} {"GPU%":>5s} {"1st":>6s}'
+    head = f'{"config":{w}s} {"ok/void":7s} {"swaps/s (min-max)":19s} {"frame":>6s} {"p50":>6s} {"p95":>6s} {"<=17%":>6s} {">100/run":>8s} {"GPU%":>5s} {"1st":>6s} {"startC":>6s} {"maxC":>5s} {"a76min":>6s}'
     f2 = lambda x: '-' if x is None else f'{x:.1f}'
     for s in screens:
         print(f'\n{s} (ms)')
@@ -176,19 +198,19 @@ def table(a):
         for c in configs:
             rr = [r for r in rows if r['screen'] == s and r['config'] == c]
             ok = [r for r in rr if r['status'] == 'OK']
-            m = {k: mean(ok, k) for k in ('swaps_s', 'p50', 'p95', 'le17', 'gaps100', 'busy_pct', 'first_submit')}
+            m = {k: mean(ok, k) for k in ('swaps_s', 'p50', 'p95', 'le17', 'gaps100', 'busy_pct', 'first_submit', 'start_c', 'max_c', 'a76_real_min')}
             m['frame'] = 1000.0 / m['swaps_s'] if m['swaps_s'] else None
             vals[c] = m
             sv = [float(r['swaps_s']) for r in ok if r['swaps_s']]
             rng = f'{m["swaps_s"]:.1f} ({min(sv):.1f}-{max(sv):.1f})' if sv else '-'
             print(f'{c:{w}s} {f"{len(ok)}/{len(rr) - len(ok)}":7s} {rng:19s} {f2(m["frame"]):>6s} {f2(m["p50"]):>6s} {f2(m["p95"]):>6s} '
-                  f'{f2(m["le17"]):>6s} {f2(m["gaps100"]):>8s} {f2(m["busy_pct"]):>5s} {f2(m["first_submit"]):>6s}')
+                  f'{f2(m["le17"]):>6s} {f2(m["gaps100"]):>8s} {f2(m["busy_pct"]):>5s} {f2(m["first_submit"]):>6s} {f2(m["start_c"]):>6s} {f2(m["max_c"]):>5s} {f2(m["a76_real_min"]):>6s}')
         if len(configs) == 2:
             A, B = vals[configs[0]], vals[configs[1]]
             def d(k):
                 return '-' if A[k] is None or B[k] is None else f'{B[k] - A[k]:+.1f}'
             print(f'{"B-A":{w}s} {"":7s} {d("swaps_s"):19s} {d("frame"):>6s} {d("p50"):>6s} {d("p95"):>6s} {d("le17"):>6s} {d("gaps100"):>8s} '
-                  f'{d("busy_pct"):>5s} {d("first_submit"):>6s}')
+                  f'{d("busy_pct"):>5s} {d("first_submit"):>6s} {d("start_c"):>6s} {d("max_c"):>5s} {d("a76_real_min"):>6s}')
         opens = {}
         for r in rows:
             if r['screen'] == s and r['status'] == 'OK' and r.get('opens'):
@@ -262,7 +284,7 @@ def main():
     s.add_argument('--secs', type=int, default=15)
     for k in ('--kernel', '--batt', '--bootlog', '--opens', '--void'):
         s.add_argument(k, default='')
-    for k in ('--restart', '--ssh-lost', '--open-failed'):
+    for k in ('--restart', '--ssh-lost', '--open-failed', '--too-hot'):
         s.add_argument(k, action='store_true')
     t = sub.add_parser('table')
     t.add_argument('results')

@@ -6,6 +6,8 @@
 # without + lines runs with an empty /var/local/mtl2-env; one without @ with the bundle that was on the phone at the start.
 # Results: work/perfab/TAG/results.tsv (a row per screen run, kept if the run is killed), one screenshot per boot.
 # Env SETTLE: seconds between SSH up and the first screen (default 30). Exit: 0 done, 2 usage, 3 stopped early.
+# Env MAXSTART: each screen waits up to 3 min for the hottest CPU to read below this (default 75 C), then goes on and notes the temperature.
+# A window stops and is void at 95 C.
 # About 2 min per boot with settings only, 4 min with all five screens (estimates: boot to SSH 20-40 s, SETTLE 30 s, screens ~30 s each).
 cd "$(dirname "$0")/.." || exit 1
 L=../logs/usb-live.log
@@ -13,7 +15,7 @@ usage() { sed -n 3,4p "$0" | cut -c3- >&2; exit 2; }
 die() { echo "perfab: $*" >&2; exit 2; }
 [ $# -ge 3 ] || usage
 TAG=$1 N=$2; shift 2
-SECS=15 SCREENS=settings,home,cc,apps,safari
+SECS=15 SCREENS=settings,home,cc,apps,safari MAXSTART=${MAXSTART:-75}
 SPECS=()
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -26,6 +28,7 @@ done
 case $TAG in ''|*[!A-Za-z0-9_-]*) die "bad TAG '$TAG' (letters, digits, - and _)";; esac
 case $N in ''|*[!0-9]*|0) die "bad N '$N'";; esac
 case $SECS in ''|*[!0-9]*|0) die "bad --secs '$SECS'";; esac
+case $MAXSTART in ''|*[!0-9]*) die "bad MAXSTART '$MAXSTART'";; esac
 [ ${#SPECS[@]} -ge 1 ] || usage
 IFS=, read -ra SCR <<< "$SCREENS"
 for s in "${SCR[@]}"; do
@@ -187,6 +190,34 @@ ready() {	# config index
 	stop "could not set the env or reboot for ${NAMES[$1]}"
 }
 
+# Hottest of a55, cpu6, cpu7 in whole C from this boot's last THERM line; empty on a kernel without these lines.
+hot_now() {
+	tac ../logs/boots/current.log 2>/dev/null | grep -a -m1 'SWEET THERM: a55 ' |
+		awk '{ for (i = 1; i < NF; i++) if ($i ~ /^(a55|cpu6|cpu7)$/ && $(i + 1) + 0 > m) m = $(i + 1) + 0 } END { if (m) print int(m) }'
+}
+# No input until the hottest CPU is below MAXSTART, up to 3 min, then on regardless. Leaves progress text in COOLED if it waited.
+wait_cool() {
+	local t0=$SECONDS t
+	COOLED=
+	t=$(hot_now)
+	[ "${t:-0}" -ge "$MAXSTART" ] || return 0
+	while [ "$t" -ge "$MAXSTART" ] && [ $((SECONDS - t0)) -lt 180 ]; do
+		sleep 5
+		t=$(hot_now); t=${t:-0}
+	done
+	COOLED=" cool $((SECONDS - t0))s ${t}C"
+}
+# Motion goes on until SECONDS reaches $1; in the window, only while the hottest CPU is under 95 C.
+more() {
+	[ $SECONDS -lt "$1" ] || return 1
+	[ "${INWIN:-0}" = 1 ] || return 0
+	local t
+	t=$(hot_now)
+	[ "${t:-0}" -lt 95 ] && return 0
+	TOO_HOT=1
+	return 1
+}
+
 bb_pid() {
 	local i out
 	for i in 1 2; do
@@ -206,21 +237,21 @@ open_app() {	# bundle id; openapp returns once FrontBoard answered. rc 255 = SSH
 unlock() { C H; sleep 2; C H; sleep 1; }
 UP=0
 long_swipes() {	# until SECONDS reaches $1
-	while [ $SECONDS -lt "$1" ]; do
+	while more "$1"; do
 		if [ $UP = 0 ]; then C swipe 540 2000 540 400 800; UP=1; else C swipe 540 400 540 2000 800; UP=0; fi
 		sleep 0.85
 	done
 }
 # Tight home pages as in fpsbench BENCH_TIGHT.
 home_swipes() {
-	while [ $SECONDS -lt "$1" ]; do
+	while more "$1"; do
 		C swipe 900 1200 150 1200 400; sleep 0.45
 		C swipe 150 1200 900 1200 400; sleep 0.45
 	done
 }
 # Down then up in the left margin, off the sliders (brightness!). The up swipe can dismiss Control Center: so reopen each round.
 cc_swipes() {
-	while [ $SECONDS -lt "$1" ]; do
+	while more "$1"; do
 		C swipe 1000 5 1000 900 300; sleep 0.35
 		C swipe 30 1100 30 1900 800; sleep 0.85
 		C swipe 30 1900 30 1100 800; sleep 0.85
@@ -229,7 +260,7 @@ cc_swipes() {
 APPS=(com.apple.calculator com.apple.mobilenotes com.apple.mobiletimer) APPI=0
 app_cycle() {
 	local bid t0 ms short
-	while [ $SECONDS -lt "$1" ]; do
+	while more "$1"; do
 		bid=${APPS[$APPI]} APPI=$(((APPI + 1) % ${#APPS[@]}))
 		t0=$(date +%s%N)
 		open_app "$bid"
@@ -260,7 +291,7 @@ motion() {	# screen, until SECONDS
 # One screen: leaves the parser's verdict in VERDICT.
 run_screen() {	# config index, boot number, screen
 	local name=${NAMES[$1]} b=$2 s=$3 pid0 pid1 flags=()
-	SSH_LOST= OPEN_FAILED= OPENS= INWIN=0
+	SSH_LOST= OPEN_FAILED= OPENS= INWIN=0 TOO_HOT=
 	pid0=$(bb_pid) || SSH_LOST=1
 	if [ -z "$SSH_LOST" ]; then
 		lead_in "$s"
@@ -276,6 +307,7 @@ run_screen() {	# config index, boot number, screen
 	fi
 	[ -n "$SSH_LOST" ] && flags+=(--ssh-lost)
 	[ -n "$OPEN_FAILED" ] && flags+=(--open-failed)
+	[ -n "$TOO_HOT" ] && flags+=(--too-hot)
 	VERDICT=$($PY screen --log "$L" --offset "$OFF" --out "$R" --tag "$TAG" --name "$name" --boot "$b" --screen "$s" --secs "$SECS" \
 		--kernel "${KNUM[$1]}" --batt "$BATT" --bootlog "$BLOG" --opens "$OPENS" "${flags[@]}")
 	OFF=$(logsize)
@@ -341,6 +373,8 @@ for b in $(seq "$N"); do
 				line+=" $s void"
 				continue
 			fi
+			wait_cool
+			line+=$COOLED
 			run_screen "$i" "$b" "$s"
 			case $VERDICT in
 			OK*) line+=" $s ${VERDICT#OK }";;
