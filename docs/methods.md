@@ -71,6 +71,12 @@ Subagents that run these: `.claude/agents/` (phone-runner, builder, implementer,
   - It swipes between home pages with `flame-cmd swipe`.
   - It then averages the `SWEET FB: 5s` lines between its markers into "swaps/s, panel updates/s".
   - `sunfish-cfgbench.sh` and `sunfish-m2env-bench.sh` both call it.
+- **A/B bench:** `tools/sunfish-perfab.sh TAG N [--screens settings,home,cc,apps,safari] [--secs 15] CONFIG...`
+  - CONFIG is `NAME=KERNEL[,bootarg...][,+ENVKEY=VAL...][,@BUNDLEDIR]`. Boots the configs in turn (A B A B), N boots each,
+    with the env and bundle set before each reboot; about 4 min per boot with all five screens.
+  - Prints one table per screen (swaps/s, p50, p95, share <= 17 ms, >100 ms gaps, void runs, B-A row); rows are in
+    `work/perfab/TAG/results.tsv`. Adds a row to "Bench runs" in `docs/gpu-bugs.md` and restores the phone's env and
+    bundle at the end. Run it in the background; it stops below 3600 mV.
 - **Soak logger:** `tools/sunfish-soak.sh ../logs/soak.log` logs up / unreachable / REBOOTED, battery and new
   crash lines every 60 s. Use it to catch reboots and hangs while away.
 - **Battery in fastboot:** `fastboot getvar battery-voltage`.
