@@ -26,6 +26,14 @@ each of its runs to "Bench runs" below; add the counts by hand after each soak.
 Failed recoveries leave `device refused: OutOfMemory(Device)` and CPU drawing until reboot (G1). CPU drawing can reach
 60 swaps/s on some screens, so a good speed number alone doesn't prove the GPU ran. Silent resets are backlog B4.
 
+## Bench runs
+Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, not boots.
+
+| Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
+|---|---|---|---|---|---|---|---|---|
+| 2026-10-31 | smoke3 | base=137,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-10-31 | smoke1 | base=137,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1 | 1 | 9 k | 0 | 0 | 0 | 0 |
+
 ## Daily soak (1 h, overnight)
 Newest first. Earlier soaks were shorter or used other loads, so compare rates, not raw counts.
 

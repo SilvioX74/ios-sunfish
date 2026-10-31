@@ -302,6 +302,7 @@ run_screen() {	# config index, boot number, screen
 		INWIN=1
 		motion "$s" $((SECONDS + SECS))
 		mark "$name b$b $s end"
+		[ "$s" = cc ] && [ "$b" = 1 ] && { C swipe 1000 5 1000 900 300; sleep 1.5; }	# the last up swipe closes it: reopen for the picture
 		{ [ "$s" = settings ] || [ "$b" = 1 ]; } && timeout 30 tools/flame-shot "$OUT/$name-b$b-$s.png" >/dev/null 2>&1
 		go_home
 		pid1=$(bb_pid) || SSH_LOST=1
