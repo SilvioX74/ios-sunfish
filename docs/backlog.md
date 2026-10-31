@@ -28,6 +28,8 @@ history in the feature Logs. Finished items move to [completed.md](completed.md)
 - B32 Location Services: switched on with `echo "L 1" > /var/local/sweet-orient` (2026-10-29); survives a reboot (tap1). No position source yet (no GPS driver; Wi-Fi location needs Apple servers).
 - B18 Cellular: not planned. iCloud: not expected to work.
 
+- RTC read unchecked (found 2026-10-31): SweetPlatformExpert.cpp:157 returns 0 (1970) on a failed read, and 4 of 294 time-set lines had one wrong byte (20261029-104747 off by 2^24 s; last 20261030-100133); not seen at boot so far. Fix: read twice, with a build-date floor. Could recreate the idle CPU burn (cpu.md).
+
 ## Later (needs repeated 1 h+ tests)
 - O16 GPU at 650 MHz: moved to plan priority 4 on 2026-10-31 (38 swaps/s against 34 on the full canvas before dead fill, clean for ~1 min only; the daily soak covers it). 800 MHz fails bring-up (me_init timeout).
 - Camera far focus: the user (2026-10-30): can't focus on far things. Lens range 400..725 is inferred; infinity is probably below code 400 (the board at 10 cm peaked at the 725 end). Next: read the per-unit AF calibration from the OIS flash (research/notes/camera-af.md) or widen the range in small steps and sweep on a far scene.

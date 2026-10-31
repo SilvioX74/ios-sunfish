@@ -43,7 +43,9 @@ if [ "${NOSERIAL:-0}" = 1 ]; then
 	base=$(printf '%s\n' $base | grep -v -x -e 'serial=3' -e '-enable_kprintf_spam' | tr '\n' ' ')
 fi
 # Real time: PM6150 RTC + offset (tools/flame-rtc.py LOG calibrates it once).
-[ -f work/rtc-offset ] && base="$base sweetrtcoff=$(cat work/rtc-offset)"
+# Required: a boot with a 1970 clock leaves bad dates in PowerLog and CoreDuet, a full core each at idle (cpu.md 2026-10-31).
+[ -s work/rtc-offset ] || { echo "work/rtc-offset missing or empty: not booting (1970 clock damages phone databases)" >&2; exit 1; }
+base="$base sweetrtcoff=$(cat work/rtc-offset)"
 # Extra args replace defaults with the same key (XNU would take the first); on kernel125+ they also
 # override the compiled-in ones (the real command line wins; sweetnodefaults=1 drops those).
 for a in "$@"; do
@@ -52,7 +54,7 @@ for a in "$@"; do
 done
 cmdline=$(echo $base "$@")	# flamereboot=0 left out (the kernel default): the line is capped at 591 bytes (B38)
 if [ ${#cmdline} -ge 592 ]; then
-	echo "boot-args ${#cmdline} bytes, over 591 (mkpayload limit): drop an extra arg or move work/rtc-offset aside" >&2
+	echo "boot-args ${#cmdline} bytes, over 591 (mkpayload limit): drop an extra arg" >&2
 	exit 1
 fi
 echo "$cmdline" > "$P/$name.cmdline"
