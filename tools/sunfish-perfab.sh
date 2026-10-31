@@ -4,7 +4,7 @@
 # CONFIG is NAME=KERNEL[,bootarg...][,+ENVKEY=VAL...][,@BUNDLEDIR], e.g. base=135,sweetswapbig=6 noalloc=135,sweetswapbig=6,+M2V_FAST_ALLOC=0
 # KERNEL: NN (work/kernelNN/kernel.development.sweet) or a path. flamereboot=1800 sweettrace=1 are always added. A config
 # without + lines runs with an empty /var/local/mtl2-env; one without @ with the bundle that was on the phone at the start.
-# Results: work/perfab/TAG/results.tsv (a row per screen run, kept if the run is killed), one screenshot per boot.
+# Results: work/perfab/TAG/results.tsv (a row per screen run, kept if the run is killed), one screenshot per boot (Settings), one per screen on boot 1.
 # Env SETTLE: seconds between SSH up and the first screen (default 30). Exit: 0 done, 2 usage, 3 stopped early.
 # Env MAXSTART: each screen waits up to 3 min for the hottest CPU to read below this (default 75 C), then goes on and notes the temperature.
 # A window stops and is void at 95 C.
@@ -234,7 +234,9 @@ open_app() {	# bundle id; openapp returns once FrontBoard answered. rc 255 = SSH
 	return $rc
 }
 # flame-cmd --wait 0 returns while the swipe runs on the phone: every sleep is the swipe + 50 ms, so they never queue up.
-unlock() { C H; sleep 2; C H; sleep 1; }
+# H only wakes the screen; the bottom swipe unlocks, then goes home from whatever app unlocking returned to.
+go_home() { C swipe 540 2330 540 1100 300; sleep 1; }
+unlock() { C H; sleep 1; go_home; sleep 1; go_home; }
 UP=0
 long_swipes() {	# until SECONDS reaches $1
 	while more "$1"; do
