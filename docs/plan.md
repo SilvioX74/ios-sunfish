@@ -12,7 +12,7 @@ Targets (Claude's numbers, the user can change them):
 
 ## Test schedule
 - Normal test runs: 15 min at most. A/B comparisons: 5 boots per side once the bench tool exists.
-- One 1 h soak per day, overnight; results in [gpu-bugs.md](gpu-bugs.md).
+- One 1 h soak per night, after `work/night` is set (9:30 pm or when the user says); results in [gpu-bugs.md](gpu-bugs.md).
 - A run with a hang, a backboardd restart, the panel off or 0 swaps is void.
 - Stop rule: a gain under 1 ms counts only if a 5-boot A/B confirms it.
 

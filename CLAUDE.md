@@ -113,7 +113,8 @@ This file is the one home for the project's rules (AGENTS.md and the memory note
   stacks on the iOS brightness and the webcam can't see the screen (`sunfish-dim.sh 100` clears a leftover dim).
   No fake-lux tests (`m fake als`) at night; once the backlight nits range is in (auto-brightness live), turn
   Auto-Brightness off with `/var/local/bin/autobright 0` when setting the flag and back on (`1`) when removing it.
-  Remove the flag when the user is up.
+  The running session sets the flag at 9:30 pm, or earlier if the user says so; the morning session removes it, or
+  any session does once the user says they are up.
 - **Quiet hours** (the user, 2026-10-30): no speaker tests (sound from the phone) between 9:30 pm and 5:00 am EST;
   the USB measurement mic (EM-01) is fine to use outside those hours.
 - **Upstream check** (the user, 2026-10-30): related ports (ios-redfin, iOSPlus10, UniXNU, metal2vulkan, hakios-*, ...)
@@ -132,8 +133,16 @@ This file is the one home for the project's rules (AGENTS.md and the memory note
   - Don't use `general-purpose` when an agent below fits: it starts at ~67K tokens and averaged 2.5M per run.
 - **Main session (Opus):** picks the next step from `docs/plan.md`, writes precise specs, judges results, updates the
   docs and plan.
-- **Sessions:** start a fresh session per day, per big milestone or at about 300K tokens of context, whichever comes
-  first (the main session is the biggest token cost: one ran 36 h at a median of 507K); `docs/plan.md` and today's journal are the hand-off.
+- **Sessions:** the user restarts the /loop session each morning and evening (2026-10-31); `docs/plan.md` and today's
+  journal are the hand-off. The main session is the biggest token cost (one ran 36 h at a median of 507K), so keep its
+  turns short and delegate.
+- **Start of a /loop session** (the user, 2026-10-31), before touching the phone:
+  - Check that no other session is working the phone: list running sessions and leftover test scripts
+    (`ps -eo pid,ppid,args | grep -E 'scratchpad|sunfish-'`). Keep `sunfish-livelog`.
+  - If another session is still active, stay off the phone, push-notify the user and work on what doesn't need it.
+  - Otherwise, kill leftover test scripts, parent first.
+- **Overnight soak** (the user, 2026-10-31): run one 1 h soak per night, after `work/night` is set, as a phone-runner
+  job. Add the results to `docs/gpu-bugs.md`.
 - **Agents in `.claude/agents/`:**
   - `phone-runner` (sonnet, medium effort): boots, benches, webcam, log slicing; checks itself and Reads a webcam frame after every boot and visible change. It is the only agent that touches the phone.
   - `builder` (haiku): commit/export patches, push, local builds, install.
