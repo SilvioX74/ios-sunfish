@@ -37,7 +37,7 @@ Parked for the speed focus (the user, 2026-10-31): speaker volume (B16), garbled
 Finished items: [completed.md](completed.md) (not auto-loaded).
 
 ## Questions for you (Claude took the recommended path meanwhile)
-- (none open)
+- PowerLog and CoreDuet databases on the phone were moved aside (not deleted) to /var/local/idlefix-db, to stop the idle CPU burn; `tools/sunfish-idlefix-db.sh --undo` restores them. Battery usage history and app suggestions start fresh. OK to delete them later? (Kept for now.)
 
 ## Your tasks at the phone
 In [user-tasks.md](user-tasks.md) (not auto-loaded): 10 open. Claude doesn't wait on them; it moves to the next item.
