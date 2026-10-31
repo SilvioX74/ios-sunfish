@@ -6,6 +6,8 @@
 # metal2vulkan trees are reset and re-patched only when a patch file changes. Build trees in work/metal2-linux/build.
 # Needs clang, ld64.lld, llvm-ar/strip/nm/as, dsymutil, ldid, meson deps (python3, ninja, bison, flex),
 # glslangValidator, ~/.cargo/bin/cargo with toolchain 1.98.0 + target aarch64-apple-ios; SDK: $IOS_SDK (tools/linux-ios-cc).
+# PHONE_CPU=cortex-a76: compile for that CPU instead of the target's default (apple-a7). Build and out dirs move to
+# work/metal2-a76/, so the default objects and bundle stay as they are; clones, venv and wrappers are shared.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 W=$ROOT/work/metal2-linux
@@ -19,6 +21,11 @@ J=${J:-8}
 CARGO=${CARGO:-$HOME/.cargo/bin/cargo}
 SIGN=$ROOT/tools/linux-ios-sign
 SRC=$W/src B=$W/build OUT=$W/out
+PHONE_CPU=${PHONE_CPU:-} CPUFLAG=()
+if [ -n "$PHONE_CPU" ]; then
+	CPUFLAG=("-mcpu=$PHONE_CPU")
+	B=$ROOT/work/metal2-${PHONE_CPU#cortex-}/build OUT=$ROOT/work/metal2-${PHONE_CPU#cortex-}/out
+fi
 mkdir -p "$SRC" "$B" "$W/bin"
 rm -rf "$OUT"; mkdir -p "$OUT/phone/metal2/out" "$OUT/phone/turnip/out" "$OUT/work/turnip" "$OUT/work/m2v-bridge"
 
@@ -51,6 +58,7 @@ echo "== Turnip"
 T=$B/turnip
 mkdir -p "$T"
 flags="'-target', 'arm64-apple-ios16.0', '-isysroot', '$SDK', '-fstack-protector-strong'"
+[ -z "$PHONE_CPU" ] || flags+=", '-mcpu=$PHONE_CPU'"
 cat > "$T/ios16.cross" <<EOF
 [binaries]
 c = '$W/bin/ios-cc'
@@ -133,6 +141,8 @@ debug = 1
 lto = "$LTO"
 codegen-units = $CGU
 EOF
+# Bridge crates only: --target keeps build scripts on the host's flags. The sha2 asm is hand-written, so no CFLAGS.
+[ -z "$PHONE_CPU" ] || export CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS="-C target-cpu=$PHONE_CPU"
 # cc-rs (sha2 asm) and the linker: clang for iOS instead of xcrun
 NMB_FIXTURE_AIR=$M/runtime_examples.air NMB_FC_AIR=$M/function_constant.air IPHONEOS_DEPLOYMENT_TARGET=16.0 \
 	SDKROOT=$SDK CC_aarch64_apple_ios=$CC CXX_aarch64_apple_ios=$W/bin/ios-c++ AR_aarch64_apple_ios=llvm-ar \
@@ -147,7 +157,7 @@ P=$ROOT/phone/metal2
 MO=$OUT/phone/metal2/out
 BU=$MO/SweetMetal2.bundle
 mkdir -p "$BU"
-"$W/bin/ios-c++" -x objective-c++ -std=c++17 -fobjc-arc -O2 -g -Wall -Wno-deprecated-declarations -Wno-unused-function -bundle \
+"$W/bin/ios-c++" "${CPUFLAG[@]}" -x objective-c++ -std=c++17 -fobjc-arc -O2 -g -Wall -Wno-deprecated-declarations -Wno-unused-function -bundle \
 	-o "$BU/SweetMetal2" "$P/SweetMetal2.mm" "$P/NativeBridgeMetalFrontend.mm" -x none "$BRIDGE" -Wl,-dead_strip -lc++ \
 	-framework Foundation -framework Metal -framework IOSurface -framework IOKit -framework CoreFoundation 2>&1 |
 	grep -v "was built for newer 'iOS' version" || true
@@ -160,7 +170,7 @@ cp "$TURNIP" "$BU/libvulkan_freedreno.dylib"
 llvm-strip -x "$BU/libvulkan_freedreno.dylib"
 "$SIGN" "$BU/libvulkan_freedreno.dylib"
 "$SIGN" "$BU"	# ldid signs the main executable and writes _CodeSignature/CodeResources
-"$CC" -O2 -Wall -o "$MO/m2vtest" "$P/m2vtest.c" "$BRIDGE" -Wl,-dead_strip 2>&1 | grep -v "was built for newer" || true
+"$CC" "${CPUFLAG[@]}" -O2 -Wall -o "$MO/m2vtest" "$P/m2vtest.c" "$BRIDGE" -Wl,-dead_strip 2>&1 | grep -v "was built for newer" || true
 llvm-strip -x "$MO/m2vtest" && "$SIGN" "$MO/m2vtest"
 llvm-nm -m "$BU/SweetMetal2" | grep "weak external" | grep -v "dynamically looked up" || true
 cp "$TURNIP" "$MO/"
@@ -173,10 +183,10 @@ for s in fill.comp:fill_comp tri.vert:tri_vert tri.frag:tri_frag; do
 	glslangValidator -V --target-env vulkan1.2 --vn "${s#*:}" -o "$TO/${s#*:}.h" "$TP/shaders/${s%%:*}" >/dev/null
 	cat "$TO/${s#*:}.h" >> "$TO/shaders.h"
 done
-"$CC" -O2 -Wall -I "$TO" -I "$SRC/mesa/include" -o "$TO/vktest" "$TP/vktest.c"
+"$CC" "${CPUFLAG[@]}" -O2 -Wall -I "$TO" -I "$SRC/mesa/include" -o "$TO/vktest" "$TP/vktest.c"
 "$SIGN" "$TO/vktest"
 cp "$TURNIP" "$TO/"
 "$SIGN" "$TO/libvulkan_freedreno.dylib"
-"$W/bin/ios-c++" -x c++ -std=c++17 -O2 -I "$TP" -o "$TO/v2test" "$TP/v2test.cpp" -lc++ -framework IOKit -framework CoreFoundation || true
+"$W/bin/ios-c++" "${CPUFLAG[@]}" -x c++ -std=c++17 -O2 -I "$TP" -o "$TO/v2test" "$TP/v2test.cpp" -lc++ -framework IOKit -framework CoreFoundation || true
 [ -f "$TO/v2test" ] && "$SIGN" "$TO/v2test" || true
 ls -la "$BU" "$MO" "$TO"
