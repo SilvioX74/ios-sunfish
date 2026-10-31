@@ -44,3 +44,4 @@ Done 2026-10-30: VIBRATION MOTOR BUZZES (hp2), camera opens fixed (2ed9d22), dai
 - B20 Screen rotation: [DONE 2026-10-30] auto-rotate from the accelerometer.
 - O8 [DONE 2026-10-30] Camera ISP speed: whole-frame renders in row bands, camisp 84.8 -> 10.6 ms binned, 372 -> 47 ms full (identical output; the live preview was already parallel).
 - O4 [DONE 2026-10-29] lskdd respawn cost: dropped.
+- 2026-10-31 A/B bench tool `tools/sunfish-perfab.sh`: boots configs in turn, fixed screens, one table, void rules, temperature and A76 MHz columns; 5 boots a side on 4 screens takes about 37 min (cpu1).

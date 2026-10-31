@@ -95,6 +95,20 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-10-31 19:55 cpu1: bundle built for Cortex-A76: no gain; Home 27, Control Center 22 swaps/s; heat throttles Settings
+- `tools/sunfish-perfab.sh cpu1 5 --secs 15 --screens settings,safari,cc,home`, kernel137 sweetswapbig=6 sweetse9=2 sweetcampmic=2 sweetampreset=1, sweettrace=1, idle fixes in, 10 boots, 4455-4456 mV. 100 k submits, 0 G1, 0 G2, 0 G4, 2 void (too hot, 95 C). Window means, default then A76 build:
+
+| screen | swaps/s (min-max) | frame ms | p95 ms | GPU % | 1st submit ms | start / max C | A76 min MHz |
+|---|---|---|---|---|---|---|---|
+| Settings | 52.8 (50.5-55.2) / 51.0 (47.0-53.8) | 18.9 / 19.6 | 28.0 / 29.8 | 80 / 80 | 12.4 / 12.5 | 88 91 / 90 94 | 2052 / 2016 |
+| Safari | 55.0 (53.3-57.3) / 54.8 (53.7-56.6) | 18.2 / 18.3 | 18.4 / 18.5 | 71 / 68 | 9.6 / 8.9 | 90 91 / 90 91 | 2208 / 2208 |
+| Control Center | 21.9 (21.2-22.4) / 22.1 (21.3-22.5) | 45.7 / 45.3 | 97.2 / 91.0 | 98 / 98 | 41.2 / 41.0 | 86 88 / 87 88 | 2208 / 2208 |
+| Home | 26.8 (26.0-27.1) / 27.0 (26.9-27.1) | 37.3 / 37.0 | 41.0 / 41.2 | 100 / 100 | 35.7 / 35.7 | 84 86 / 84 86 | 2208 / 2208 |
+
+- Observed: every screen within noise, under 1 ms, 5 boots a side: no gain (9368 LSE atomics, A76 tuning). Default build stays; `PHONE_CPU=cortex-a76` stays in the build script, off.
+- Observed: the hottest sensor goes from 71-74 C to 84-90 C in the ~5 s lead-in. Settings runs at 91-95 C and the A76 falls as low as 1800 MHz inside a 15-s window, without a cap. Per-boot Settings swaps/s tracks it only loosely (b5 base 55.2 at 1800 min). Home and Control Center are GPU-bound (98-100 %).
+- Tool's startC is taken after the lead-in, so it's not the temperature at the end of the cool wait.
+
 ### 2026-10-31 16:45 Speed plan (the user's choice; no phone run)
 - Targets, test schedule and priorities in plan.md. Evidence for the bench tool: boots with one bundle averaged 53 and 58 swaps/s (al1 A1, A2); hand-run scripts voided runs (f1/f2, the panel-off A/B). Older entries moved to the archive: [archive/features/smoothness.md](../archive/features/smoothness.md).
 

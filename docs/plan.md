@@ -18,11 +18,10 @@ Targets (Claude's numbers, the user can change them):
 
 ## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each)
 Only items Claude can move now. Items waiting on the user are in "Waiting on you" below; parked ones in docs/backlog.md.
-1. ▶ **A/B bench tool** (dev speed, ~1 h): `tools/sunfish-perfab.sh`: boots each config N times, runs fixed screens (Settings, Home, Control Center, app open, Safari), prints one table, marks void runs, updates the counts in gpu-bugs.md. Boots with one bundle averaged 53 and 58 swaps/s, so 2 boots per side is too few. (smoothness.md)
-2. **Heat and real clocks**: temperature and clock log done (xnu 0255, kernel136). Measured: idle 66-72 C, scrolling 95 C in 3.5 min; above ~94 C the chip cuts the A76 from 2208 to ~1974 MHz and swaps/s falls 10 %, so heat costs speed. Next: idle CPU load (A55 50-70 % busy with nothing running), `flamecpufreq=1200` idle A/B, low speed with the screen off (xnu 0242 flag), DDR vote. Keep 15-s benches below 75 C start. (cpu.md)
-3. **CPU cost per frame** (about 14 ms): build bridge and Mesa for the phone's CPU (the bridge sets no target-cpu; untested), redfin 0130-0137, unchanged-draw fast path, cache flush off the render thread, app and CA threads on the A76s (backlog O9, O11). (smoothness.md)
-4. **GPU cost per frame** (Settings about 13 ms; Home 36 ms and 27 swaps/s, Control Center 41 ms and 22 swaps/s: these two first; research/notes/home-cc-gpu-2026-10-31.md): A/B `+SWEET_DEADFILL=2` on Home, trace Home and Control Center, then skip the full-target layers; re-measure the 5 draws that were 52 % of draw time (trace before dead fill); 650 MHz (O16, +11 % earlier; 800 fails); retest `sweetddr=1` (last tried Oct 24 on the old present path); fill as a clear (mode 2) only if clean. (smoothness.md)
-5. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30, before the recent fixes); time app opens and the keyboard. Then the screen-on CPU governor (redfin 0963, touch and animation at full speed), kept only if the A/B shows no speed loss. (smoothness.md, cpu.md)
+1. ▶ **Heat**: idle fixed (58 C after 8 min; aggregated and coreduetd data moved aside). Heat still caps speed: Settings hits 90+ C within 5 s of swiping and the A76 falls to 1800-2100 MHz in a 15-s window. Next: `sweetdarkclk=1` test (kernel138), then lower-power clocks under load (A55 row, DDR vote) A/B. (cpu.md)
+2. **CPU cost per frame** (about 14 ms): phone-CPU build tried, no gain (cpu1); redfin 0130-0137, unchanged-draw fast path, cache flush off the render thread, app and CA threads on the A76s (backlog O9, O11). (smoothness.md)
+3. ▶ **GPU cost per frame** (Settings about 13 ms; Home 36 ms and 27 swaps/s, Control Center 41 ms and 22 swaps/s: these two first; research/notes/home-cc-gpu-2026-10-31.md): A/B `+SWEET_DEADFILL=2` on Home, trace Home and Control Center, then skip the full-target layers; re-measure the 5 draws that were 52 % of draw time (trace before dead fill); 650 MHz (O16, +11 % earlier; 800 fails); retest `sweetddr=1` (last tried Oct 24 on the old present path); fill as a clear (mode 2) only if clean. (smoothness.md)
+4. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30, before the recent fixes); time app opens and the keyboard. Then the screen-on CPU governor (redfin 0963, touch and animation at full speed), kept only if the A/B shows no speed loss. (smoothness.md, cpu.md)
 
 After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.
 
@@ -43,7 +42,7 @@ Finished items: [completed.md](completed.md) (not auto-loaded).
 In [user-tasks.md](user-tasks.md) (not auto-loaded): 10 open. Claude doesn't wait on them; it moves to the next item.
 
 ## Dev speed (on top of the priority list when found; ~1 h max each)
-- A/B bench tool: priority 1.
+- (none)
 
 ## Backlog
 The Broken, Later and Optimize lists are in [backlog.md](backlog.md) (not auto-loaded).
