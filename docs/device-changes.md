@@ -97,3 +97,4 @@ output in /var/local.
 - 2026-10-31 sensors job wrapper with speaker.on handling + SunfishAudio.driver with FIFO sink: tools/sunfish-install-sensors.sh, tools/sunfish-install-audio.sh. speaker.on absent = sensors only.
 - 2026-10-31 /var/local/speaker.on = -20 (speaker on through the sensors job; delete for sensors only), adspboot with sp25. Reproduce: tools/sunfish-install-sensors.sh, tools/sunfish-install-audio.sh, tools/build-userland-linux.sh + flame-files.py put, then echo -20 > /var/local/speaker.on; boot with sweetampreset=1.
 - 2026-10-31 Metal bundle with the bridge allocator installed: tools/build-metal2-linux.sh + tools/sunfish-metal2-install.sh.
+- 2026-10-31 launchd: com.apple.aggregated and com.apple.coreduetd to be dropped for idle heat, backup launchd.plist.pre-idlefix (written, not installed yet): tools/sunfish-install-idlefix.sh (`--undo`).
