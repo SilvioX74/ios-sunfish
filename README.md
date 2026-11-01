@@ -32,7 +32,7 @@ plan is [docs/plan.md](docs/plan.md).
 | [USB network](docs/features/usb-network.md) | ✅ | Ethernet 192.168.7.2, live kernel log; boot to SSH 16-18 s |
 | [SSH](docs/features/ssh.md) | ✅ | dropbear + dash + toybox; boot to SSH 16-18 s |
 | [Display](docs/features/display.md) | ✅ | 1080x2340, GPU-composited (Metal → Turnip), vsync-paced; apps rotate to landscape and back on command (`R 3`/`R 1`), touch follows; auto-rotate waits for sensors |
-| [Smoothness](docs/features/smoothness.md) | 🟡 | Settings about 50, Home 49, Control Center 33 swaps/s, full resolution, env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_CULL=2 + tools/sunfish-install-ccscale.sh (2026-11-01, kernel139, not default yet); target 60 |
+| [Smoothness](docs/features/smoothness.md) | 🟡 | Home 52, Control Center 37, Settings 50-56 swaps/s, full resolution, env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_CULL=2 + tools/sunfish-install-ccscale.sh (2026-11-01, kernel139, not default yet); target 60 |
 | [Haptics](docs/features/haptics.md) | ✅ | iOS haptics work: switch taps pulse the motor (DRV2624 via hapticd, launchd job, `HAPTICS=1` boot); feel check by the user open |
 | [Brightness](docs/features/brightness.md) | ✅ | Control Center slider drives the panel brightness (DCS 0x51, `sweetbl=2`) |
 | [GPU](docs/features/gpu.md) | 🟡 | Adreno 618 at 565 MHz; SMMU-fault hangs recover (~28 ms); no-fault hangs need a reboot (0 of 8 recovered, kernel134) |
