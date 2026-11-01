@@ -31,6 +31,8 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-01 | d3 | df2=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+M2V_SHADOW_CACHE=1,@work/metal2-shadow/out/phone/metal2/out,+SWEET_DEADFILL=2; df3=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+M2V_SHADOW_CACHE=1,@work/metal2-shadow/out/phone/metal2/out,+SWEET_DEADFILL=3 | 6 | 49 k | 0 | 0 | 0 | 0 |
+| 2026-11-01 | dw1 | dw=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=2,+M2V_SHADOW_CACHE=1,+SWEET_DFWHY=1 | 1 | 4 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | nd1 | nd=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=2,+M2V_SHADOW_CACHE=1 | 3 | 11 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | mf2 | fl1=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=2,+M2V_SHADOW_CACHE=1; fl0=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=2,+M2V_SHADOW_CACHE=1,sweetmapflush=0 | 6 | 49 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | mf1 | m0=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=4,sweetmapflush=0,+SWEET_DEADFILL=2,+M2V_SHADOW_CACHE=1 | 8 | 35 k | 0 | 0 | 0 | 0 |

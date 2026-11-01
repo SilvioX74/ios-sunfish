@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 02:10 d3: SWEET_DEADFILL=3 on Home: 32.0 -> 43.8 swaps/s, Settings lost mode 2's clear
+- `tools/sunfish-perfab.sh d3 3 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, M2V_SHADOW_CACHE=1, minimum brightness, 6 boots, 49 k submits, 0 G1, 0 G2, 0 G4, 0 void. Mode 2 then 3: Home 32.0 (29.2-33.5) / 43.8 (43.1-44.2), frame 31.2 / 22.8 ms, 1st submit 28.5 / 21.2; Control Center 26.5 / 27.0, 1st 27.9 / 30.5; Settings 50.8 / 46.3, 1st 8.1 / 12.3.
+- Mode 3 dropped fills covered by the next same-setup fill, but not the clear path of mode 2: Settings fell back to mode 1's cost. Being rebuilt as a superset. Stale strips not checked yet.
+
 ### 2026-11-01 01:30 nd1: Home and Control Center slower at minimum brightness? (mf1, mf2, nd1)
 - Same bundle and env, kernel139, sweetrowa55=6. DCS 128 at boot (rows2, sy1): Home 38.6 and 36.5 swaps/s, 1st submit 24.8 ms; Control Center 28.8 and 29.3. DCS 36 at boot, slider at minimum since mf1 (mf1, mf2, nd1): Home 31.6 (27.5-33.7), 31.6, 30.6 (25.8-33.5), 1st submit 28.2-28.9 ms; Control Center 25.8, 26.2; Settings GPU 88 % against 56-62 %. nd1 skipped the dim step (no Control Center before the bench) and stayed slow, so the step isn't the cause.
 - Guess: at low brightness iOS adds a full-screen colour step, about 4 ms of GPU per frame. Not tested: a bright A/B is against the night rule, so it's for the morning. Until then compare runs only within one brightness. Night benches understate speed.
