@@ -1,5 +1,5 @@
 # Smoothness
-**State:** 🟡 50-58 swaps/s in steady Settings scrolling at full canvas (2026-10-31; ~21 on Oct 30): dead fill mode 1, render thread bound to an A76, LTO, bridge allocator; 60 not reached. **Updated:** 2026-10-31.
+**State:** 🟡 Settings 56 swaps/s, p95 20.5 ms, Home 38, Control Center 29 at full canvas with env SWEET_DEADFILL=2 M2V_SHADOW_CACHE=1 (2026-10-31; not default yet); 60 not reached. **Updated:** 2026-10-31.
 
 ## How to use
 - Bench: `tools/sunfish-fpsbench.sh TAG SECONDS` (BENCH_TIGHT=1); config matrix `tools/sunfish-cfgbench.sh`; timeline `sweettrace=1` + `tools/sunfish-timeline.py`. Details in [methods.md](../methods.md).
@@ -94,6 +94,18 @@ Kernels:
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-10-31 22:15 sh1: shadow copy cache: Home 25.7 -> 38.3 swaps/s, Control Center 23.3 -> 28.7, Settings 56.1 with p95 20.5
+- `tools/sunfish-perfab.sh sh1 3 --secs 15 --screens home,cc,settings`, kernel139 sweetswapbig=6 sweetse9=2 sweetcampmic=2 sweetampreset=1 SWEET_DEADFILL=2, bundle with bridge 0116, sweettrace=1, 9 boots, 4454 mV, 78 k submits, 0 G1, 0 G2, 0 G4, 0 void. M2V_SHADOW_CACHE 0 / 1 / 2 (2 = never recopy, ceiling):
+
+| screen | swaps/s (min-max), 0 / 1 / 2 | frame ms | p95 ms | >100 ms gaps per run | 1st submit ms |
+|---|---|---|---|---|---|
+| Home | 25.7 (24.2-26.6) / 38.3 (37.8-38.6) / 38.1 | 38.9 / 26.1 / 26.3 | 64.6 / 45.8 / 49.4 | 1.7 / 0.3 / 0.3 | 37.2 / 24.8 / 24.8 |
+| Control Center | 23.3 (22.7-24.1) / 28.7 (28.5-29.1) / 28.3 | 42.9 / 34.8 / 35.3 | 88.2 / 60.1 / 59.1 | 20.3 / 1.7 / 0.7 | 37.6 / 28.7 / 28.6 |
+| Settings | 53.3 (46.7-56.7) / 56.1 (55.9-56.4) / 55.0 | 18.8 / 17.8 / 18.2 | 23.6 / 20.5 / 25.9 | 0 / 0 / 0.7 | 8.7 / 7.9 / 8.0 |
+
+- Observed: mode 1 reaches the mode 2 ceiling; hash cost small (`SHADOW: 5s copies 0 skipped 891 hashed 13486 KB, hash 5852 us`). 3 boots a side, gains far over the 1 ms stop rule. Still GPU-bound on Home and Control Center (93-99 %).
+- Not checked: stale content in mode 1. Default stays off until a survey.
 
 ### 2026-10-31 21:15 sv2, sv3, gh1: mode 2 survey; doubling mostly camera; traces void
 - sv2, kernel139 SWEET_DEADFILL=2, boot 20261031-205524, research/df5: lock, Home x2, Today, Control Center, Settings x2, Calculator, Notes, Clock, Mail, Reminders, Calendar, Files fine. Maps: horizontal slice tears on the blue dot and a button, first try one torn frame. Photos: black gaps (B44). Safari: black tab thumbnail, not conclusive. 0 hangs, 0 restarts.
