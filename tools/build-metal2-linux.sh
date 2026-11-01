@@ -8,6 +8,8 @@
 # glslangValidator, ~/.cargo/bin/cargo with toolchain 1.98.0 + target aarch64-apple-ios; SDK: $IOS_SDK (tools/linux-ios-cc).
 # PHONE_CPU=cortex-a76: compile for that CPU instead of the target's default (apple-a7). Build and out dirs move to
 # work/metal2-a76/, so the default objects and bundle stay as they are; clones, venv and wrappers are shared.
+# METAL2_VARIANT=NAME: build and out dirs in work/metal2-NAME/ (over PHONE_CPU's), for a side build the default bundle
+# must survive. Clones are still shared: a new patch file re-patches them for every later build.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 W=$ROOT/work/metal2-linux
@@ -25,6 +27,9 @@ PHONE_CPU=${PHONE_CPU:-} CPUFLAG=()
 if [ -n "$PHONE_CPU" ]; then
 	CPUFLAG=("-mcpu=$PHONE_CPU")
 	B=$ROOT/work/metal2-${PHONE_CPU#cortex-}/build OUT=$ROOT/work/metal2-${PHONE_CPU#cortex-}/out
+fi
+if [ -n "${METAL2_VARIANT:-}" ]; then
+	B=$ROOT/work/metal2-$METAL2_VARIANT/build OUT=$ROOT/work/metal2-$METAL2_VARIANT/out
 fi
 mkdir -p "$SRC" "$B" "$W/bin"
 rm -rf "$OUT"; mkdir -p "$OUT/phone/metal2/out" "$OUT/phone/turnip/out" "$OUT/work/turnip" "$OUT/work/m2v-bridge"

@@ -810,6 +810,22 @@ static int deadfillMode() {
  return mode;
 }
 static std::atomic<uint64_t> gDfDropped,gDfCleared,gDfPasses;
+// sweet dfwhy (SWEET_DFWHY=1): why fills weren't dropped: per 5 s, how many draws each test of dfNote turned away, and of the fills it found, why dfResolve
+// kept them (next: the next surviving draw is no fill; pipe, bind: another fill; last: none follows; nocull: the pass doesn't cull). Counts only. Off: unset.
+enum {DFW_NOPIPE,DFW_DSS,DFW_VIS,DFW_INST,DFW_PRIM,DFW_LABEL,DFW_OPAQUE,DFW_MSAA,DFW_BLEND,DFW_CULL,DFW_VFMT,DFW_VP,DFW_SC,DFW_DATA,DFW_INDEX,DFW_RANGE,DFW_W,DFW_COL,DFW_ALPHA,DFW_NOTFULL,DFW_CORNER,DFW_TRIS,DFW_NEXT,DFW_PIPE,DFW_BIND,DFW_LAST,DFW_NOCULL,DFW_N};
+static const char *const gDfWhyName[DFW_N]={"nopipe","dss","vis","inst","prim","label","opaque","msaa","blend","cull","vfmt","vp","sc","data","index","range","w","col","alpha","notfull","corner","tris","next","pipe","bind","last","nocull"};
+static std::atomic<uint64_t> gDfWhy[DFW_N];
+static bool dfWhyOn() {static const bool on=[]{const char *p=getenv("SWEET_DFWHY");return p&&atoi(p)!=0;}();return on;}
+static void dfWhy(int why) {if(dfWhyOn())gDfWhy[why]++;}
+static void dfWhyLog() {
+ if(!dfWhyOn())return;
+ static std::atomic<uint64_t> last{0},lastDrop{0};const uint64_t now=nowUs();uint64_t was=last.load();
+ if(now-was<5000000||!last.compare_exchange_strong(was,now))return;
+ const uint64_t dr=gDfDropped.load();char t[640];int n=snprintf(t,sizeof t,"SWEET DFWHY: 5s dropped %llu |",(unsigned long long)(dr-lastDrop.exchange(dr)));
+ for(int i=0;i<DFW_N&&n<(int)sizeof t-32;i++)if(const uint64_t c=gDfWhy[i].exchange(0))n+=snprintf(t+n,sizeof t-n," %s %llu",gDfWhyName[i],(unsigned long long)c);
+ sm2_logs(t);
+}
+#define DFRET(why) do{dfWhy(why);return;}while(0)
 struct CullEntry {bool fill=false,clearOK=false;float col[4]={};uint64_t bind=0;__unsafe_unretained NBRenderPipeline *fpipe=nil;   // sweet deadfill
  void (^blk)(void)=nil;bool draw=false,covering=false;unsigned writes=0xff,over=0;long cx0=0,cy0=0,cx1=0,cy1=0;NSString *label=nil;};   // c*: the draw's clip (scissor within the target)   // writes: targets the draw may change; over: targets a covering draw overwrites
 @interface NBRenderEncoder : NBEncoder
@@ -922,48 +938,55 @@ struct CullEntry {bool fill=false,clearOK=false;float col[4]={};uint64_t bind=0;
 - (void)dfNote:(MTLPrimitiveType)prim start:(NSUInteger)start count:(NSUInteger)count inst:(NSUInteger)inst indexBuffer:(NBBuffer *)ib type:(MTLIndexType)itype
         offset:(NSUInteger)ioff base:(NSInteger)base {
  NBRenderPipeline *p=_pipe;CullEntry &e=_ops.back();
- if(!p||_dfDss||_cvis||inst!=1||!(prim==MTLPrimitiveTypeTriangle?count==6:prim==MTLPrimitiveTypeTriangleStrip&&count==4))return;
- if(![p.label isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_A2Xhf"]||!(p.opaqueMask&1)||p.dfSamples>1||p.dfA2C)return;
- if(p.writtenMask&~p.opaqueMask)return;   // a blended or partly masked colour attachment isn't overwritten by the next fill
+ dfWhyLog();
+ if(!p)DFRET(DFW_NOPIPE);
+ if(_dfDss)DFRET(DFW_DSS);
+ if(_cvis)DFRET(DFW_VIS);
+ if(inst!=1)DFRET(DFW_INST);
+ if(!(prim==MTLPrimitiveTypeTriangle?count==6:prim==MTLPrimitiveTypeTriangleStrip&&count==4))DFRET(DFW_PRIM);
+ if(![p.label isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_A2Xhf"])DFRET(DFW_LABEL);
+ if(!(p.opaqueMask&1))DFRET(DFW_OPAQUE);
+ if(p.dfSamples>1||p.dfA2C)DFRET(DFW_MSAA);
+ if(p.writtenMask&~p.opaqueMask)DFRET(DFW_BLEND);   // a blended or partly masked colour attachment isn't overwritten by the next fill
  NSNumber *cm=objc_getAssociatedObject(self,"cull"),*fm=objc_getAssociatedObject(self,"fill");
- if(cm.unsignedLongLongValue!=MTLCullModeNone||fm.unsignedLongLongValue!=MTLTriangleFillModeFill)return;   // every pixel, once
- if((p.dfPosFmt!=MTLVertexFormatFloat4&&p.dfPosFmt!=MTLVertexFormatFloat2)||!p.dfColFmt)return;
- if(_vpSet&&(_cvp[0]!=0||_cvp[1]!=0||_cvp[2]!=_tw||_cvp[3]!=_th))return;
- if(_scSet&&(_csc[0]!=0||_csc[1]!=0||_csc[2]!=_tw||_csc[3]!=_th))return;
- size_t len=0;const uint8_t *src=[self dfData:p.dfPosBuf length:&len];if(!src)return;
+ if(cm.unsignedLongLongValue!=MTLCullModeNone||fm.unsignedLongLongValue!=MTLTriangleFillModeFill)DFRET(DFW_CULL);   // every pixel, once
+ if((p.dfPosFmt!=MTLVertexFormatFloat4&&p.dfPosFmt!=MTLVertexFormatFloat2)||!p.dfColFmt)DFRET(DFW_VFMT);
+ if(_vpSet&&(_cvp[0]!=0||_cvp[1]!=0||_cvp[2]!=_tw||_cvp[3]!=_th))DFRET(DFW_VP);
+ if(_scSet&&(_csc[0]!=0||_csc[1]!=0||_csc[2]!=_tw||_csc[3]!=_th))DFRET(DFW_SC);
+ size_t len=0;const uint8_t *src=[self dfData:p.dfPosBuf length:&len];if(!src)DFRET(DFW_DATA);
  const uint8_t *ix=nullptr;size_t ilen=0;
- if(ib){if(ib.storageMode!=MTLStorageModeShared||!ib.contents||ioff>=ib.length)return;ix=(const uint8_t *)ib.contents+ioff;ilen=ib.length-ioff;}
+ if(ib){if(ib.storageMode!=MTLStorageModeShared||!ib.contents||ioff>=ib.length)DFRET(DFW_INDEX);ix=(const uint8_t *)ib.contents+ioff;ilen=ib.length-ioff;}
  const unsigned comps=p.dfPosFmt==MTLVertexFormatFloat4?4:2,stride=p.dfStride?p.dfStride:comps*4;
  float x0=1e30f,y0=1e30f,x1=-1e30f,y1=-1e30f,c0[4]={};float vx[6],vy[6],vz[6];
  for(unsigned k=0;k<count;k++) {
   int64_t v;
-  if(ib){if(itype==MTLIndexTypeUInt16){if((k+1)*2>ilen)return;uint16_t t;memcpy(&t,ix+k*2,2);v=t;}else{if((k+1)*4>ilen)return;uint32_t t;memcpy(&t,ix+k*4,4);v=t;}v+=base;}
+  if(ib){if(itype==MTLIndexTypeUInt16){if((k+1)*2>ilen)DFRET(DFW_INDEX);uint16_t t;memcpy(&t,ix+k*2,2);v=t;}else{if((k+1)*4>ilen)DFRET(DFW_INDEX);uint32_t t;memcpy(&t,ix+k*4,4);v=t;}v+=base;}
   else v=(int64_t)start+k;
-  if(v<0)return;
-  const size_t o=(size_t)v*stride+p.dfPosOff;if(o+comps*4>len)return;
+  if(v<0)DFRET(DFW_RANGE);
+  const size_t o=(size_t)v*stride+p.dfPosOff;if(o+comps*4>len)DFRET(DFW_RANGE);
   float q[4]={0,0,0,1};memcpy(q,src+o,comps*4);
-  if(q[3]!=1)return;
+  if(q[3]!=1)DFRET(DFW_W);
   vx[k]=q[0];vy[k]=q[1];vz[k]=q[2];
   x0=std::min(x0,q[0]);x1=std::max(x1,q[0]);y0=std::min(y0,q[1]);y1=std::max(y1,q[1]);
   const size_t co=(size_t)v*stride+p.dfColOff;float c[4];
-  if(p.dfColFmt==MTLVertexFormatHalf4){if(co+8>len)return;__fp16 h[4];memcpy(h,src+co,8);for(int i=0;i<4;i++)c[i]=(float)h[i];}
-  else if(p.dfColFmt==MTLVertexFormatFloat4){if(co+16>len)return;memcpy(c,src+co,16);}
-  else{if(co+4>len)return;for(int i=0;i<4;i++)c[i]=src[co+i]/255.f;}
-  if(k==0)memcpy(c0,c,sizeof c0);else if(memcmp(c0,c,sizeof c0))return;
+  if(p.dfColFmt==MTLVertexFormatHalf4){if(co+8>len)DFRET(DFW_RANGE);__fp16 h[4];memcpy(h,src+co,8);for(int i=0;i<4;i++)c[i]=(float)h[i];}
+  else if(p.dfColFmt==MTLVertexFormatFloat4){if(co+16>len)DFRET(DFW_RANGE);memcpy(c,src+co,16);}
+  else{if(co+4>len)DFRET(DFW_RANGE);for(int i=0;i<4;i++)c[i]=src[co+i]/255.f;}
+  if(k==0)memcpy(c0,c,sizeof c0);else if(memcmp(c0,c,sizeof c0))DFRET(DFW_COL);
  }
- if(c0[3]!=1)return;
+ if(c0[3]!=1)DFRET(DFW_ALPHA);
  const bool pixels=fabsf(x0)<=0.01f&&fabsf(y0)<=0.01f&&fabsf(x1-(float)_tw)<=0.01f&&fabsf(y1-(float)_th)<=0.01f;
  const bool clip=fabsf(x0+1)<=1e-4f&&fabsf(y0+1)<=1e-4f&&fabsf(x1-1)<=1e-4f&&fabsf(y1-1)<=1e-4f;
- if(!pixels&&!clip)return;
+ if(!pixels&&!clip)DFRET(DFW_NOTFULL);
  // two triangles, each three distinct corners, sharing a diagonal (as sweet cull's test)
  int cr[6];
- for(unsigned k=0;k<count;k++){if(!(vx[k]==x0||vx[k]==x1)||!(vy[k]==y0||vy[k]==y1))return;cr[k]=(vx[k]==x1?1:0)|(vy[k]==y1?2:0);}
+ for(unsigned k=0;k<count;k++){if(!(vx[k]==x0||vx[k]==x1)||!(vy[k]==y0||vy[k]==y1))DFRET(DFW_CORNER);cr[k]=(vx[k]==x1?1:0)|(vy[k]==y1?2:0);}
  const bool list=prim==MTLPrimitiveTypeTriangle;
  const int t0[3]={cr[0],cr[1],cr[2]},t1[3]={list?cr[3]:cr[1],list?cr[4]:cr[2],list?cr[5]:cr[3]};
  auto distinct=[](const int *t){return t[0]!=t[1]&&t[1]!=t[2]&&t[0]!=t[2];};
- if(!distinct(t0)||!distinct(t1))return;
+ if(!distinct(t0)||!distinct(t1))DFRET(DFW_TRIS);
  unsigned ma=(1u<<t0[0])|(1u<<t0[1])|(1u<<t0[2]),mb=(1u<<t1[0])|(1u<<t1[1])|(1u<<t1[2]),sh=ma&mb;
- if((ma|mb)!=15||__builtin_popcount(sh)!=2||(__builtin_ctz(sh)^(31-__builtin_clz(sh)))!=3)return;
+ if((ma|mb)!=15||__builtin_popcount(sh)!=2||(__builtin_ctz(sh)^(31-__builtin_clz(sh)))!=3)DFRET(DFW_TRIS);
  e.fill=true;memcpy(e.col,c0,sizeof c0);e.fpipe=p;e.bind=[self dfBindHash:p.dfPosBuf]^(clip?0x9e3779b97f4a7c15ull:0);
  // may it be the pass's clear? CA's fixed vertex function, no lasting colour 1..7 written, and the transform taking every vertex onto
  // a corner of clip space (w 1, z in [0,1]): the whole target whatever the positions' space
@@ -988,13 +1011,16 @@ struct CullEntry {bool fill=false,clearOK=false;float col[4]={};uint64_t bind=0;
 // target, becomes the held pass's clear. Then the held pass is made.
 - (void)dfResolve:(const std::vector<CullEntry> &)ops dead:(std::vector<char> &)dead {
  bool clear=false;float col[4]={};
+ if(_noCull&&dfWhyOn())for(const CullEntry &o:ops)if(o.draw&&o.fill)dfWhy(DFW_NOCULL);   // sweet dfwhy
  if(!_noCull) {
   long prev=-1;
   for(long i=0;i<(long)ops.size();i++) {
    if(!ops[i].draw||dead[i])continue;
    if(prev>=0&&ops[prev].fill&&ops[i].fill&&ops[prev].fpipe==ops[i].fpipe&&ops[prev].bind==ops[i].bind){dead[prev]=1;gDfDropped++;}
+   else if(prev>=0&&ops[prev].fill)dfWhy(!ops[i].fill?DFW_NEXT:ops[prev].fpipe!=ops[i].fpipe?DFW_PIPE:DFW_BIND);   // sweet dfwhy
    prev=i;
   }
+  if(prev>=0&&ops[prev].fill)dfWhy(DFW_LAST);   // sweet dfwhy
   for(long i=0;i<(long)ops.size()&&_dfPending;i++) {
    if(!ops[i].draw||dead[i])continue;
    if(ops[i].fill&&ops[i].clearOK){dead[i]=1;clear=true;memcpy(col,ops[i].col,sizeof col);gDfCleared++;}
