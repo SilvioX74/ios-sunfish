@@ -116,3 +116,5 @@ output in /var/local.
 2026-11-01 09:05: launchd: backboardd EnvironmentVariables to get CA_DISPLAY_COLOR_ACCURACY_FIX_NITS (low-nits second pass), backup launchd.plist.pre-caenv (written, not installed yet): `tools/sunfish-install-caenv.sh KEY=VALUE...` (`--undo`).
 
 2026-11-01 10:15: SWEET_CULL=2 removed from /var/local/mtl2-env; launchd.plist back from .pre-caenv (`tools/sunfish-install-caenv.sh --undo`). Slider left near 32 nits.
+
+2026-11-01 11:30: speed defaults (written, not installed yet): `tools/sunfish-install-speed.sh` (`--undo`): /var/local/mtl2-env loses its SWEET_DEADFILL and M2V_SHADOW_CACHE lines (backup /var/local/mtl2-env.pre-speed), bundle from `METAL2_VARIANT=next tools/build-metal2-linux.sh` (bundle undo marker /var/local/speed-bundle-installed), `tools/sunfish-install-ccscale.sh`, `tools/sunfish-idlefix-db.sh` and its `--biome` form if not already moved. Setup step 6.

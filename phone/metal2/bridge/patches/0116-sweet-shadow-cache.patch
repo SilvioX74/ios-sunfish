@@ -77,8 +77,8 @@ diff --git a/crates/metal2vulkan-runtime/src/shadow.rs b/crates/metal2vulkan-run
      })
  }
  
-+/// 0116 (Home and Control Center repeat shadow fills): `M2V_SHADOW_CACHE`, read once. 0 or unset:
-+/// every copy in, as ever. 1: a color texture's copy in over a buffer is skipped while a hash of
++/// 0116 (Home and Control Center repeat shadow fills): `M2V_SHADOW_CACHE`, read once. 0: every
++/// copy in, as ever. 1 or unset: a color texture's copy in over a buffer is skipped while a hash of
 +/// its source texels, taken as the copy is planned, matches the last copy's. 2: skipped after the
 +/// first copy whatever the bytes hold (a ceiling test, stale content expected). Both copy where
 +/// the encoder's command writes through the texture, the texture was written through or its
@@ -89,7 +89,7 @@ diff --git a/crates/metal2vulkan-runtime/src/shadow.rs b/crates/metal2vulkan-run
 +    static MODE: OnceLock<u8> = OnceLock::new();
 +    *MODE.get_or_init(|| {
 +        let mode = match std::env::var("M2V_SHADOW_CACHE").as_deref() {
-+            Ok("1") => 1,
++            Err(_) | Ok("" | "1") => 1,
 +            Ok("2") => 2,
 +            _ => 0,
 +        };

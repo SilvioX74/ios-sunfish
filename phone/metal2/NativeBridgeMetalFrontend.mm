@@ -800,7 +800,7 @@ static void cullWhy(int why,NSString *l,const char *extra="") {
  static std::atomic<int> said{0},img{0};if([l hasSuffix:@"Isrc"]?img++>=12:said++>=4)return;   // the wallpaper quad gets its own 12
  char t[300];snprintf(t,sizeof t,"SWEET CULL: not covering #%d %s %s",why,l.UTF8String,extra);sm2_logs(t);
 }
-// sweet deadfill (SWEET_DEADFILL, from ios-redfin's frontend, MIT): 0 off (default), 1 drop Core Animation's full-target opaque
+// sweet deadfill (SWEET_DEADFILL, from ios-redfin's frontend, MIT): 0 off, unset 3, 1 drop Core Animation's full-target opaque
 // constant-colour fills (draw.PBGRAXm_A2Xhf) whose next draw is the same fill (same pipeline, same other vertex bindings: the same
 // pixels), 2 also: the creation of a pass loading colour 0 waits for endEncoding, and if its first surviving draw is such a fill whose
 // transform maps it onto the whole target, the pass clears to its colour (8-bit code) and the draw goes. backboardd's passes only:
@@ -809,7 +809,7 @@ static void cullWhy(int why,NSString *l,const char *extra="") {
 // 3 as 2 (the clear still needs a fill covering the target), and fills needn't cover the target to be dropped: one also goes when the next fill's rectangle contains its own,
 // both flat at one z. Same pipeline and bindings: the same transform, so what contains in vertex space contains on screen.
 static int deadfillMode() {
- static const int mode=[]{const char *p=getenv("SWEET_DEADFILL");if(strcmp(getprogname(),"backboardd"))return 0;if(!p||!*p)return 1;return std::max(0,std::min(3,atoi(p)));}();   // default 1: drops only (m1, 53 swaps/s); 0 off
+ static const int mode=[]{const char *p=getenv("SWEET_DEADFILL");if(strcmp(getprogname(),"backboardd"))return 0;if(!p||!*p)return 3;return std::max(0,std::min(3,atoi(p)));}();   // default 3 (speed defaults, 2026-11-01); 0 off
  return mode;
 }
 // sweet cull 2 (SWEET_CULL=2, only with SWEET_DEADFILL=3; ignored otherwise, off: unset): a fill also goes when a later whitelisted opaque draw (the wallpaper) covers all its pixels and

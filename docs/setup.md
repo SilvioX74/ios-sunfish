@@ -79,6 +79,7 @@ tools/sunfish-install-sensors.sh       # auto-rotate: adspboot sensor feed at bo
 tools/sunfish-install-btbridge.sh      # Bluetooth for iOS: btbridge + BlueTool stand-in + bluetoothd transport (kernel105+, boot-arg btbridge=1, default)
 tools/sunfish-install-camera.sh        # camera for iOS (unfinished): camd job, camdev.on, StartRecorderServer, MobileGestalt rebuild; after sunfish-install-audio.sh; boot with CAMERA=1 (kernel111+)
 tools/sunfish-install-haptics.sh       # haptics for iOS: hapticd + drvbuzz, job org.iosonpixel.hapticd (off: /var/local/haptics.off), MobileGestalt rebuild; after sunfish-install-audio.sh; boot with HAPTICS=1
+METAL2_VARIANT=next tools/build-metal2-linux.sh && tools/sunfish-install-speed.sh   # speed defaults: bundle in work/metal2-next, two mtl2-env lines out, Control Center backdrop, daemon data moved aside (--undo)
 ```
 Reboot after these (launchd reads its job list at boot).
 

@@ -1,0 +1,72 @@
+From ab86764302f19739e2dc3e028fcf67edb77b90dd Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 11:18:35 -0500
+Subject: [PATCH] sunfish: default A55 boot row 6, 1497 MHz (0260)
+
+---
+ bsd/dev/sweet_cpufreq.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/bsd/dev/sweet_cpufreq.c b/bsd/dev/sweet_cpufreq.c
+index f9fe6d3..970a2a0 100644
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -24,6 +24,9 @@
+  *
+  * 0258: boot-args sweetrowa55=R, sweetrowa76=R (absent: flamecpufreq picks): that cluster's boot row, counted from 0 in
+  * the "table" line. Wins over flamecpufreq, also over flamecpufreq=0. A row past the table or a 1-core boost row is ignored.
++ *
++ * 0260: with neither sweetrowa55 nor flamecpufreq given, the A55 boot row is 6 (1497 MHz). Off: sweetrowa55=9 (1804 MHz) or
++ * any flamecpufreq=N. Log line "rows ... (default)" when only this picked a row.
+  */
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
+ #include <sys/param.h>
+@@ -66,8 +69,9 @@ static const struct {
+ 	unsigned cap_floor;     /* 0256: lowest row of the thermal cap */
+ 	unsigned dark_row;      /* 0257: highest row while the display is dark */
+ 	const char *row_arg;    /* 0258: boot-arg for the boot row */
++	unsigned row_default;   /* 0260: boot row without a boot-arg; 0: flamecpufreq picks */
+ } osm_clusters[] = {
+-	{"pwrcl (A55 x6)", 0x18323000u, "a55", 0x18358800u + LMH_REG, 4, 4, "sweetrowa55"},     /* 1248 MHz */
++	{"pwrcl (A55 x6)", 0x18323000u, "a55", 0x18358800u + LMH_REG, 4, 4, "sweetrowa55", 6},  /* 1248 MHz */
+ 	{"perfcl (A76 x2)", 0x18325800u, "a76", 0x18350800u + LMH_REG, 1, 1, "sweetrowa76"},    /* 652 MHz */
+ };
+ 
+@@ -119,11 +123,17 @@ sweet_cpufreq_init(void)
+ 	unsigned want = 1;
+ 	bool want_set = PE_parse_boot_argn("flamecpufreq", &want, sizeof(want));
+ 	bool row_used = false;  /* 0258 */
++	bool row_arg_used = false;      /* 0260 */
+ 	(void)PE_parse_boot_argn("sweetdarkclk", &osm_dark_clk, sizeof(osm_dark_clk));
+ 	for (unsigned c = 0; c < sizeof(osm_clusters) / sizeof(osm_clusters[0]); ++c) {
+ 		unsigned row_want = 0;
+ 		bool row_ok = false;
+ 		bool row_set = PE_parse_boot_argn(osm_clusters[c].row_arg, &row_want, sizeof(row_want));
++		bool row_arg_set = row_set;     /* 0260 */
++		if (!row_set && !want_set && osm_clusters[c].row_default) {
++			row_want = osm_clusters[c].row_default;
++			row_set = true;
++		}
+ 		vm_offset_t base = ml_io_map(osm_clusters[c].pa, 0x1000);
+ 		if (!base) {
+ 			printf("SWEET CPUFREQ: %s: map failed\n", osm_clusters[c].name);
+@@ -166,6 +176,7 @@ sweet_cpufreq_init(void)
+ 			best = row_want;
+ 			best_khz = osm_state[c].khz[row_want];
+ 			row_used = true;
++			row_arg_used = row_arg_used || row_arg_set;
+ 		} else if (row_set) {
+ 			printf("SWEET CPUFREQ: %s=%u ignored: not a row of the table, or a 1-core boost row\n",
+ 			    osm_clusters[c].row_arg, row_want);
+@@ -198,7 +209,7 @@ sweet_cpufreq_init(void)
+ 			len += snprintf(line + len, sizeof(line) - len, " %s %u=%u", osm_clusters[c].tag, osm_state[c].boot_row,
+ 			    osm_state[c].khz[osm_state[c].boot_row] / 1000);
+ 		}
+-		printf("%s (boot-arg)\n", line);
++		printf("%s (%s)\n", line, row_arg_used ? "boot-arg" : "default");
+ 	}
+ 	/* 0255: only maps here; the first reads of these blocks are in the thread (sweettherm=0: none of it) */
+ 	unsigned therm = 1;
+-- 
+2.56.0
+
