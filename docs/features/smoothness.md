@@ -1,5 +1,5 @@
 # Smoothness
-**State:** 🟡 Home 52, Control Center 37, Settings 50-56 swaps/s at full canvas (normal brightness; less at the lowest slider), with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_CULL=2 and the quarter-size Control Center backdrop (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
+**State:** 🟡 Home 52, Control Center 37, Settings 50-56 swaps/s at full canvas (normal brightness; less at the lowest slider), with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 and the quarter-size Control Center backdrop (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
 
 ## How to use
 - Bench: `tools/sunfish-fpsbench.sh TAG SECONDS` (BENCH_TIGHT=1); config matrix `tools/sunfish-cfgbench.sh`; timeline `sweettrace=1` + `tools/sunfish-timeline.py`. Details in [methods.md](../methods.md).
@@ -97,6 +97,11 @@ Kernels:
 
 ### 2026-11-01 07:30 xnu 0259 sunfish-ddmin: written, not built, not run
 - `iokit/Kernel/arm/SweetBacklight.cpp`, to test whether the published minimums change the 7 ms second pass at 2-5 nits. Boot-args, absent = 2 as before: `sweetddmin=N` (`digital-dimming-min-nits`), `sweetblmin=N` (MinNits, HardwareAccessibleMinNits, DisplayPanelLuminanceMin, DisplayProductLuminanceMin, lMinPanel, lMinProduct). DCS mapping unchanged. Guess, unverified: CoreBrightness's flag at 0x1af0d985c compares [0x55c] (maybe the hardware minimum) > digital-dimming-min-nits.
+
+### 2026-11-01 10:15 lo0-lo3, a76r: low-brightness pass not reproduced; cull adds little at normal brightness
+- a76r, kernel139, SWEET_CULL=2 on, 12 boots, 109 k submits, G1 1: A76 2208 / 2169 / 1939 MHz: Home 52.5 / 53.2 / 52.3, Control Center 36.8 / 36.9 / 36.7, Settings 49.2 / 50.9 / 48.2, Home max 85.3 / 87.8 / 82.7 C, Settings <=17 ms 55 / 56 / 43 %. A76 stays 2208 MHz; 1939 is about 4 C cooler if heat comes first.
+- lo0-lo3, no cull: slider dragged down, but `SWEET BL: nits` stays 32 after boot (DCS 3x-6x), never 5, so the slow state didn't come back; how it came about is open (possibly the DCS 128 to 33 path overnight). At 32 nits: Settings 47.3-52.2, GPU 56-59 %; Home 51.5-52.2; Control Center 35.3-36.1. CA_DISPLAY_COLOR_ACCURACY_FIX_NITS=1 and CA_DISABLE_LUMA_BOOST=1 show no effect here, not a test of the 5-nit state. Both undone. So the switch point is between 5 and 32 nits by these runs; p3 clamp at 80 nits (research note) is not it. dd1's 50 nits stayed slow but had its range changed.
+- Cull costs 0.6 swaps/s on Home here (51.9 against 52.5), off the everyday setup: env is now SWEET_DEADFILL=3 and M2V_SHADOW_CACHE=1. Its 42.5 -> 49.2 was in the 5-nit state only.
 
 ### 2026-11-01 08:25 ni1, br1: speed follows iOS's internal nits, not the panel: Home 52.3, Control Center 36.8 at 119-148 nits
 - ni1, kernel139, same boot, slider dragged in steps: panel DCS rose to 239 but `SWEET BL: nits` stayed 5 and Settings stayed 46.7-51.9 swaps/s, GPU 2 submits of 7.7 ms per swap. So the panel brightness isn't the trigger. The last step had a backboardd restart at 245 s (then 16 swaps/s, avg copy 5961 us): void; cause not read. After it nits 119.

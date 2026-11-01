@@ -27,13 +27,18 @@ Failed recoveries leave `device refused: OutOfMemory(Device)` and CPU drawing un
 60 swaps/s on some screens, so a good speed number alone doesn't prove the GPU ran. Silent resets are backlog B4.
 
 ## 2026-11-01: G1 rate with SWEET_CULL=2
-G1 by setup since df5: mode 2 or 3 without cull: 2 in about 500 k submits (df5, rows2 excluded: 3 more at 1248 MHz); with SWEET_CULL=2: 3 in about 143 k (cu1, ni1, br1; sy1-style runs excluded). All no-fault, recovery failed. That is more than double: by the rule, cull goes off the everyday setup until understood. a76r (running) has it on and adds data.
+G1 by setup since df5: mode 2 or 3 without cull: 2 in about 500 k submits (df5, rows2 excluded: 3 more at 1248 MHz); with SWEET_CULL=2: 3 in about 143 k (cu1, ni1, br1; sy1-style runs excluded). All no-fault, recovery failed. That is more than double: by the rule, cull went off the everyday setup. Update 10:15: a76r (cull on) 1 more; lo0 and lo2 (cull off) 2 in about 34 k. Overnight mode 3 without cull had 0 in about 250 k, all at DCS 33-36 (minimum). So brightness or daytime state may matter as much as cull: confounded. G1 now voids benches often, so it qualifies for fixing.
 
 ## Bench runs
 Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, not boots.
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-01 | lo3 | luma=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1 | 3 | 29 k | 0 | 0 | 0 | 0 |
+| 2026-11-01 | lo2 | low=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1 | 3 | 14 k | 1 | 0 | 0 | 5 |
+| 2026-11-01 | lo1 | fix=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1 | 3 | 28 k | 0 | 0 | 0 | 1 |
+| 2026-11-01 | lo0 | low=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1 | 3 | 20 k | 1 | 0 | 0 | 3 |
+| 2026-11-01 | a76r | r12=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_CULL=2; r11=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_CULL=2,sweetrowa76=11; r10=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_CULL=2,sweetrowa76=10 | 12 | 109 k | 1 | 0 | 0 | 1 |
 | 2026-11-01 | br1 | br=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_CULL=2 | 3 | 26 k | 1 | 0 | 0 | 1 |
 | 2026-11-01 | dd1 | base=140,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_CULL=2; dd0=140,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_CULL=2,sweetddmin=0; dd500=140,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_CULL=2,sweetddmin=500; bl50=140,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_CULL=2,sweetblmin=50 | 8 | 28 k | 0 | 0 | 0 | 1 |
 | 2026-11-01 | cs1 | cs=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_CULL=2 | 4 | 36 k | 0 | 0 | 0 | 0 |

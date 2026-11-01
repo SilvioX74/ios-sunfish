@@ -20,13 +20,16 @@ Targets (Claude's numbers, the user can change them):
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
 1. ▶ **Heat**: idle fixed (53-59 C; aggregated and coreduetd data moved aside). A55 at 1497 MHz: 5 C cooler, +2.5 swaps/s, now everyday (`sweetrowa55=6`); 1248 MHz raises GPU hangs. Next: DDR vote, A76 rows, screen-on governor. Screen-off clocks work, no gain shown. (cpu.md)
 2. **CPU cost per frame** (about 14 ms): phone-CPU build tried, no gain (cpu1); redfin 0130-0137, unchanged-draw fast path, cache flush off the render thread, app and CA threads on the A76s (backlog O9, O11). (smoothness.md)
-3. ▶ **GPU cost per frame**: below some internal iOS nits value (5 yes, 92 no; the slider alone doesn't change it) a second full-size pass costs 7 ms per frame: find it; done so far: shadow copy cache, dead fill mode 3: Home 26 -> 52, Control Center 23 -> 37, Settings 50-56 swaps/s (env on the phone, not default). Next: Control Center trace without per-draw tracing (crashes backboardd); `SWEET_CULL=2` gives Home 49 (cu1), survey needed before it's on; Control Center backdrop at quarter size: 33 swaps/s, p95 49 ms (cs1), on the phone under test; `SWEET_MTLOW` or merged submits next; 650 MHz gave Home 48.6, Control Center 30.8 but a bad Settings boot (smoothness.md gd1); `sweetddr=1` no gain. Mode 3, cull and cache become defaults once tonight's soak is clean (U22 no longer gates this). (smoothness.md)
+3. ▶ **GPU cost per frame**: at internal 5 nits (not 32) a second full-size pass costs 7 ms per frame: couldn't get back to that state on demand; done so far: shadow copy cache, dead fill mode 3: Home 26 -> 52, Control Center 23 -> 37, Settings 50-56 swaps/s (env on the phone, not default). Next: Control Center trace without per-draw tracing (crashes backboardd); `SWEET_CULL=2`: off, more G1 and little gain; Control Center backdrop at quarter size: 33 swaps/s, p95 49 ms (cs1), on the phone under test; `SWEET_MTLOW` or merged submits next; 650 MHz gave Home 48.6, Control Center 30.8 but a bad Settings boot (smoothness.md gd1); `sweetddr=1` no gain. Mode 3 and cache become defaults once tonight's soak is clean (U22 no longer gates this). (smoothness.md)
 4. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30, before the recent fixes); time app opens and the keyboard. Then the screen-on CPU governor (redfin 0963, touch and animation at full speed), kept only if the A/B shows no speed loss. (smoothness.md, cpu.md)
 
 After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.
 
 ## GPU bugs
 Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-loaded). Fix one now only if it voids benches, stops phone testing, or doubles in rate after a change (then turn that change off first). The rest wait until the speed targets are met.
+
+## GPU bug now due
+G1 (no-fault hang, no recovery) voids benches today, 4 of about 40 boots: it qualifies for a fix. Lead: map flush from backboardd under `sweet_gpu_lock` (gpu.md).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),

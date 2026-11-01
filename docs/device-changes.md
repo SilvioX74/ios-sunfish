@@ -112,3 +112,7 @@ output in /var/local.
 2026-11-01 05:20: /var/local/mtl2-env adds SWEET_CULL=2 (under test with U22); bundle work/metal2-shadow rebuilt with it; same boot args. Remove the line to turn it off.
 
 2026-11-01 06:00: CoreMaterial modulesBackground.materialrecipe gets backdropScale 0.25 (under test, cs1): `tools/sunfish-install-ccscale.sh`, `--undo` restores from .orig on the phone.
+
+2026-11-01 09:05: launchd: backboardd EnvironmentVariables to get CA_DISPLAY_COLOR_ACCURACY_FIX_NITS (low-nits second pass), backup launchd.plist.pre-caenv (written, not installed yet): `tools/sunfish-install-caenv.sh KEY=VALUE...` (`--undo`).
+
+2026-11-01 10:15: SWEET_CULL=2 removed from /var/local/mtl2-env; launchd.plist back from .pre-caenv (`tools/sunfish-install-caenv.sh --undo`). Slider left near 32 nits.
