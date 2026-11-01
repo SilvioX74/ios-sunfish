@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 00:07 n2: UI soak: no silent reset in 60 min; one no-fault hang at 867 s, recovery failed, rest void
+- tools/sunfish-uisoak.sh n2, same setup as n1, boot from ca1c (kernel139, sweetrowa55=6, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1), 23:06:52-00:06:52. No reset. `[1151.016] present: GPU hang or fault (fence 91789, done 91777, smmu fsr 0 far 0 fsynr0 0): reset`, recover2 FAILED after 2064 ms, tlbstatus 1 still at +30 s, backboardd killed: G1, then G3 and CPU drawing: backboardd 10164 CPU s, A76 and A55 hot (94 C). So everything after 867 s of the soak is void, including its 96.4 C max and 86 k submit total.
+- The tool's first count said G1 0: its pattern missed `fsr 0 far`. Fixed; it now also stops at a failed recovery.
+- Rates with mode 2: 2 G1 (df5, n2) in about 250 k submits; 0 with the old setup in 151 k (z1), 2 in 113 k (soak1). Doesn't show a doubling. Cache and A55 rows stay env and boot args. Silent reset: not repeated in 1 of 1 rerun.
+
 ### 2026-10-31 23:05 ca1: cache not the cause of the Calculator fragments; clock not clipped
 - kernel139, everyday args + sweetrowa55=6, boots ca1b (SWEET_DEADFILL=2) and ca1c (+ M2V_SHADOW_CACHE=1). Tap AC, 7, 8, 9, shots after 3 s. Rows 800-880: 0 lit pixels in all 8 shots, cache on and off, so st1's fragments didn't come back (one-off, cause unknown). Cache off showed a faint dotted line above the digits once (rows 560-600, 8 px over 120); cache on none. research/ca1.
 - Status bar clock fully visible in the framebuffer on still Home, Settings, Maps, Notes. The clipped clock and doubled back label in the 22:49 shot were an app switch caught by the 8 s readout (the user spotted it); the digits in the webcam frame sit under the camera hole (the user's point).
