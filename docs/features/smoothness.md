@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 04:30 gd1: GPU 650 MHz: Home 44.8 -> 48.6, Control Center 28.6 -> 30.8, Settings worse; sweetddr=1 no change
+- `tools/sunfish-perfab.sh gd1 4 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, minimum brightness, 12 boots, 106 k submits, 0 G1, 0 G2, 0 G4, 2 void (base Home too hot). Base / sweetgpufreq=6 / sweetddr=1: Home 44.8 / 48.6 / 44.5 swaps/s, p95 43.4 / 39.8 / 45.2, max 89.8 / 93.9 / 93.4 C; Control Center 28.6 / 30.8 / 28.5, p95 61.6 / 61.8 / 63.0; Settings 49.2 / 44.6 (34.4-48.6) / 49.3, p95 31.8 / 41.7 / 31.8, >100 ms gaps 0 / 2.5 / 0.
+- Reading: 650 MHz gains 1.7-2.4 ms where the GPU is the limit, but one Settings boot fell to 34.4 with gaps, cause unknown: not default. More heat. sweetddr=1: no gain now; off. Everyday setup unchanged.
+
 ### 2026-11-01 04:00 cc1: Control Center light trace: an open and still panel costs little; the bench measures its open and close
 - kernel139, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, MESA_GPU_TRACES=print only (no crash, backboardd pid 60), boot of 03:44:50. Slice research/notes/cc1-trace.txt, in a window with Control Center open and swipes inside it: 448 frames, about 9.2 ms per frame: 1125x2436 1 pass per frame, 44 bins, 7.95 ms (load 0.33, store 0.58, binning 0.14); 509x1099 0.29 per frame at 3.14 ms; 513x1103 0.07 at 2.6; copies 0.1 per frame. draw_ib_gmem 96 %.
 - So Control Center's 35-46 ms frames in perfab come from opening and closing it (blur over a moving scene, re-capture), not a still panel. The cc screen in perfab is a mix of open, margin swipes and dismiss. No trace of open and close yet. Note: left-edge swipes with it closed open Spotlight.
