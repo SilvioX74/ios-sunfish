@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 02:45 d4: mode 3 with the held clear: Home 31.4 -> 40.8, Settings unchanged
+- `tools/sunfish-perfab.sh d4 5 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, M2V_SHADOW_CACHE=1, minimum brightness, 10 boots, 83 k submits, 0 G1, 0 G2, 0 G4, 1 void (Home too hot, 95 C). Mode 2 then 3: Home 31.4 (28.2-33.3) / 40.8 (37.4-44.1), frame 31.9 / 24.5 ms, 1st submit 28.6 / 20.6; Settings 49.3 / 49.5, 1st 8.1 / 8.1; Control Center 26.4 / 23.1 including one run at 1.4 swaps/s (see below), 1st 28.2 / 25.9. Not default yet: stale-strip survey next.
+
 ### 2026-11-01 02:10 d3: SWEET_DEADFILL=3 on Home: 32.0 -> 43.8 swaps/s, Settings lost mode 2's clear
 - `tools/sunfish-perfab.sh d3 3 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, M2V_SHADOW_CACHE=1, minimum brightness, 6 boots, 49 k submits, 0 G1, 0 G2, 0 G4, 0 void. Mode 2 then 3: Home 32.0 (29.2-33.5) / 43.8 (43.1-44.2), frame 31.2 / 22.8 ms, 1st submit 28.5 / 21.2; Control Center 26.5 / 27.0, 1st 27.9 / 30.5; Settings 50.8 / 46.3, 1st 8.1 / 12.3.
 - Mode 3 dropped fills covered by the next same-setup fill, but not the clear path of mode 2: Settings fell back to mode 1's cost. Being rebuilt as a superset. Stale strips not checked yet.
