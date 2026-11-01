@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 01:10 sy1: TU_DEBUG=sysmem: not worth it on partial data; run cut short when USB dropped
+- `tools/sunfish-perfab.sh sy1 3 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1, 1 usable boot a side: Home 36.5 -> 38.1 swaps/s, Control Center 29.3 -> 26.4, Settings 52.4 -> 51.5. gmem b2: 1 G4 hang voided 2 screens. sysmem b2 (boot 20261101-005041): `link up 00:52:56`, the live log stops at uptime 136 s, no SSH, no fastboot, phone gone from USB; the webcam at 01:08 shows the lock screen reading 1:02: UI alive after USB went. One boot a side doesn't count; sysmem is dropped for now, since Control Center lost 3.8 ms and it's expected to add DDR heat.
+- Cause of the USB loss unknown; whether sysmem caused it isn't shown. Waiting for flamereboot=1800 (about 01:22).
+
 ### 2026-11-01 00:07 n2: UI soak: no silent reset in 60 min; one no-fault hang at 867 s, recovery failed, rest void
 - tools/sunfish-uisoak.sh n2, same setup as n1, boot from ca1c (kernel139, sweetrowa55=6, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1), 23:06:52-00:06:52. No reset. `[1151.016] present: GPU hang or fault (fence 91789, done 91777, smmu fsr 0 far 0 fsynr0 0): reset`, recover2 FAILED after 2064 ms, tlbstatus 1 still at +30 s, backboardd killed: G1, then G3 and CPU drawing: backboardd 10164 CPU s, A76 and A55 hot (94 C). So everything after 867 s of the soak is void, including its 96.4 C max and 86 k submit total.
 - The tool's first count said G1 0: its pattern missed `fsr 0 far`. Fixed; it now also stops at a failed recovery.
