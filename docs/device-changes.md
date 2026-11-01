@@ -104,3 +104,5 @@ output in /var/local.
 2026-10-31 18:50: db1 result: moving PowerLog aside stopped aggregated (4.75 CPU s in 10 min); coreduetd unchanged. Moving /var/mobile/Library/Biome to /var/local/idlefix-db/biome next (`tools/sunfish-idlefix-db.sh --biome`, `--biome --undo` restores).
 
 2026-10-31 18:57: Biome moved to /var/local/idlefix-db/biome (db2). coreduetd stopped burning, so `tools/sunfish-install-idlefix.sh` was not run: launchd.plist is unchanged.
+
+2026-10-31 22:15: everyday candidate on test: /var/local/mtl2-env = SWEET_DEADFILL=2 and M2V_SHADOW_CACHE=1; bundle from `METAL2_VARIANT=shadow tools/build-metal2-linux.sh`, installed with `tools/sunfish-metal2-install.sh work/metal2-shadow/out/phone/metal2/out --no-restart`; boot args add sweetrowa55=6. Unfinished, under soak; log line only for now.

@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-10-31 22:30 st1: stale-content survey of M2V_SHADOW_CACHE=1: nothing stale from the cache
+- kernel139 sweetrowa55=6 and everyday args, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1, bundle work/metal2-shadow, boot 20261031-221630, 4454 mV, 0 hangs, 0 submit errors. `SHADOW: 5s copies 2 skipped 639 hashed 94521 KB, hash 40966 us`. research/st1.
+- Pass: lock clock, Notes typing, Calculator digits, Settings long scroll, Stopwatch, Rotation Lock tile, App Library and Spotlight, Safari page and scroll, wallpaper on lock and wake. Status bar clock stale for about 1 min at Home: same as the old B49 (seen without the cache). Thin dotted fragments under Calculator digits (calc2, calc3): being checked. Maps dark map, Photos grid fine, not compared with df5.
+
 ### 2026-10-31 22:15 sh1: shadow copy cache: Home 25.7 -> 38.3 swaps/s, Control Center 23.3 -> 28.7, Settings 56.1 with p95 20.5
 - `tools/sunfish-perfab.sh sh1 3 --secs 15 --screens home,cc,settings`, kernel139 sweetswapbig=6 sweetse9=2 sweetcampmic=2 sweetampreset=1 SWEET_DEADFILL=2, bundle with bridge 0116, sweettrace=1, 9 boots, 4454 mV, 78 k submits, 0 G1, 0 G2, 0 G4, 0 void. M2V_SHADOW_CACHE 0 / 1 / 2 (2 = never recopy, ceiling):
 
