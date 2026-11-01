@@ -23,6 +23,11 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 03:45 mf3: 1248 MHz didn't reproduce G1: 0 in 81 k with flushes on or off
+- `tools/sunfish-perfab.sh mf3 8 --secs 15 --screens home,apps`, kernel139 sweetrowa55=4, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, 16 boots, 81 k submits, flushes on against off, G1 0, G2 0, G4 0, 1 void (too hot). So the control side, flushes on, had 0 in about 40 k where rows2 had 3 in 43 k.
+- Reading: row 4 isn't a reliable reproducer; "reproducer" in rows2 and mf1 was premature. Either rows2's 3 were chance, or mode 2 matters (rows2 ran mode 2, this ran mode 3, which drops more fills: untested guess). mf1 says nothing about flushes. sweetmapflush stays default. No more boots on this for now.
+- Speed: Home 44.5 / 41.9 swaps/s, apps 21.5 / 21.1, on / off: flushes off isn't faster.
+
 ### 2026-11-01 01:30 mf1, mf2: sweetmapflush=0: no G1 in 8 boots at the reproducer; not proof
 - Reproducer: A55 at 1248 MHz gave 3 G1 in about 43 k submits (rows2; analysis below). In all 3: normal syncs, first TLB sync timeout in a map flush from a backboardd client thread (`sweet_gpu_map_at` -> `a6_tlb_flush`, sweet_a6xx.c:339, GPU running), `done` frozen, hang declared 2 s later, recovery FAILED about 1.6 s. Boots 20261101-001940, -002702, -003311. Order of GPU stop and sync timeout still not known.
 - mf1: kernel139 sweetrowa55=4 sweetmapflush=0, home and apps, 8 boots, 35 k submits, 0 G1, 0 G2, 0 G4. Expected about 2.5 at the old rate: P of 0 about 8 %. Not proof. mf2: sweetrowa55=6, flushes on against off, 3 boots a side, 49 k submits, 0 G1; speed the same within noise (Home 31.6 / 31.7, Control Center 25.8 / 26.1, Settings 52.0 / 49.6).

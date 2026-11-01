@@ -41,9 +41,6 @@ Finished items: [completed.md](completed.md) (not auto-loaded).
 ## Your tasks at the phone
 In [user-tasks.md](user-tasks.md) (not auto-loaded): 11 open. Claude doesn't wait on them; it moves to the next item.
 
-## G1 lead (not a priority, background only)
-A55 at 1248 MHz reproduces the no-fault hang (3 in 43 k submits). `sweetmapflush=0` there: 0 in 35 k, not proof; control run mf3 overnight. (gpu.md)
-
 ## Dev speed (on top of the priority list when found; ~1 h max each)
 - (none)
 

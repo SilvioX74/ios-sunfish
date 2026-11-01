@@ -22,6 +22,9 @@ Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features
 ### 2026-10-31 19:46 xnu 0257 sunfish-dark-clk written, not built, not run
 - `sweetdarkclk=1` (default 0; needs `sweetdark` on): while dark A55 row 4 (1248 MHz), A76 row 1 (652 MHz); effective row = lower of cap row and dark row; leaving dark restores the cap row. Log `SWEET THERM: dark a55 4=1248 a76 1=652`, `SWEET THERM: bright a55 9=1804 a76 12=2208`, `dark 0|1` after `cap N` on the busy line. Rows are lowered as soon as the off request arrives, while the panel thread's sleep-in (about 200-350 ms) is still running, not after it ends. Raised at the top of RequestPowerChange(on); the key press that leads there still runs at dark rows.
 
+### 2026-11-01 03:45 Correction to rows2
+- A55 at 1248 MHz isn't a proven G1 reproducer: mf3 had 0 G1 in about 81 k submits on that row with mode 3 (gpu.md). Row 6 stays for its speed and heat results.
+
 ### 2026-11-01 00:45 rows2: A55 at 1248 MHz: no speed gain, 3 no-fault GPU hangs in 5 boots; 1497 MHz stays
 - `tools/sunfish-perfab.sh rows2 5 --secs 15 --screens settings,home,cc,apps`, kernel139, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1, sweetrowa55=6 against 4, 10 boots, 86 k submits. G1 3, all on row 4 (boots 2, 3, 4), at uptime 104-212 s, recovery FAILED; 0 on row 6. Boots lost on row 4 voided 7 runs, row 6 2 (both `0 swaps`, b1 home and cc, unexplained).
 - Home 38.6 / 38.8 swaps/s, Control Center 28.8 / 28.6, apps 22.7 / 24.5. Open ms: Notes 236 / 314, Clock 475 / 500, Calculator 520 / 521. No speed gain from row 4, so it's off.
