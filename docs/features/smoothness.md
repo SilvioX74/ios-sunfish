@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 05:50 cc2: Control Center's slow frames: two full-size backdrop captures, not the blur chain
+- Light trace of 10 open and close rounds, kernel139, modes on, boot of 05:45, no crash, research/notes/cc2-trace.txt (numbers in home-cc-gpu-2026-10-31.md). 54 of 582 frames over 25 ms: 1.96 passes of 1127x2438 at about 9.9 ms each, main pass 11.2 ms, blur chain under 2 ms. 127 frames at 12-25 ms: a main pass of 18.6 ms alone. Traced times.
+- Back on the everyday boot afterwards, env as before.
+
 ### 2026-11-01 05:20 st4: SWEET_CULL=2 on the phone: nothing wrong seen, short check
 - kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, SWEET_CULL=2, boot st4, 4454 mV. Stills fine: lock, Home x2, Control Center. Webcam frames during slow swipes: Home to Today mid-motion, Settings closing to Home: no black holes or bands. 0 hangs, 0 submit errors, 60.6 C at 5 min. The agent's run covered only lock and Home (its swipes didn't register; direct ones did), so App Library, Spotlight and the apps weren't rechecked with the cull. Left on the phone for U22.
 
