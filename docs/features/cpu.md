@@ -15,6 +15,11 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-01 18:45 hw1: clock gating runs clean; Settings 56.9 and steady, heat not shown yet
+- kernel144 (xnu 0262, 0263), `sweethwcg=1`, base args, everyday env. Injected hang (`sweethangtest=0xC0000040`, boot 20261101-181401): `recover2 done` after 35.8 ms, `gbif halt ack 3 ok`, `hwcg on clock_cntl 8aa8aa82 (was 0)`, UI back. Boot-time line is in no log, since the live log starts at 21.5 s, before GPU init: on at boot is inferred from the call in `gpu_cp_init`, not seen. `core` still reads 648-650 MHz with gating on.
+- `SWIPE_MS=3000 tools/sunfish-perfab.sh hw1, hw1c, hw1d`, off 4 boots, on 3 (first call cut off by a timeout, so not 3 and 3), about 69 k submits, G1 0, G2 0, G4 0, 0 void. Off / on: Home 52.3 (50.2-53.4) / 53.0 (51.4-54.2), max 81-88 / 82-89 C; Control Center 38.7 / 38.4, max 86-93 / 89-92 C; Settings 50.0 (43.5-55.0) / 56.9 (56.5-57.4), p95 32.4 / 20.0, max 83-90 / 83-86 C. The off side is noisy and cp1 got 57.0 without gating, so this isn't shown to be gating: 5-boot A/B next.
+- Idle on one boot, gpu sensor minutes 2-5: 56.1, 55.8, 56.1, 59.6 C (last during a 28 % busy spike), against base 58.4 mean in ddi1; 1 boot, ambient unknown, not a result.
+
 ### 2026-11-01 18:10 ddi1: idle by GPU clock and DDR vote: lowest GPU clock 2-3.7 C cooler; top DDR vote no change
 - kernel139, base args with sweetgpufreq=6, env and bundle as on the phone, 5 boots, each 5 min with no touches after SSH + 60 s, lit lock screen, readings once a minute from `SWEET THERM`, minutes 2-5 averaged, 4441-4442 mV, busy 1-6 % per core everywhere, 0 hangs. a55 / gpu / ddr C: base 56.5 / 58.4 / 56.4; sweetgpufreq=1 54.4 / 54.9 / 53.5, again 54.1 / 54.7 / 53.2; sweetgpufreq=5 56.0 / 57.2 / 55.4; sweetddr=1 55.9 / 57.8 / 55.8.
 - Observed: the lowest GPU clock takes 3.5-3.7 C off the GPU sensor and 2.1-2.4 C off the A55 at idle, with the two runs within 0.3 C. Each run swings about 3 C, so 5 and 6 aren't told apart (0.5-1.2 C), and neither is the top DDR vote (0.6 C). Room temperature not read. So GPU clock power is real but gives about 3.5 C of the idle 56-58 C; the rest is elsewhere (panel, rails, no deep CPU idle: guess). `bus vote` logs no line in any boot, so the sweetddr=1 vote is inferred from the code, not seen.
