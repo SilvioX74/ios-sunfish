@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 04:00 cc1: Control Center light trace: an open and still panel costs little; the bench measures its open and close
+- kernel139, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, MESA_GPU_TRACES=print only (no crash, backboardd pid 60), boot of 03:44:50. Slice research/notes/cc1-trace.txt, in a window with Control Center open and swipes inside it: 448 frames, about 9.2 ms per frame: 1125x2436 1 pass per frame, 44 bins, 7.95 ms (load 0.33, store 0.58, binning 0.14); 509x1099 0.29 per frame at 3.14 ms; 513x1103 0.07 at 2.6; copies 0.1 per frame. draw_ib_gmem 96 %.
+- So Control Center's 35-46 ms frames in perfab come from opening and closing it (blur over a moving scene, re-capture), not a still panel. The cc screen in perfab is a mix of open, margin swipes and dismiss. No trace of open and close yet. Note: left-edge swipes with it closed open Spotlight.
+
 ### 2026-11-01 03:05 st3: mode 3 survey: no stale strip seen; motion not fully caught
 - kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, boot 20261101-024953, 4455 mV, DCS 33. Fine: Home x2, App Library, Spotlight, Control Center, Settings, Calculator, Notes, Safari, Mail, Calendar, Reminders, Files. Stopwatch digits garbled while running (8 s readout likely); Maps shot mid-transition, not rechecked; Photos black gaps (B44); lock step and Settings subpage not done. Wi-Fi icon absent at 60 s, present at 120 s: the d3 difference is timing.
 - 10 webcam frames: no stale strip, wrong band or flash, but Home frames caught settled pages, not mid-swipe, so this doesn't clear motion: U22. 0 hangs, 0 submit errors, no new crash files. Control Center bench in this run read 13.2 swaps/s in one 5-s window: a bad test (margin swipes alone). Phone left on this setup as the everyday candidate.
