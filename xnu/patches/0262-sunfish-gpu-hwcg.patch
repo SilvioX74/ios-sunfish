@@ -1,0 +1,110 @@
+From 7ccd9d311b3ce0a725c7b604607fb904b9f0ac14 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 17:41:08 -0500
+Subject: [PATCH] sunfish: GPU hardware clock gating, sweethwcg, off by default
+
+---
+ bsd/dev/sweet_a6xx.c | 64 +++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 63 insertions(+), 1 deletion(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index e116841..dbada9b 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -147,6 +147,7 @@ static void zero_pa(uint64_t pa, uint64_t size)
+ #define GMU_BOOT_SLUMBER_OPTION	0x1cbf8
+ #define GMU_GX_VOTE_IDX	0x1cbf9
+ #define GMU_MX_VOTE_IDX	0x1cbfa
++#define GMU_GX_SPTPRAC_CLOCK_CONTROL	0x1a880
+ #define GMU_GX_SPTPRAC_POWER_CONTROL	0x1a881
+ #define GMU_SPTPRAC_PWR_CLK_STATUS	0x1f8d0
+ #define GMU_DCVS_ACK_OPTION	0x1cbfc
+@@ -161,6 +162,9 @@ static void zero_pa(uint64_t pa, uint64_t size)
+ #define GMU_DCACHE_CFG	0x1f401
+ #define GMU_RSCC_REQ	0x23b07
+ #define GMU_RSCC_ACK	0x23b08
++#define GMU_CGC_MODE	0x23b09
++#define GMU_CGC_DELAY	0x23b0a
++#define GMU_CGC_HYST	0x23b0b
+ #define GMU_FENCE0	0x23b11
+ #define GMU_G2H_CLR	0x1f991
+ #define GMU_G2H_INFO	0x1f992
+@@ -1894,9 +1898,64 @@ int a6_recover(struct a6_gpu *g)
+ 	return rc;
+ }
+ 
++#if A6_GPU_ID == 618
++/*
++ * 0262: boot-arg sweethwcg=1 (default 0: nothing written): hardware clock gating, mainline a6xx_set_hwcg for the A618
++ * of qcom,sm7150. Table: a6xx_catalog.c a615_hwcg in its order, offsets from a6xx.xml; gmu_cgc_mode 0x222, delay 0x111,
++ * hysteresis 0x555, clock_cntl 0x8aa8aa82. Runs in every gpu_cp_init, so recoveries apply it again.
++ */
++#define A6_HWCG_CLOCK_CNTL	0x8aa8aa82u
++static const uint32_t a6_hwcg_regs[][2] = {
++	{ 0x00b0, 0x02222222 }, { 0x00b4, 0x02222220 }, { 0x00b8, 0x00000080 }, { 0x00bc, 0x0000f3cf },
++	{ 0x00c0, 0x02222222 }, { 0x00c1, 0x02222222 }, { 0x00c4, 0x22222222 }, { 0x00c5, 0x22222222 },
++	{ 0x00c8, 0x22222222 }, { 0x00c9, 0x22222222 }, { 0x00cc, 0x00022222 }, { 0x00cd, 0x00022222 },
++	{ 0x00e0, 0x77777777 }, { 0x00e1, 0x77777777 }, { 0x00e4, 0x77777777 }, { 0x00e5, 0x77777777 },
++	{ 0x00e8, 0x77777777 }, { 0x00e9, 0x77777777 }, { 0x00ec, 0x00077777 }, { 0x00ed, 0x00077777 },
++	{ 0x00d0, 0x11111111 }, { 0x00d1, 0x11111111 }, { 0x00d4, 0x11111111 }, { 0x00d5, 0x11111111 },
++	{ 0x00d8, 0x11111111 }, { 0x00d9, 0x11111111 }, { 0x00dc, 0x00011111 }, { 0x00dd, 0x00011111 },
++	{ 0x010b, 0x22222222 }, { 0x010c, 0x22222222 }, { 0x010d, 0x22222222 }, { 0x010e, 0x00222222 },
++	{ 0x0110, 0x00000004 }, { 0x010f, 0x00000002 }, { 0x00f0, 0x22222222 }, { 0x00f4, 0x00002222 },
++	{ 0x00f8, 0x00002020 }, { 0x00f9, 0x00002220 }, { 0x00fa, 0x00002220 }, { 0x00fb, 0x00002220 },
++	{ 0x0100, 0x00040f00 }, { 0x0101, 0x00040f00 }, { 0x0102, 0x00040f00 }, { 0x0103, 0x00040f00 },
++	{ 0x0104, 0x05022022 }, { 0x0105, 0x00005555 }, { 0x0106, 0x00000011 }, { 0x0107, 0x00445044 },
++	{ 0x0108, 0x04222222 }, { 0x0114, 0x00222222 }, { 0x0111, 0x00002222 }, { 0x010a, 0x00000000 },
++	{ 0x0116, 0x04104004 }, { 0x0113, 0x00000000 }, { 0x011c, 0x00000000 }, { 0x0109, 0x00004000 },
++	{ 0x0115, 0x00000200 }, { 0x0112, 0x00002222 }, { 0x0117, 0x00000002 }, { 0x011b, 0x00002222 },
++	{ 0x0118, 0x00000222 }, { 0x0119, 0x00000111 }, { 0x011a, 0x00000555 },
++};
++
++static void a6_hwcg_on(bool cr)
++{
++	static int v = -1;
++	if (v < 0) {
++		v = 0;
++		(void)PE_parse_boot_argn("sweethwcg", &v, sizeof(v));
++	}
++	if (v == 0)
++		return;
++	if (cr)
++		SWEET_CRUMB("cp_init: hwcg");
++	wr32(GMU_REG(GMU_CGC_MODE), 0x222);
++	wr32(GMU_REG(GMU_CGC_DELAY), 0x111);
++	wr32(GMU_REG(GMU_CGC_HYST), 0x555);
++	uint64_t sp = GMU_REG(GMU_GX_SPTPRAC_CLOCK_CONTROL);
++	uint32_t was = rd32(GREG(RBBM_CLOCK_CNTL));
++	/* always the whole table: a soft reset may clear it and leave CLOCK_CNTL, unlike upstream's one reset path */
++	wr32(sp, rd32(sp) & ~1u);	/* SP clock off while the table is written */
++	for (unsigned i = 0; i < sizeof(a6_hwcg_regs) / sizeof(a6_hwcg_regs[0]); i++)
++		wr32(GREG(a6_hwcg_regs[i][0]), a6_hwcg_regs[i][1]);
++	wr32(sp, rd32(sp) | 1u);
++	wr32(GREG(RBBM_CLOCK_CNTL), A6_HWCG_CLOCK_CNTL);
++	uint32_t now = rd32(GREG(RBBM_CLOCK_CNTL));
++	a6_log("hwcg on clock_cntl %x (was %x)\n", now, was);
++	if (now != A6_HWCG_CLOCK_CNTL)
++		a6_log("hwcg: clock_cntl readback %x, wanted %x\n", now, A6_HWCG_CLOCK_CNTL);
++}
++#endif
++
+ static int gpu_cp_init(struct a6_gpu *g, bool resume)
+ {
+-	/* a6xx hw_init for the A640 (a6xx_gpu.c), minus clock gating, CP protection and interrupts */
++	/* a6xx hw_init for the A640 (a6xx_gpu.c), minus CP protection and interrupts; clock gating only with sweethwcg=1 (0262) */
+ 	bool cr = resume || recover2_active;	/* 0206: crumbs on recoveries only */
+ 	if (cr)
+ 		SWEET_CRUMB("cp_init enter (resume %d)", resume);
+@@ -1953,6 +2012,9 @@ static int gpu_cp_init(struct a6_gpu *g, bool resume)
+ 		wr32(GREG(init[i][0]), init[i][1]);
+ 	if (cr)
+ 		SWEET_CRUMB("cp_init: init table done");
++#if A6_GPU_ID == 618
++	a6_hwcg_on(cr);				/* 0262: before the CP starts, as a6xx hw_init */
++#endif
+ 	a6_clkprobe_start();			/* 0169: core cycle counter, redone after every GX collapse */
+ 
+ 	uint32_t len;
+-- 
+2.56.0
+
