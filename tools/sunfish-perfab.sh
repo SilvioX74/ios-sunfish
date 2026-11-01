@@ -242,8 +242,9 @@ unlock() { C H; sleep 1; go_home; sleep 1; go_home; }
 UP=0
 long_swipes() {	# until SECONDS reaches $1
 	while more "$1"; do
-		if [ $UP = 0 ]; then C swipe 540 2000 540 400 800; UP=1; else C swipe 540 400 540 2000 800; UP=0; fi
-		sleep 0.85
+		# SWIPE_MS: longer swipes leave fewer idle gaps (each costs about 65 ms: at 800 ms the bench tops out near 57 swaps/s)
+		if [ $UP = 0 ]; then C swipe 540 2000 540 400 "${SWIPE_MS:-800}"; UP=1; else C swipe 540 400 540 2000 "${SWIPE_MS:-800}"; UP=0; fi
+		sleep "$(awk "BEGIN{print ${SWIPE_MS:-800}/1000+0.05}")"
 	done
 }
 # Tight home pages as in fpsbench BENCH_TIGHT.
