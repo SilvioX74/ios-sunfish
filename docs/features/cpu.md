@@ -22,6 +22,13 @@ Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features
 ### 2026-10-31 19:46 xnu 0257 sunfish-dark-clk written, not built, not run
 - `sweetdarkclk=1` (default 0; needs `sweetdark` on): while dark A55 row 4 (1248 MHz), A76 row 1 (652 MHz); effective row = lower of cap row and dark row; leaving dark restores the cap row. Log `SWEET THERM: dark a55 4=1248 a76 1=652`, `SWEET THERM: bright a55 9=1804 a76 12=2208`, `dark 0|1` after `cap N` on the busy line. Rows are lowered as soon as the off request arrives, while the panel thread's sleep-in (about 200-350 ms) is still running, not after it ends. Raised at the top of RequestPowerChange(on); the key press that leads there still runs at dark rows.
 
+### 2026-10-31 21:40 rows1: A55 at 1497 MHz: cooler and faster on Settings
+- `tools/sunfish-perfab.sh rows1 5 --secs 15 --screens settings,home`, kernel139 (xnu 0258) sweetswapbig=6 sweetse9=2 sweetcampmic=2 sweetampreset=1 SWEET_DEADFILL=2, sweettrace=1, base against `sweetrowa55=6`, 10 boots, 55 k submits, 0 G1, 0 G2, 0 G4.
+- Settings: base 3 ok, 2 void (too hot), 49.6 (48.3-50.7) swaps/s, frame 20.2 ms, p50 19.0, <=17 ms 32 %, start / max 91.6 / 94.6 C, A76 min 2006 MHz. A55 1497: 5 ok, 0 void, 52.1 (49.1-55.0) swaps/s, frame 19.2 ms, p50 17.3, <=17 ms 55 %, 86.1 / 90.5 C, A76 min 2185 MHz. p95 30.1 and 30.2.
+- Home: 26.7 and 26.9 swaps/s, GPU-bound; p95 47.3 and 59.0 (mean of a few gaps, not read as a change).
+- Observed: about 5 C cooler on Settings, fewer throttled runs, +2.5 swaps/s, -1 ms. Base here is below df5's 54.8: Settings ran first here, right after boot, last in df5: order matters (cooler after the GPU-bound screens).
+- Next: lower A55 rows (4 = 1248, 5 = 1324); A55 rows may slow app work: needs an app-open check before default.
+
 ### 2026-10-31 20:25 dk1: sweetdarkclk=1 works; heat gain not shown (kernel138, xnu 0257)
 - Boots 20261031-195555 (sweetdarkclk=1), 20261031-200956 (control), 4455 mV, 0 resets, 0 hangs, 0 `submit failed`. Dark: real 1248 and 652 MHz (control 1804 and 2208), busy 1-6 %. Wake: `bright` line 6 ms after the key command. 5 of 5 dark and wake cycles, touch and Settings fine afterwards.
 - Hottest sensor at dark +1 / +3 / +5 min: sweetdarkclk=1 61.9 / 59.3 / 58.3 C, control 56.4 / 54.8 / 52.8 C. Not a fair comparison: the first boot had been at 94 C and was still cooling, screen-on start 67.0 against 59.6 C. At 1-6 % busy clock choice may matter little (guess).

@@ -31,6 +31,7 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-10-31 | rows1 | base=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2; a55l=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2,sweetrowa55=6 | 10 | 55 k | 0 | 0 | 0 | 2 |
 | 2026-10-31 | df5 | base=138,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1; df2=138,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2 | 10 | 69 k | 1 | 0 | 0 | 4 |
 | 2026-10-31 | cpu1 | base=137,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1; a76=137,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,@work/metal2-a76/out/phone/metal2/out | 10 | 100 k | 0 | 0 | 0 | 2 |
 | 2026-10-31 | smoke3 | base=137,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
