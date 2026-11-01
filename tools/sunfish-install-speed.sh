@@ -3,7 +3,7 @@
 # M2V_SHADOW_CACHE 1, so /var/local/mtl2-env drops those two lines; Control Center's backdrop scale; the PowerLog, CoreDuet
 # and Biome data moved aside. The A55 default (xnu 0260) comes with the kernel, not from here.
 #   tools/sunfish-install-speed.sh           needs work/metal2-next (METAL2_VARIANT=next tools/build-metal2-linux.sh)
-#   tools/sunfish-install-speed.sh --undo    the --undo of each part; also moves back data moved before this script ran
+#   tools/sunfish-install-speed.sh --undo    bundle, mtl2-env and backdrop back; the moved data stays moved
 # Safe to run twice: the first run's backup and the bundle's one level of undo stay. Reboot to apply; doesn't reboot.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -33,10 +33,6 @@ bundle_undo() {
 db_on() {	# NAME [--biome]
 	if $S "[ -e $DB/$1 ]"; then echo "already moved: $DB/$1"; return 0; fi
 	tools/sunfish-idlefix-db.sh ${2:-}
-}
-db_undo() {	# NAME [--biome]
-	if ! $S "[ -e $DB/$1 ]"; then echo "not moved: $DB/$1"; return 0; fi
-	tools/sunfish-idlefix-db.sh ${2:-} --undo
 }
 
 $S true || { echo "phone not reachable over SSH; nothing done" >&2; exit 1; }
