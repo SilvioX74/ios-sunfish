@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 05:10 cu1: SWEET_CULL=2 on Home: 42.5 -> 49.2 swaps/s, steadier; 1 G1 on its side
+- `tools/sunfish-perfab.sh cu1 4 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, minimum brightness, 8 boots, 67 k submits, G1 1 (c2 b3), G2 0, G4 0, 2 void from it. c0 then c2: Home 42.5 (37.1-44.5) / 49.2 (48.6-49.5), frame 23.5 / 20.3 ms, p95 45.2 / 38.9, 1st submit 20.9 / 17.4; Control Center 28.5 / 28.9; Settings 51.1 / 50.8. Stills fine (Home, Control Center, Settings at b1). Not checked for holes or rim errors in motion. Stays env-only and not on the everyday setup until checked. Whether the wallpaper draw can discard pixels is unverified (no metallib).
+
 ### 2026-11-01 04:30 gd1: GPU 650 MHz: Home 44.8 -> 48.6, Control Center 28.6 -> 30.8, Settings worse; sweetddr=1 no change
 - `tools/sunfish-perfab.sh gd1 4 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, minimum brightness, 12 boots, 106 k submits, 0 G1, 0 G2, 0 G4, 2 void (base Home too hot). Base / sweetgpufreq=6 / sweetddr=1: Home 44.8 / 48.6 / 44.5 swaps/s, p95 43.4 / 39.8 / 45.2, max 89.8 / 93.9 / 93.4 C; Control Center 28.6 / 30.8 / 28.5, p95 61.6 / 61.8 / 63.0; Settings 49.2 / 44.6 (34.4-48.6) / 49.3, p95 31.8 / 41.7 / 31.8, >100 ms gaps 0 / 2.5 / 0.
 - Reading: 650 MHz gains 1.7-2.4 ms where the GPU is the limit, but one Settings boot fell to 34.4 with gaps, cause unknown: not default. More heat. sweetddr=1: no gain now; off. Everyday setup unchanged.
