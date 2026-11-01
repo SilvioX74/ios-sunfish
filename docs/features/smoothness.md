@@ -95,6 +95,18 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-10-31 20:55 df5: SWEET_DEADFILL=2: Settings 47.2 -> 54.8 swaps/s, Home and Control Center nearly flat; 1 hang
+- `tools/sunfish-perfab.sh df5 5 --secs 15 --screens home,cc,settings`, kernel138 sweetswapbig=6 sweetse9=2 sweetcampmic=2 sweetampreset=1, sweettrace=1, 10 boots. 69 k submits, G1 1 (df2 b5), G2 0, G4 0, 4 void runs (2 too hot, 1 hang + the screen after it). Base then df2:
+
+| screen | ok/void | swaps/s (min-max) | frame ms | p95 ms | GPU % | 1st submit ms |
+|---|---|---|---|---|---|---|
+| Settings | 5/0, 4/1 | 47.2 (43.0-54.3) / 54.8 (53.7-55.9) | 21.2 / 18.2 | 32.6 / 27.3 | 75 / 65 | 12.9 / 8.8 |
+| Home | 4/1, 4/1 | 26.1 (24.9-26.9) / 26.7 (26.6-26.8) | 38.3 / 37.5 | 53.1 / 55.2 | 99 / 100 | 36.2 / 36.0 |
+| Control Center | 5/0, 4/1 | 21.6 (20.6-22.1) / 22.6 (21.7-23.3) | 46.3 / 44.2 | 104.0 / 97.4 | 99 / 98 | 41.6 / 38.7 |
+
+- Observed: Settings gains 2.9 ms and is much steadier. Home's 36 ms isn't in these fills: the investigator's first guess is wrong for Home. Settings here ran last, after two hot screens, and base got 43-45 in 3 of 5 boots against 50-55 in cpu1; temps were below the throttle (A76 2208 MHz), so why the base dropped is open. Swap count and p95 in a run with a hang are void.
+- A hang under df2 at 1 in about 34 k submits against 0 in about 35 k for base: too few to read. df2 stays env-only until a survey for ghosting and a soak.
+
 ### 2026-10-31 19:55 cpu1: bundle built for Cortex-A76: no gain; Home 27, Control Center 22 swaps/s; heat throttles Settings
 - `tools/sunfish-perfab.sh cpu1 5 --secs 15 --screens settings,safari,cc,home`, kernel137 sweetswapbig=6 sweetse9=2 sweetcampmic=2 sweetampreset=1, sweettrace=1, idle fixes in, 10 boots, 4455-4456 mV. 100 k submits, 0 G1, 0 G2, 0 G4, 2 void (too hot, 95 C). Window means, default then A76 build:
 
