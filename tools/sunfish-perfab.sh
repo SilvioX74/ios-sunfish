@@ -236,6 +236,8 @@ open_app() {	# bundle id; openapp returns once FrontBoard answered. rc 255 = SSH
 # flame-cmd --wait 0 returns while the swipe runs on the phone: every sleep is the swipe + 50 ms, so they never queue up.
 # H only wakes the screen; the bottom swipe unlocks, then goes home from whatever app unlocking returned to.
 go_home() { C swipe 540 2330 540 1100 300; sleep 1; }
+# Night (work/night): each boot comes up at DCS 128 whatever the slider was: drag the slider down in Control Center. Before any window.
+night_dim() { [ -e work/night ] || return 0; C H; sleep 1; go_home; sleep 1; C swipe 1000 5 1000 900 300; sleep 2; C swipe 660 900 660 1600 500; sleep 2; go_home; sleep 1; go_home; }
 unlock() { C H; sleep 1; go_home; sleep 1; go_home; }
 UP=0
 long_swipes() {	# until SECONDS reaches $1
@@ -369,6 +371,7 @@ for b in $(seq "$N"); do
 		BLOG=$(basename "$(readlink ../logs/boots/current.log)")
 		OFF=$(logsize)
 		sleep "${SETTLE:-30}"
+		night_dim
 		abort=
 		for s in "${SCR[@]}"; do
 			if [ -n "$abort" ]; then
