@@ -34,6 +34,7 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-01 | hot1 | a2208=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_U0011=1,+SWEET_U0012=1,+SWEET_U0013=1,+SWEET_U0014=1; a1939=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_U0011=1,+SWEET_U0012=1,+SWEET_U0013=1,+SWEET_U0014=1,sweetrowa76=10 | 3 | 162 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | cp1 | base=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,@work/metal2-cpu/out/phone/metal2/out; cpu=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,@work/metal2-cpu/out/phone/metal2/out,+SWEET_U0011=1,+SWEET_U0012=1,+SWEET_U0013=1,+SWEET_U0014=1 | 10 | 68 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | sw3 | s=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1 | 4 | 31 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | mf4 | fl1=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1; fl0=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,sweetmapflush=0 | 16 | 144 k | 1 | 0 | 0 | 4 |

@@ -22,6 +22,9 @@ Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features
 ### 2026-10-31 19:46 xnu 0257 sunfish-dark-clk written, not built, not run
 - `sweetdarkclk=1` (default 0; needs `sweetdark` on): while dark A55 row 4 (1248 MHz), A76 row 1 (652 MHz); effective row = lower of cap row and dark row; leaving dark restores the cap row. Log `SWEET THERM: dark a55 4=1248 a76 1=652`, `SWEET THERM: bright a55 9=1804 a76 12=2208`, `dark 0|1` after `cap N` on the busy line. Rows are lowered as soon as the off request arrives, while the panel thread's sleep-in (about 200-350 ms) is still running, not after it ends. Raised at the top of RequestPowerChange(on); the key press that leads there still runs at dark rows.
 
+### 2026-11-01 13:10 hot1: A76 2208 against 1939 MHz over 4 minutes of Settings
+- `SWIPE_MS=3000 tools/sunfish-perfab.sh hot1 2 --secs 240 --screens settings`, kernel139, everyday env with SWEET_U0011..14, 4 boots, 162 k submits, 0 GPU bugs. 2208: 55.7 swaps/s (55.0-56.3), frame 18.0, p95 26.8, max 92.0 C, A76 min 2197. 1939: 54.6 (53.3-55.9), 18.3, 28.9, max 86.9 C. So 5 C for 0.4 ms, under the 1 ms stop rule, 2 boots a side. 2208 stays while speed comes first; a governor that holds 2208 only for touch and animation is the way to get both.
+
 ### 2026-11-01 07:17 Long idle check: fixes hold for an hour
 - Everyday boot from 06:18, kernel139, sweetrowa55=6, no touches, screen state as left. After about 1 h: a55 54.1 C, ddr 53.8, gpu 55.8; busy `5 3 2 3 1 1 | 2 3` %; CPU s used: coreduetd 18.0, aggregated 9.3, biomed 5.3, backboardd 40.7, SpringBoard 47.7. 0 GPU errors. Was 79-85 C and 53 CPU s per minute each.
 
