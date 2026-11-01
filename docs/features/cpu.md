@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-01 17:45 xnu 0262 sunfish-gpu-hwcg, kernel143: built, not run; idle GPU state read
+- Read-only, boot 20261101-143340, 2.9 h idle: hardware clock gating was never on (RBBM_CLOCK_CNTL 0). Core clock, GX and CX GDSC and the rails stay up all the time; nothing lowers them. Present isn't the cause: about 1 swap and 1 panel copy per 60 s at idle. All sensors sit within about 3 C at idle and the GPU-minus-DDR gap is 2.3-2.6 C loaded or not, so the GPU reading hottest doesn't prove it's the source (guess: sensor position).
+- Correction to gv1's "DDR vote" and to the comment at sweet_gpu.c:287: `sweetddr=0` is the baked-in default (bootargs.c, sunfish-boot.sh), so there's no top vote on normal boots; `sweetddr=1` only adds one. The level ABL leaves has never been read.
+- 0262: `sweethwcg=1` (default 0: no writes) ports mainline's A618 clock gating in `a6_hwcg_on`, called from `gpu_cp_init`: 63 table entries from `a615_hwcg`, CGC mode 0x222, delay 0x111, hysteresis 0x555, RBBM_CLOCK_CNTL 0x8aa8aa82. Unlike mainline it rewrites the table every time, since a soft reset may clear it and leave CLOCK_CNTL. Log `hwcg on clock_cntl`. With it on, `core MHz` may read lower (guess: the counter stops when gated).
+- Open worry: mainline's second 0x06010800 catalog entry has no `.hwcg`, reason not given, so compare the G1 rate.
+
 ### 2026-11-01 13:50 xnu 0261 sunfish-governor written, not built, not run
 - `sweetgov=1` (default 0: no thread, busy line and rows as before). Thread tick 20 ms display on, 100 ms dark. Per domain: boot row at once on touch (`sweet_hid_touch`), GPU submit burst (4 in 33 ms, `gpu_note_submit_locked`) or display wake (`sweet_cpufreq_dark(0)`), held 300 ms; else busiest core over the tick: over 70 % boot row, under 30 % for 100 ms a row down. Effective row = lowest of cap, dark, governor, written only by `osm_rows_apply`. Busy line adds `gov up N dn M` after `dark N`; `SWEET THERM: gov on ...` at start; perfab regexes checked against a sample line.
 - Floors `sweetgovfloor55=R` (default 6, 1497 MHz), `sweetgovfloor76=R` (default 5, 1209 MHz), kept within cap floor..boot row. With the 0260 boot row 6 the A55 doesn't move by default; only the A76 is governed, unless `sweetrowa55` is higher.

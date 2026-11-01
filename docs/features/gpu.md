@@ -23,6 +23,13 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 17:45 G1 is a stuck memory path, not a stuck lock; why recovery fails (read-only)
+- Observed, all 578 boot logs: `gbif halt 3 ack 1` in 24 boots, `recover2 done` in 0 of them; `gbif halt 3 ack 3` in 8 boots, `recover2 done` in all 8 (counts rechecked by grep). In the ack-1 boots the TLB sync stays stuck (still 1 at +30 s). Our log hid this: `gbif_halt_bounded` (sweet_a6xx.c:~901) passes on either ack bit, so it printed "ack ok". `rbbm halt ack ok` is false too: 0x17 reads `deafbead` on A618.
+- Timeline in boots 20261101-001940, -002702, -003311, -103432: first sync timeout on a backboardd thread with both GDSCs on, RBBM status already the same as at the hang 2 s later, recovery aborts on `TLB sync busy`, recover3's GMU boots then `gfx rail TIMEOUT, sptprac TIMEOUT`, `hfi: ctrl init TIMEOUT`. About 2.07 s in total. `gpucc +1554` goes 1 to 0 in all 24 and in none of the 8; meaning unknown.
+- Not the lock: a timeout holds it 270 of 309 ms and 710 of 764 ms, then it's free for 1.2-1.9 s before the hang is declared, with rptr and IB unchanged. Not GX power: the stuck state survives a GX collapse.
+- Gap against Linux: `a6xx_recover` ends with a CX GDSC power-off and resume, which resets the SMMU. We never cycle CX. This SMMU is `qcom,smmu-v2`, not MMU-500. Linux also sets HUPCF for Adreno and stock sets CB ACTLR 0x70000000; we do neither.
+- Guess: one transaction out of GBIF is stuck in the TBU or NoC and both the sync and the halt wait on it. Whether flushes trigger it is still open. Next: xnu 0263: exact ack check, more probes at the hang, flush hammer `sweettlbhammer=N` as a fast reproducer; if it reproduces, CX-cycle recovery can be tried in baby steps. Notes: research/notes/g1-wedge-2026-11-01.md, reference sources in research/notes/g1-sources/.
+
 ### 2026-11-01 11:10 mf4: flushes on or off in the daytime state: 1 against 0 G1 in 144 k
 - `tools/sunfish-perfab.sh mf4 8 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, nits 32, 16 boots, 144 k submits. G1 1 (flushes on, b4, boot 20261101-103432, uptime 172 s), G2 0, G4 0. Too few to say. Speed the same: Control Center 35.8 / 35.8; Settings 52.8 (49.6-55.5) / 53.4 (47.5-56.6). 2 Control Center runs read 0 swaps (fl1 b1, b4), not explained.
 - Today's G1 uptimes: 84, 103, 156, 162, 172, 242 s: all early in a boot, but benches only run early, so that isn't shown to be a pattern. sweetmapflush stays default.
