@@ -15,6 +15,10 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-01 18:10 ddi1: idle by GPU clock and DDR vote: lowest GPU clock 2-3.7 C cooler; top DDR vote no change
+- kernel139, base args with sweetgpufreq=6, env and bundle as on the phone, 5 boots, each 5 min with no touches after SSH + 60 s, lit lock screen, readings once a minute from `SWEET THERM`, minutes 2-5 averaged, 4441-4442 mV, busy 1-6 % per core everywhere, 0 hangs. a55 / gpu / ddr C: base 56.5 / 58.4 / 56.4; sweetgpufreq=1 54.4 / 54.9 / 53.5, again 54.1 / 54.7 / 53.2; sweetgpufreq=5 56.0 / 57.2 / 55.4; sweetddr=1 55.9 / 57.8 / 55.8.
+- Observed: the lowest GPU clock takes 3.5-3.7 C off the GPU sensor and 2.1-2.4 C off the A55 at idle, with the two runs within 0.3 C. Each run swings about 3 C, so 5 and 6 aren't told apart (0.5-1.2 C), and neither is the top DDR vote (0.6 C). Room temperature not read. So GPU clock power is real but gives about 3.5 C of the idle 56-58 C; the rest is elsewhere (panel, rails, no deep CPU idle: guess). `bus vote` logs no line in any boot, so the sweetddr=1 vote is inferred from the code, not seen.
+
 ### 2026-11-01 17:45 xnu 0262 sunfish-gpu-hwcg, kernel143: built, not run; idle GPU state read
 - Read-only, boot 20261101-143340, 2.9 h idle: hardware clock gating was never on (RBBM_CLOCK_CNTL 0). Core clock, GX and CX GDSC and the rails stay up all the time; nothing lowers them. Present isn't the cause: about 1 swap and 1 panel copy per 60 s at idle. All sensors sit within about 3 C at idle and the GPU-minus-DDR gap is 2.3-2.6 C loaded or not, so the GPU reading hottest doesn't prove it's the source (guess: sensor position).
 - Correction to gv1's "DDR vote" and to the comment at sweet_gpu.c:287: `sweetddr=0` is the baked-in default (bootargs.c, sunfish-boot.sh), so there's no top vote on normal boots; `sweetddr=1` only adds one. The level ABL leaves has never been read.

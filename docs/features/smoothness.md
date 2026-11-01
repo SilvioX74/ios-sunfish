@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 18:20 Control Center: the bench needs 6 ms off each heavy frame, and its biggest cost was never traced (read-only)
+- From gd2 g6 (kernel139, 650 MHz, 32 nits, after the quarter-size backdrop), kernel spans, untraced: 72 % of frames carry 93 % of the GPU time. ms per average frame: spans of 21-27 ms 9.8, spans of 12-18 ms 8.8, present blit 2.5, the rest about 5. Over a gesture, GPU ms: start of open 16, opening 29, margin drag 26, closing 29, Home 7 (phases are guesses from roughly aligned clocks). 45 swaps/s needs about 22.9 ms where the bench now spends 29.6.
+- No trace covers the bench's margin drag: cc1 and cc2 touched elsewhere, which is why cc1 read 9 ms. Quarter-size removed the 51 ms frames but not the single-pass (30,) frames, so it helped open and close, not the drag. About 40 % of bench time is that drag, which real use rarely has: guess that a separate open-and-close screen judges feel better.
+- `SWEET_MTLOW` was never built: a proposal only, in no source or binary. Correction to the plan. Not worth a run unless a trace shows radius-driven passes remain.
+- Next, savings are guesses: one traced boot of the bench gesture with `+MESA_GPU_TRACES=print` alone; `blurRadius` 0 in modulesBackground (3-6 ms, loses the blur, so only if nothing else does it); `CA_ENABLE_MEMORYLESS=0` (1-3 ms, could be worse); port redfin 0111 scratch trim, `SWEET_M2V_SCRATCH=1` (1-3 ms, all screens; being ported); redfin 0109+0110 `SWEET_M2V_COLOR_WRITES=fetch` (0.5-2 ms). Analysis scripts: research/notes/cccycle.py, shapes.py.
+
 ### 2026-11-01 17:40 Correction to st3: its screen checks were framebuffer reads, not the panel
 - Late correction from the agent that ran st3, checked against boot 20261101-024953 only. The 13 "fine" screens come from flame-shot, which reads the scanout memory (0x9c000000), so they show what the GPU wrote, not what the panel showed, and would look the same with the panel off.
 - Only 2 webcam montages exist, research/st3/motion.png and motion2.png. motion.png's first row is black, most likely panel off (`SWEET FB: display on` at 39.460 and 676.262 s, timing inferred): void. Of the 10 frames st3 counted, those are not evidence.
