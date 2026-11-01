@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 01:30 nd1: Home and Control Center slower at minimum brightness? (mf1, mf2, nd1)
+- Same bundle and env, kernel139, sweetrowa55=6. DCS 128 at boot (rows2, sy1): Home 38.6 and 36.5 swaps/s, 1st submit 24.8 ms; Control Center 28.8 and 29.3. DCS 36 at boot, slider at minimum since mf1 (mf1, mf2, nd1): Home 31.6 (27.5-33.7), 31.6, 30.6 (25.8-33.5), 1st submit 28.2-28.9 ms; Control Center 25.8, 26.2; Settings GPU 88 % against 56-62 %. nd1 skipped the dim step (no Control Center before the bench) and stayed slow, so the step isn't the cause.
+- Guess: at low brightness iOS adds a full-screen colour step, about 4 ms of GPU per frame. Not tested: a bright A/B is against the night rule, so it's for the morning. Until then compare runs only within one brightness. Night benches understate speed.
+
 ### 2026-11-01 01:10 sy1: TU_DEBUG=sysmem: not worth it on partial data; run cut short when USB dropped
 - `tools/sunfish-perfab.sh sy1 3 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1, 1 usable boot a side: Home 36.5 -> 38.1 swaps/s, Control Center 29.3 -> 26.4, Settings 52.4 -> 51.5. gmem b2: 1 G4 hang voided 2 screens. sysmem b2 (boot 20261101-005041): `link up 00:52:56`, the live log stops at uptime 136 s, no SSH, no fastboot, phone gone from USB; the webcam at 01:08 shows the lock screen reading 1:02: UI alive after USB went. One boot a side doesn't count; sysmem is dropped for now, since Control Center lost 3.8 ms and it's expected to add DDR heat.
 - Cause of the USB loss unknown; whether sysmem caused it isn't shown. Waiting for flamereboot=1800 (about 01:22).

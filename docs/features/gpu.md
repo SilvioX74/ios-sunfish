@@ -23,6 +23,11 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 01:30 mf1, mf2: sweetmapflush=0: no G1 in 8 boots at the reproducer; not proof
+- Reproducer: A55 at 1248 MHz gave 3 G1 in about 43 k submits (rows2; analysis below). In all 3: normal syncs, first TLB sync timeout in a map flush from a backboardd client thread (`sweet_gpu_map_at` -> `a6_tlb_flush`, sweet_a6xx.c:339, GPU running), `done` frozen, hang declared 2 s later, recovery FAILED about 1.6 s. Boots 20261101-001940, -002702, -003311. Order of GPU stop and sync timeout still not known.
+- mf1: kernel139 sweetrowa55=4 sweetmapflush=0, home and apps, 8 boots, 35 k submits, 0 G1, 0 G2, 0 G4. Expected about 2.5 at the old rate: P of 0 about 8 %. Not proof. mf2: sweetrowa55=6, flushes on against off, 3 boots a side, 49 k submits, 0 G1; speed the same within noise (Home 31.6 / 31.7, Control Center 25.8 / 26.1, Settings 52.0 / 49.6).
+- Guesses: flush timing against GPU traffic, or the GPU wedges first and the sync is a symptom, or lower L3 or bus speed. BoMap doesn't check the range is free, so skipping flushes has its own risk. Stays off. Longer row 4 run next when phones allow it: more submits per boot.
+
 ### 2026-10-31 16:45 Bug list and test schedule (the user's choice; no phone run)
 - Added docs/gpu-bugs.md: G1-G8 with log lines and rates, plus a soak table seeded with soak1 and z1. Hangs wait unless they void benches, stop testing or double in rate after a change. Normal runs 15 min at most, one 1 h soak per day overnight. The ✅ state was wrong (0 of 8 no-fault hangs recovered): now 🟡.
 - GPU clock governor waits until these hangs are under control.
