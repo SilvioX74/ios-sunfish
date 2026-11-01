@@ -27,6 +27,10 @@ Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features
 ### 2026-10-31 19:46 xnu 0257 sunfish-dark-clk written, not built, not run
 - `sweetdarkclk=1` (default 0; needs `sweetdark` on): while dark A55 row 4 (1248 MHz), A76 row 1 (652 MHz); effective row = lower of cap row and dark row; leaving dark restores the cap row. Log `SWEET THERM: dark a55 4=1248 a76 1=652`, `SWEET THERM: bright a55 9=1804 a76 12=2208`, `dark 0|1` after `cap N` on the busy line. Rows are lowered as soon as the off request arrives, while the panel thread's sleep-in (about 200-350 ms) is still running, not after it ends. Raised at the top of RequestPowerChange(on); the key press that leads there still runs at dark rows.
 
+### 2026-11-01 14:35 gv1: governor costs no speed and shows no heat gain so far; off
+- `SWIPE_MS=3000 tools/sunfish-perfab.sh gv1 4 --secs 15 --screens settings,home,cc,apps`, kernel142 (xnu 0260, 0261), sweetgpufreq=6, everyday env, 8 boots, 94 k submits, 0 GPU bugs, 2 void (`0 swaps`, g0 b2). Off / on: Settings 53.4 / 55.2 swaps/s, p95 30.1 / 23.3; Home 53.1 / 52.9; Control Center 38.4 / 38.4; opens Clock 514 / 492, Calculator 527 / 479, Notes 262 / 261 ms; peak temp the same. Idle 5 min: 59.6-60.9 C with A76 at 2208 MHz, 59.9-62 C with A76 at 1209 MHz: no gain at idle, 1-5 % busy so clocks hardly matter; GPU sensor is the hottest there (62 C). Off by default; light use not measured.
+- Idle now: DDR vote and GPU power state are the next suspects (sweet_gpu.c:286; GX collapse unread).
+
 ### 2026-11-01 13:10 hot1: A76 2208 against 1939 MHz over 4 minutes of Settings
 - `SWIPE_MS=3000 tools/sunfish-perfab.sh hot1 2 --secs 240 --screens settings`, kernel139, everyday env with SWEET_U0011..14, 4 boots, 162 k submits, 0 GPU bugs. 2208: 55.7 swaps/s (55.0-56.3), frame 18.0, p95 26.8, max 92.0 C, A76 min 2197. 1939: 54.6 (53.3-55.9), 18.3, 28.9, max 86.9 C. So 5 C for 0.4 ms, under the 1 ms stop rule, 2 boots a side. 2208 stays while speed comes first; a governor that holds 2208 only for touch and animation is the way to get both.
 
