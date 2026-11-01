@@ -41,8 +41,8 @@ case "${1:-}" in
 	step "bundle back" bundle_undo
 	step "mtl2-env back" env_undo
 	step "Control Center backdrop back" tools/sunfish-install-ccscale.sh --undo
-	step "Biome back" db_undo biome --biome
-	step "PowerLog and CoreDuet back" db_undo powerlog
+	# The moved data stays moved: it burned a core each at idle. `tools/sunfish-idlefix-db.sh [--biome] --undo` brings it back.
+	echo "PowerLog, CoreDuet and Biome data left moved aside (idle heat fix)"
 	;;
 "")
 	[ -s "$BUNDLE/SweetMetal2.bundle/SweetMetal2" ] || { echo "no $BUNDLE: METAL2_VARIANT=next tools/build-metal2-linux.sh" >&2; exit 1; }
