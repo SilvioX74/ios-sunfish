@@ -145,7 +145,7 @@ This file is the one home for the project's rules (AGENTS.md and the memory note
   turns short and delegate.
 - **Start of a /loop session** (the user, 2026-10-31), before touching the phone:
   - Check that no other session is working the phone: list running sessions and leftover test scripts
-    (`ps -eo pid,ppid,args | grep -E 'scratchpad|sunfish-'`). Keep `sunfish-livelog`.
+    (`ps -eo pid,ppid,args | grep -E 'scratchpad|sunfish-'`). Keep `sunfish-livelog` and `sunfish-nightsoak`.
   - If another session is still active, stay off the phone, push-notify the user and work on what doesn't need it.
   - Otherwise, kill leftover test scripts, parent first.
 - **Overnight soak** (the user, 2026-10-31): run one 1 h soak per night, after `work/night` is set, as a phone-runner

@@ -32,6 +32,7 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 G1 (no-fault hang, no recovery) voids benches today, 4 of about 40 boots: it qualifies for a fix. Lead: map flush from backboardd under `sweet_gpu_lock` (gpu.md).
 
 ## Tonight's soak (after `work/night`, 9:30 pm)
+Already started and waiting (`tools/sunfish-nightsoak.sh n3`, detached, survives any session; don't kill or restart it, stay off the phone from 21:25 to about 22:35). It reboots the phone at 21:30. Result: work/nightsoak-n3.log, done at the "finished" line; nothing wakes a session, so check it after 22:35.
 One 1 h soak with `tools/sunfish-uisoak.sh`: kernel139, sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetrowa55=6 sweetgpufreq=6, no flamereboot; env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1; bundle work/metal2-cpu; slider down first. Clean (no silent reset, no failed recovery): make these defaults with tools/sunfish-install-speed.sh, a rebuilt `METAL2_VARIANT=next` including 0117-0120 with knobs on by default, and kernel141 + sweetgpufreq default.
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
