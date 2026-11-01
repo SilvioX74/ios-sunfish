@@ -1,0 +1,75 @@
+From 5035d34c98cc387de94553cbdb665df6a418e438 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 07:30:51 -0500
+Subject: [PATCH] sunfish: sweetddmin and sweetblmin, nits range switches
+ (0259)
+
+---
+ iokit/Kernel/arm/SweetBacklight.cpp | 24 +++++++++++++++---------
+ 1 file changed, 15 insertions(+), 9 deletions(-)
+
+diff --git a/iokit/Kernel/arm/SweetBacklight.cpp b/iokit/Kernel/arm/SweetBacklight.cpp
+index cea0561..bbe5443 100644
+--- a/iokit/Kernel/arm/SweetBacklight.cpp
++++ b/iokit/Kernel/arm/SweetBacklight.cpp
+@@ -15,6 +15,8 @@
+  * 0237: the panel's nits range (from ios-redfin 0973, MIT). Without it
+  * CoreBrightness falls back to logical 0..1 and never moves the backlight
+  * ("systemShallUpdateBacklight=false"). 2 / 155 / 500 nits; sweetnits=0: off.
++ * 0259: test the published minimums: sweetddmin=N (digital-dimming-min-nits),
++ * sweetblmin=N (every min-nits entry). Absent: 2 as before. DCS mapping unchanged.
+  */
+ #if defined(ARM64_BOARD_CONFIG_SWEET)
+ #include <IOKit/IOLib.h>
+@@ -119,24 +121,28 @@ AppleARMBacklight::publishNits()
+ 	if (!on) {
+ 		return;
+ 	}
+-	static const struct {
++	/* 0259: published minimums, in integer nits; 0 is allowed */
++	uint32_t blMin = 2, ddMin = 2;
++	(void)PE_parse_boot_argn("sweetblmin", &blMin, sizeof(blMin));
++	(void)PE_parse_boot_argn("sweetddmin", &ddMin, sizeof(ddMin));
++	const struct {
+ 		const char *key;
+ 		UInt32 value;
+ 	} fixed[] = {
+-		{ "MinNits", 2 }, { "MaxNits", 500 }, { "MaxNitsPanel", 500 },
+-		{ "HardwareAccessibleMinNits", 2 }, { "HardwareAccessibleMaxNits", 500 },
+-		{ "DisplayPanelLuminanceMin", 2 }, { "DisplayPanelLuminanceMid", 155 }, { "DisplayPanelLuminanceMax", 500 },
+-		{ "DisplayProductLuminanceMin", 2 }, { "DisplayProductLuminanceMid", 155 }, { "DisplayProductLuminanceMax", 500 },
++		{ "MinNits", blMin }, { "MaxNits", 500 }, { "MaxNitsPanel", 500 },
++		{ "HardwareAccessibleMinNits", blMin }, { "HardwareAccessibleMaxNits", 500 },
++		{ "DisplayPanelLuminanceMin", blMin }, { "DisplayPanelLuminanceMid", 155 }, { "DisplayPanelLuminanceMax", 500 },
++		{ "DisplayProductLuminanceMin", blMin }, { "DisplayProductLuminanceMid", 155 }, { "DisplayProductLuminanceMax", 500 },
+ 	};
+ 	for (unsigned i = 0; i < sizeof(fixed) / sizeof(fixed[0]); i++) {
+ 		putNumber(NULL, fixed[i].key, fixed[i].value);
+ 	}
+ 	/* currents are guesses (mA, 16.16): CoreBrightness only needs them present */
+-	static const struct {
++	const struct {
+ 		const char *key;
+ 		UInt32 value;
+ 	} cal[] = {
+-		{ "lMinPanel", 2 << 16 }, { "lMinProduct", 2 << 16 },
++		{ "lMinPanel", blMin << 16 }, { "lMinProduct", blMin << 16 },
+ 		{ "lMidPanel", 155 << 16 }, { "lMidProduct", 155 << 16 },
+ 		{ "lMaxPanel", 500 << 16 }, { "lMaxProduct", 500 << 16 },
+ 		{ "current-for-max-backlight", 20 << 16 }, { "current-for-mid-backlight", 6 << 16 },
+@@ -150,10 +156,10 @@ AppleARMBacklight::publishNits()
+ 		setProperty("backlight-calibration-parameters", d);
+ 	}
+ 	OSSafeReleaseNULL(d);
+-	UInt32 maxNits = 500 << 16, minNits = 2 << 16;
++	UInt32 maxNits = 500 << 16, minNits = ddMin << 16;
+ 	setProperty("user-accessible-max-nits", &maxNits, sizeof(maxNits));
+ 	setProperty("digital-dimming-min-nits", &minNits, sizeof(minNits));
+-	IOLog("SWEET BL: nits range 2..500 published\n");
++	IOLog("SWEET BL: nits range %u..500, digital dimming min %u published\n", blMin, ddMin);
+ }
+ 
+ void
+-- 
+2.56.0
+

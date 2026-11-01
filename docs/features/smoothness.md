@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 07:30 xnu 0259 sunfish-ddmin: written, not built, not run
+- `iokit/Kernel/arm/SweetBacklight.cpp`, to test whether the published minimums change the 7 ms second pass at 2-5 nits. Boot-args, absent = 2 as before: `sweetddmin=N` (`digital-dimming-min-nits`), `sweetblmin=N` (MinNits, HardwareAccessibleMinNits, DisplayPanelLuminanceMin, DisplayProductLuminanceMin, lMinPanel, lMinProduct). DCS mapping unchanged. Guess, unverified: CoreBrightness's flag at 0x1af0d985c compares [0x55c] (maybe the hardware minimum) > digital-dimming-min-nits.
+
 ### 2026-11-01 07:35 st5: at minimum brightness each frame has two full-size passes
 - MESA_GPU_TRACES=print, Settings long swipes, kernel139, modes on, 5 nits, boot of 07:27, no crash, research/notes/st5-settings-trace.txt. 648 passes of 1125x2436, 2 per moving frame: 9.5 then 8.3 ms traced, 44 bins, about 7.91 mean with idle frames. Copies 0.01 ms per frame. So the 7 ms second submit is a whole second full-screen pass that iOS adds at low brightness. Which code adds it isn't known yet.
 
