@@ -515,6 +515,7 @@ static std::string quartzCoreCallers();
 // sweet deadfill: attribute 0 (format, offset, buffer, its layout's stride), the first 4-wide colour attribute of the same buffer, raster samples, alpha to coverage
 @property(nonatomic) unsigned dfPosFmt,dfPosOff,dfPosBuf,dfStride,dfColFmt,dfColOff,dfSamples;
 @property(nonatomic) BOOL dfA2C;
+@property(nonatomic) BOOL dfNoDest;   // sweet cull 2: its fragment function's constants say it reads no destination (only set under SWEET_CULL=2)
 @end
 @implementation NBRenderPipeline
 - (void)dealloc {nmb_render_pipeline_release(_handle);}
@@ -790,7 +791,7 @@ struct DrawLog {
 // sweet cull (SWEET_CULL=1): dead-draw culling. Off (one cached getenv) unless set. A render pass with one colour target and no depth/stencil defers
 // every encoder call; at endEncoding, draws before the last full-target opaque rectangle draw (whitelisted Core Animation pipelines) are skipped.
 static bool cullEnabled() {
- static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&atoi(p)!=0;}();
+ static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&atoi(p)!=0&&atoi(p)!=2;}();   // 2: see cull2On, not this cull
  return on;
 }
 static std::atomic<unsigned> gCullPasses,gCullDraws;
@@ -811,12 +812,31 @@ static int deadfillMode() {
  static const int mode=[]{const char *p=getenv("SWEET_DEADFILL");if(strcmp(getprogname(),"backboardd"))return 0;if(!p||!*p)return 1;return std::max(0,std::min(3,atoi(p)));}();   // default 1: drops only (m1, 53 swaps/s); 0 off
  return mode;
 }
+// sweet cull 2 (SWEET_CULL=2, only with SWEET_DEADFILL=3; ignored otherwise, off: unset): a fill also goes when a later whitelisted opaque draw (the wallpaper) covers all its pixels and
+// no draw in between may read the destination. Draws in between need no rectangle: what they leave on the fill's pixels is overwritten too. Sweet cull's own loop stays off.
+static bool cull2On() {static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&atoi(p)==2&&deadfillMode()==3;}();return on;}
+// sweet cull 2: is this "name:type:hex" among a function's constants?
+static bool dfConstIs(const std::string &t,const std::string &kv) {
+ const size_t p=t.find(kv);return p!=std::string::npos&&(p==0||t[p-1]==' ')&&(p+kv.size()==t.size()||t[p+kv.size()]==' ');
+}
+// sweet cull 2: a rectangle through CA's pixels-to-clip transform, back to pixels. Only an axis-aligned 2D transform with w 1 and z in the clip range; the viewport must be the target.
+static bool dfPixelRect(const float *m,float x0,float y0,float x1,float y1,float z,unsigned long tw,unsigned long th,double *r) {
+ for(int i=0;i<16;i++)if(!std::isfinite(m[i]))return false;
+ if(m[0]==0||m[5]==0||m[1]!=0||m[2]!=0||m[3]!=0||m[4]!=0||m[6]!=0||m[7]!=0||m[8]!=0||m[9]!=0||m[11]!=0||m[15]!=1)return false;
+ const double cz=(double)m[10]*z+m[14];if(!(cz>=0&&cz<=1))return false;
+ const double ax=((double)m[0]*x0+m[12]+1)*0.5*tw,bx=((double)m[0]*x1+m[12]+1)*0.5*tw,ay=(1-((double)m[5]*y0+m[13]))*0.5*th,by=(1-((double)m[5]*y1+m[13]))*0.5*th;
+ r[0]=std::min(ax,bx);r[1]=std::min(ay,by);r[2]=std::max(ax,bx);r[3]=std::max(ay,by);
+ for(int i=0;i<4;i++)if(!(fabs(r[i])<1e6))return false;
+ return true;
+}
+// sweet cull 2: the first pixel whose centre is at or past v (margin 1/256 pixel, the rasterizer's grid at most; + moves it right)
+static long dfPix(double v,double margin) {return (long)ceil(v-0.5+margin/256);}
 static std::atomic<uint64_t> gDfDropped,gDfCleared,gDfPasses;
 // sweet dfwhy (SWEET_DFWHY=1): why fills weren't dropped: per 5 s, how many draws each test of dfNote turned away, and of the fills it found, why dfResolve
 // kept them (next: the next surviving draw is no fill; pipe, bind: another fill; rect: mode 3, its rectangle not contained; last: none follows; nocull: the pass
-// doesn't cull). Counts only. Off: unset. SWEET_DFWHY=2 also logs a not-full fill's rectangle and target, at most once per second.
-enum {DFW_NOPIPE,DFW_DSS,DFW_VIS,DFW_INST,DFW_PRIM,DFW_LABEL,DFW_OPAQUE,DFW_MSAA,DFW_BLEND,DFW_CULL,DFW_VFMT,DFW_VP,DFW_SC,DFW_DATA,DFW_INDEX,DFW_RANGE,DFW_W,DFW_COL,DFW_ALPHA,DFW_NOTFULL,DFW_CORNER,DFW_TRIS,DFW_NEXT,DFW_PIPE,DFW_BIND,DFW_LAST,DFW_NOCULL,DFW_RECT,DFW_N};
-static const char *const gDfWhyName[DFW_N]={"nopipe","dss","vis","inst","prim","label","opaque","msaa","blend","cull","vfmt","vp","sc","data","index","range","w","col","alpha","notfull","corner","tris","next","pipe","bind","last","nocull","rect"};
+// doesn't cull; cullrect: sweet cull 2, a covering draw doesn't contain it; cullbetween: sweet cull 2, a draw that may read the destination comes first). Counts only. Off: unset. SWEET_DFWHY=2 also logs a not-full fill's rectangle and target, at most once per second.
+enum {DFW_NOPIPE,DFW_DSS,DFW_VIS,DFW_INST,DFW_PRIM,DFW_LABEL,DFW_OPAQUE,DFW_MSAA,DFW_BLEND,DFW_CULL,DFW_VFMT,DFW_VP,DFW_SC,DFW_DATA,DFW_INDEX,DFW_RANGE,DFW_W,DFW_COL,DFW_ALPHA,DFW_NOTFULL,DFW_CORNER,DFW_TRIS,DFW_NEXT,DFW_PIPE,DFW_BIND,DFW_LAST,DFW_NOCULL,DFW_RECT,DFW_CULLBETWEEN,DFW_CULLRECT,DFW_N};
+static const char *const gDfWhyName[DFW_N]={"nopipe","dss","vis","inst","prim","label","opaque","msaa","blend","cull","vfmt","vp","sc","data","index","range","w","col","alpha","notfull","corner","tris","next","pipe","bind","last","nocull","rect","cullbetween","cullrect"};
 static std::atomic<uint64_t> gDfWhy[DFW_N];
 static bool dfWhyOn() {static const bool on=[]{const char *p=getenv("SWEET_DFWHY");return p&&atoi(p)!=0;}();return on;}
 static void dfWhy(int why) {if(dfWhyOn())gDfWhy[why]++;}
@@ -836,6 +856,7 @@ static void dfRectProbe(float x0,float y0,float x1,float y1,unsigned long tw,uns
 }
 #define DFRET(why) do{dfWhy(why);return;}while(0)
 struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4]={},rx0=0,ry0=0,rx1=0,ry1=0,rz=0;uint64_t bind=0;__unsafe_unretained NBRenderPipeline *fpipe=nil;   // sweet deadfill: r*: mode 3, the fill's vertex bbox and z; rok: finite, one z
+ bool prok=false,reads=true;long px0=0,py0=0,px1=0,py1=0;   // sweet cull 2: p*: the pixels a fill may touch, known if prok; reads: the draw may read the destination
  void (^blk)(void)=nil;bool draw=false,covering=false;unsigned writes=0xff,over=0;long cx0=0,cy0=0,cx1=0,cy1=0;NSString *label=nil;};   // c*: the draw's clip (scissor within the target)   // writes: targets the draw may change; over: targets a covering draw overwrites
 @interface NBRenderEncoder : NBEncoder
 - (void)drawLogStart:(MTLRenderPassDescriptor *)d;
@@ -852,6 +873,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  double _cvp[6];unsigned long _csc[4];
  NSUInteger _cvis;
  // sweet deadfill: vertex-stage bindings 0..7 (buffer + offset, or bytes), a depth/stencil state set, the held pass (mode 2), colours 1..7 not memoryless
+ BOOL _cvRect;long _cvr[4];   // sweet cull 2: from coversPrim to recDraw: the pixels surely covered
  BOOL _dfOn,_dfDss,_dfPending,_cullPass;NBBuffer *_dfVb[8];NSUInteger _dfVbOff[8];std::vector<uint8_t> _dfVbytes[8];
  NmbRenderPassDescriptor _dfPass;unsigned _dfAttached;
 }
@@ -862,14 +884,18 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
 }
 - (void)recDraw:(void (^)(void))b covering:(bool)c {CullEntry e;e.blk=[b copy];e.draw=true;e.covering=c;
  {long r[4];[self clip:r];e.cx0=r[0];e.cy0=r[1];e.cx1=r[2];e.cy1=r[3];}
+ if(c&&_cvRect){e.cx0=_cvr[0];e.cy0=_cvr[1];e.cx1=_cvr[2];e.cy1=_cvr[3];}   // sweet cull 2: the clip within the vertex bbox
+ e.reads=!_pipe||!_pipe.dfNoDest;   // sweet cull 2
  e.label=_pipe.label;
  if(_pipe){e.writes=_pipe.writtenMask&_attMask;e.over=_pipe.opaqueMask&_attMask;}_ops.push_back(e);}
 // sweet cull: is this draw an opaque, exactly-rectangular, full-target draw of a whitelisted pipeline?
 - (bool)coversPrim:(unsigned long)prim start:(NSUInteger)s count:(NSUInteger)n inst:(NSUInteger)inst indexed:(bool)indexed indexType:(MTLIndexType)ik
          indexBuffer:(NBBuffer *)ib indexOffset:(NSUInteger)io baseVertex:(NSInteger)bv {
+ _cvRect=NO;
  if(!_defer||_noCull||!_cullPass||!_pipe||prim!=MTLPrimitiveTypeTriangle||inst!=1||n!=6||_cvis)return false;
  NSString *l=_pipe.label;
  if(!l||!([l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_A2Xhf"]||[l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_TimgA2Xhfn_Isrc"]))return false;
+ if(cull2On()&&![l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_TimgA2Xhfn_Isrc"])return false;   // sweet cull 2: labels known not to discard: exactly this one
  if(!(_pipe.opaqueMask&1)){char t[64];snprintf(t,sizeof t,"opaque %x att %x",_pipe.opaqueMask,_attMask);cullWhy(1,l,t);return false;}   // overwrites target 0 at least; per-draw targets are checked at replay
  long cr[4];[self clip:cr];if(cr[0]>=cr[2]||cr[1]>=cr[3])return false;
  if(_vpSet&&!(_cvp[0]<=cr[0]&&_cvp[1]<=cr[1]&&_cvp[0]+_cvp[2]>=cr[2]&&_cvp[1]+_cvp[3]>=cr[3])){cullWhy(2,l);return false;}
@@ -890,14 +916,14 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
    vid[k]=(long)ix+(long)bv;
   }
  }
- float p[6][2];
+ float p[6][2],pz[6];
  for(unsigned k=0;k<6;k++) {
   if(vid[k]<0){cullWhy(10,l);return false;}
   const NSUInteger off=_cvbOff+(NSUInteger)vid[k]*stride;
   if(off+16>_cvb.length){cullWhy(11,l);return false;}
   float v[4];memcpy(v,vc+off,16);
   if(!std::isfinite(v[0])||!std::isfinite(v[1])||v[3]!=1.0f){cullWhy(12,l);return false;}   // pixel space: w == 1
-  p[k][0]=v[0];p[k][1]=v[1];
+  p[k][0]=v[0];p[k][1]=v[1];pz[k]=v[2];
  }
  float x0=p[0][0],x1=x0,y0=p[0][1],y1=y0;
  for(unsigned k=1;k<6;k++){x0=std::min(x0,p[k][0]);x1=std::max(x1,p[k][0]);y0=std::min(y0,p[k][1]);y1=std::max(y1,p[k][1]);}
@@ -913,6 +939,17 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  if((ma|mb)!=15||__builtin_popcount(ma&mb)!=2){cullWhy(16,l);return false;}
  unsigned sh=ma&mb,a=(unsigned)__builtin_ctz(sh),b=(unsigned)(31-__builtin_clz(sh));
  if((a^b)!=3){cullWhy(17,l);return false;}
+ if(cull2On()) {   // sweet cull 2: blend off and every pixel of its rectangle written, whatever the texture's alpha; the rectangle may be smaller than the clip
+  NBRenderPipeline *q=_pipe;NSNumber *cm=objc_getAssociatedObject(self,"cull"),*fm=objc_getAssociatedObject(self,"fill");
+  if(_dfDss||q.dfSamples>1||q.dfA2C||(q.writtenMask&~q.opaqueMask)||!q.dfNoDest||q.dfPosBuf!=1||q.vertexName.compare(0,18,"fixed_vert_lph_spc")||cm.unsignedLongLongValue!=MTLCullModeNone||fm.unsignedLongLongValue!=MTLTriangleFillModeFill){cullWhy(20,l);return false;}
+  if(_vpSet&&(_cvp[0]!=0||_cvp[1]!=0||_cvp[2]!=_tw||_cvp[3]!=_th)){cullWhy(21,l);return false;}
+  for(unsigned k=1;k<6;k++)if(pz[k]!=pz[0]){cullWhy(22,l);return false;}
+  const float *m=[self dfTransform:1];double r[4];
+  if(!m||!dfPixelRect(m,x0,y0,x1,y1,pz[0],_tw,_th,r)){cullWhy(23,l);return false;}
+  _cvr[0]=std::max(cr[0],dfPix(r[0],1));_cvr[1]=std::max(cr[1],dfPix(r[1],1));_cvr[2]=std::min(cr[2],dfPix(r[2],-1));_cvr[3]=std::min(cr[3],dfPix(r[3],-1));
+  if(_cvr[0]>=_cvr[2]||_cvr[1]>=_cvr[3]){cullWhy(24,l);return false;}
+  _cvRect=YES;return true;
+ }
  if(!(x0<=(float)cr[0]&&y0<=(float)cr[1]&&x1>=(float)cr[2]&&y1>=(float)cr[3])){char t[160];snprintf(t,sizeof t,"rect %.1f,%.1f..%.1f,%.1f",x0,y0,x1,y1);cullWhy(99,l,t);return false;}
  return true;
 }
@@ -999,6 +1036,9 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  e.fill=true;memcpy(e.col,c0,sizeof c0);e.fpipe=p;e.bind=[self dfBindHash:p.dfPosBuf]^(clip?0x9e3779b97f4a7c15ull:0);
  e.full=pixels||clip;e.rx0=x0;e.ry0=y0;e.rx1=x1;e.ry1=y1;e.rz=vz[0];e.rok=std::isfinite(x0)&&std::isfinite(y0)&&std::isfinite(x1)&&std::isfinite(y1);
  for(unsigned k=0;k<count;k++)e.rok=e.rok&&vz[k]==vz[0];   // NaN z: refused
+ if(cull2On()&&e.rok&&!clip&&!p.vertexName.compare(0,18,"fixed_vert_lph_spc"))if(const float *m=[self dfTransform:p.dfPosBuf]) {   // sweet cull 2: the fill's pixels, rounded outward (scissor and viewport are the target, tested above)
+  double r[4];if(dfPixelRect(m,x0,y0,x1,y1,vz[0],_tw,_th,r)){e.px0=std::max(0L,dfPix(r[0],-1));e.py0=std::max(0L,dfPix(r[1],-1));e.px1=std::min((long)_tw,dfPix(r[2],1));e.py1=std::min((long)_th,dfPix(r[3],1));e.prok=true;}
+ }
  // may it be the pass's clear? CA's fixed vertex function, no lasting colour 1..7 written, and the transform taking every vertex onto
  // a corner of clip space (w 1, z in [0,1]): the whole target whatever the positions' space
  if(!e.full||p.vertexName.compare(0,18,"fixed_vert_lph_spc")||(p.writtenMask&_dfAttached))return;
@@ -1040,6 +1080,20 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
    if(ops[i].fill&&ops[i].clearOK){dead[i]=1;clear=true;memcpy(col,ops[i].col,sizeof col);gDfCleared++;}
    break;
   }
+  if(cull2On()&&_cullPass)for(long e=0;e<(long)ops.size();e++) {   // sweet cull 2: after the clear, which costs less than a load under the same fill
+   if(!ops[e].draw||dead[e]||!ops[e].fill)continue;
+   int why=-1;
+   for(long m=e+1;m<(long)ops.size();m++) {
+    const CullEntry &o=ops[m],&f=ops[e];
+    if(!o.draw||dead[m])continue;
+    if(o.covering) {
+     if(f.prok&&!(f.writes&~o.over)&&f.px0>=o.cx0&&f.py0>=o.cy0&&f.px1<=o.cx1&&f.py1<=o.cy1){dead[e]=1;gDfDropped++;why=-1;break;}
+     why=DFW_CULLRECT;   // a later one may still contain it
+    }
+    if(o.reads){why=DFW_CULLBETWEEN;break;}
+   }
+   if(why>=0)dfWhy(why);
+  }
  }
  if(!_dfPending)return;
  _dfPending=NO;
@@ -1058,7 +1112,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  std::vector<char> dead(ops.size(),0);long last=-1;
  auto inside=[](const CullEntry &a,const CullEntry &b){return a.cx0>=b.cx0&&a.cy0>=b.cy0&&a.cx1<=b.cx1&&a.cy1<=b.cy1;};
  auto overlap=[](const CullEntry &a,const CullEntry &b){return a.cx0<b.cx1&&b.cx0<a.cx1&&a.cy0<b.cy1&&b.cy0<a.cy1;};
- if(!_noCull&&_cullPass)for(long d=(long)ops.size()-1;d>=0;d--) {
+ if(!_noCull&&_cullPass&&!cull2On())for(long d=(long)ops.size()-1;d>=0;d--) {
   if(!ops[d].draw||!ops[d].covering||dead[d])continue;
   for(long e=d-1;e>=0;e--) {
    if(!ops[e].draw||dead[e]||!inside(ops[e],ops[d])||(ops[e].writes&~ops[d].over))continue;
@@ -1121,6 +1175,11 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
      !d.visibilityResultBuffer&&d.colorAttachments[0].level==0&&d.colorAttachments[0].slice==0) {
    _dfOn=YES;_defer=YES;_tw=t.width;_th=t.height;_dfAttached=0;
    for(unsigned i=1;i<8;i++)if(id<MTLTexture> c=d.colorAttachments[i].texture)if(c.storageMode!=MTLStorageModeMemoryless)_dfAttached|=1u<<i;
+   if(cull2On()) {   // sweet cull 2: as sweet cull's setup below: all colour targets match target 0's size
+    bool single=true;_attMask=0;
+    for(unsigned i=0;i<8;i++){id<MTLTexture> x=d.colorAttachments[i].texture;if(!x)continue;_attMask|=1u<<i;if(x.width!=t.width||x.height!=t.height)single=false;}
+    _cullPass=single;
+   }
   }
  }
  if(cullEnabled()) {   // sweet cull: defer only single-colour-target passes without depth/stencil or visibility results
@@ -2199,6 +2258,12 @@ static void planarFill(NBTexture *t) {
    }
   }
   state.dfSamples=(unsigned)d.rasterSampleCount;state.dfA2C=d.alphaToCoverageEnabled;   // sweet deadfill
+  // sweet cull 2: journal rtj/rtj2, 254 labels: every label reading the destination (Bvcm, Bdso, Bpld, Tbds, Idst, ...) has a non-zero dest count or another blend function. Anything else, unknown: a reader.
+  if(cull2On()&&[(id)d.fragmentFunction isKindOfClass:[NBFunction class]]&&state.fragmentName=="fixed_frag_lph_cph") {
+   const std::string fc=((NBFunction *)d.fragmentFunction).constantsText;
+   state.dfNoDest=dfConstIs(fc,"fc_dest_count:49:00")&&dfConstIs(fc,"fc_destination_function:49:00")&&dfConstIs(fc,"fc_blend_function:49:36")&&dfConstIs(fc,"fc_framebuffer_sample:53:00")&&
+    d.label&&![d.label containsString:@"Bvcm"]&&![d.label containsString:@"Bdso"];
+  }
  }
  return (id<MTLRenderPipelineState>)state;
 }
