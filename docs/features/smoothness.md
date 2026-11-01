@@ -1,5 +1,5 @@
 # Smoothness
-**State:** 🟡 Home 52, Control Center 37, Settings 50-56 swaps/s at full canvas (normal brightness; less at the lowest slider), with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 and the quarter-size Control Center backdrop (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
+**State:** 🟡 Safari 60, Settings 57 (p95 20 ms), Home about 52, Control Center 36 swaps/s at full canvas (internal nits 32+; slower at 5), with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1 and the quarter-size Control Center backdrop (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
 
 ## How to use
 - Bench: `tools/sunfish-fpsbench.sh TAG SECONDS` (BENCH_TIGHT=1); config matrix `tools/sunfish-cfgbench.sh`; timeline `sweettrace=1` + `tools/sunfish-timeline.py`. Details in [methods.md](../methods.md).
@@ -97,6 +97,9 @@ Kernels:
 
 ### 2026-11-01 07:30 xnu 0259 sunfish-ddmin: written, not built, not run
 - `iokit/Kernel/arm/SweetBacklight.cpp`, to test whether the published minimums change the 7 ms second pass at 2-5 nits. Boot-args, absent = 2 as before: `sweetddmin=N` (`digital-dimming-min-nits`), `sweetblmin=N` (MinNits, HardwareAccessibleMinNits, DisplayPanelLuminanceMin, DisplayProductLuminanceMin, lMinPanel, lMinProduct). DCS mapping unchanged. Guess, unverified: CoreBrightness's flag at 0x1af0d985c compares [0x55c] (maybe the hardware minimum) > digital-dimming-min-nits.
+
+### 2026-11-01 12:10 cp1: bridge CPU knobs (0117-0120): Settings 53.9 -> 57.0 swaps/s, p95 29.0 -> 20.2 ms
+- `SWIPE_MS=3000 tools/sunfish-perfab.sh cp1 5 --secs 15 --screens home,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, bundle work/metal2-cpu, SWEET_U0011..14=1 on one side, nits 32, 10 boots, 68 k submits, 0 GPU bugs, 0 void. Settings 53.9 (47.6-56.6) / 57.0 (56.5-57.7), frame 18.5 / 17.6, p95 29.0 / 20.2, <=17 ms 65.8 / 81.7 %, 85 / 84.5 C. Home 47.9 (32.5-53.0) / 47.7 (36.0-53.0), flat, GPU-bound; a low boot on each side unexplained. Steadier as well as faster. Knobs on for the soak.
 
 ### 2026-11-01 11:20 sw3: Safari holds 60 swaps/s with long swipes; Settings 51 and hot when first after boot
 - `SWIPE_MS=3000 tools/sunfish-perfab.sh sw3 4 --secs 15 --screens settings,safari`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, nits 32, 4 boots, 31 k submits, 0 GPU bugs. Safari 60.1 (60.1-60.1), p50 16.7, p95 17.8, <=17 ms 88 %, GPU 52 %, 85 C. Settings 51.3 (46.3-54.6), p50 17.7, p95 29.8, <=17 ms 49 %, GPU 58 %, max 88.7-94.1 C, A76 min 2171. Settings ran first, about 30 s after boot, when boot load has already heated the phone; heat and CPU, not GPU, limit it now.
