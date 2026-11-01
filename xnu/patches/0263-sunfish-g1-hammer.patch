@@ -1,0 +1,246 @@
+From 8cb1dad45459c19a727e9acf3b8b46f2bee468d8 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 17:48:07 -0500
+Subject: [PATCH] sunfish: G1 exact GBIF ack, wedge probes, flush hammer
+ sweettlbhammer
+
+---
+ bsd/dev/sweet_a6xx.c | 84 ++++++++++++++++++++++++++++++++++++++++++--
+ bsd/dev/sweet_a6xx.h |  2 ++
+ bsd/dev/sweet_gpu.c  | 61 ++++++++++++++++++++++++++++++++
+ 3 files changed, 144 insertions(+), 3 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index dbada9b..e396b0a 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -40,6 +40,18 @@ static int wait_bit(uint64_t pa, uint32_t mask, int set, unsigned ms)
+ 	return -1;
+ }
+ 
++/* 0263: every bit of mask set (wait_bit passes on any of them) */
++static int wait_all(uint64_t pa, uint32_t mask, unsigned ms)
++{
++	for (unsigned i = 0; i <= ms; i++) {
++		if ((rd32(pa) & mask) == mask)
++			return 0;
++		if (i < ms)
++			a6_delay_ms(1);
++	}
++	return -1;
++}
++
+ static void zero_pa(uint64_t pa, uint64_t size)
+ {
+ 	static const uint8_t z[0x4000];
+@@ -389,6 +401,59 @@ void a6_tlb_regs_log(void)
+ 	else
+ 		a6_log("tlb first timeout: gx off, gx gdsc %x cx gdsc %x, gmu rpmh %x cx busy %x\n", gx, cx,
+ 		    rd32(GMU_REG(GMU_RPMH_STATE)), rd32(GMU_REG(GMU_CX_BUSY)));
++	a6_wedge_log("first timeout");		/* 0263 */
++}
++
++/*
++ * 0263: G1 probes, read-only, at the first sync timeout, the hang and +1 s of a failed recovery (sweethangdiag=0: none):
++ * SMMU micro-mmu-control (bit 3 IDLE), SGFSR, the GPU's GCC branches, gpucc +1534 and +1554, and has the CP moved 5 ms
++ * later? Same rules as a6_tlb_regs_log: CX up for the SMMU, GX up for the CP.
++ */
++void a6_wedge_log(const char *when)
++{
++	if (!a6_cx_up()) {
++		a6_log("wedge (%s): cx off, no register reads\n", when);
++		return;
++	}
++	uint32_t micro = rd32(SMMU + 0x6000);
++	a6_log("wedge (%s): smmu micro %x idle %d sgfsr %x, gcc memnoc %x dvm %x axi %x ahb %x, gpucc +1534 %x +1554 %x\n",
++	    when, micro, (micro >> 3) & 1, rd32(SMMU + 0x48), rd32(GCC + 0x7100c), rd32(GCC + 0x71018), rd32(GCC + 0x4452c),
++	    rd32(GCC + 0x71004), rd32(GPUCC + 0x1534), rd32(GPUCC + 0x1554));
++	if (!a6_gx_up()) {
++		a6_log("wedge (%s): gx off, no cp samples\n", when);
++		return;
++	}
++	uint32_t rptr = rd32(GREG(0x806)), ib1 = rd32(GREG(0x92a)), ib2 = rd32(GREG(0x92d));
++	a6_delay_ms(5);
++	a6_log("wedge (%s): after 5 ms rptr %x -> %x, ib1 rem %x -> %x, ib2 rem %x -> %x\n", when, rptr, rd32(GREG(0x806)), ib1,
++	    rd32(GREG(0x92a)), ib2, rd32(GREG(0x92d)));
++}
++
++static void sync_probe(const char *name, uint64_t sync, uint64_t status)
++{
++	uint32_t before = rd32(status), s;
++	wr32(sync, 0);
++	uint64_t t0 = a6_now_us(), us;
++	for (;;) {
++		us = a6_now_us() - t0;
++		s = rd32(status);
++		if (!(s & 1) || us >= 100000)
++			break;
++		a6_delay_us(10);
++	}
++	a6_log("sync probe: %s %s after %llu us, status %x -> %x\n", name, s & 1 ? "timeout" : "done", us, before, s);
++}
++
++/* 0263: with sweet_gpu_lock, +1 s of a failed recovery: real syncs, 100 ms each: one bank wedged or the whole SMMU? */
++void a6_sync_probe(const struct a6_gpu *g)
++{
++	if (!a6_cx_up()) {
++		a6_log("sync probe: cx off, not run\n");
++		return;
++	}
++	if (g->gmu_cb >= 0)
++		sync_probe("gmu cb", SMMU_CB(g->gmu_cb) + CB_TLBSYNC, SMMU_CB(g->gmu_cb) + CB_TLBSTATUS);
++	sync_probe("tlbgsync", SMMU + 0x70, SMMU + 0x74);
+ }
+ 
+ /* 0253: read-only, from the thread after a failed recovery; CX off would make the SMMU read unsafe */
+@@ -803,6 +868,15 @@ static int hfi_send(struct a6_gpu *g, uint32_t id, uint32_t *msg, uint32_t dword
+ static void a6_clkprobe_start(void);
+ static void a6_clk_diag(const struct a6_gpu *g, const char *when);
+ 
++/*
++ * 0263: GBIF_HALT_ACK needs both bits (client + arbiter), as in kgsl; bit 0 alone is G1's `gbif halt 3 ack 1`.
++ * sweethangdiag=0: the old wait, which passes on either bit.
++ */
++static int gbif_ack_wait(void)
++{
++	return a6_hangdiag() ? wait_all(GREG(0x3c46), 0x3, 100) : wait_bit(GREG(0x3c46), 0x3, 1, 100);
++}
++
+ /*
+  * 0167: the GX-on half of gmu_hfi, shared with a6_recover's power cycle (a6_gx_on). gx_rail_on is kgsl
+  * a6xx_gmu_gfx_rail_on (hfi-use-reg): GX/MX vote, OOB 6 boot_slumber (legacy bits 22/30), then
+@@ -901,10 +975,13 @@ static int a6_gx_off(void)
+ static int gbif_halt_bounded(void)
+ {
+ 	wr32(GREG(0x3c45), 0x3);		/* GBIF_HALT: client + arbiter */
+-	int a = wait_bit(GREG(0x3c46), 0x3, 1, 100);
++	int a = gbif_ack_wait();		/* 0263 */
++	uint32_t ack = rd32(GREG(0x3c46));
+ 	wr32(GREG(0x16), 1);			/* RBBM_GBIF_HALT */
+ 	int b = wait_bit(GREG(0x17), 1, 1, 100);	/* RBBM_GBIF_HALT_ACK */
+-	a6_log("recover2: gbif halt ack %s, rbbm halt ack %s\n", a ? "TIMEOUT" : "ok", b ? "TIMEOUT" : "ok");
++	/* 0263: 0x17 reads deafbead on A618, so its wait always passes and says nothing */
++	a6_log("recover2: gbif halt ack %x %s, rbbm halt ack can't tell (reads %x)\n", ack, a ? "TIMEOUT" : "ok",
++	    rd32(GREG(0x17)));
+ 	return a | b;
+ }
+ #endif
+@@ -1881,7 +1958,8 @@ int a6_recover(struct a6_gpu *g)
+ 	 * clears both halts).
+ 	 */
+ 	wr32(GREG(0x3c45), 0x3);		/* GBIF_HALT: client + arbiter */
+-	(void)wait_bit(GREG(0x3c46), 0x3, 1, 100);
++	int gack = gbif_ack_wait();		/* 0263 */
++	a6_log("recover: gbif halt ack %x %s\n", rd32(GREG(0x3c46)), gack ? "TIMEOUT" : "ok");
+ 	wr32(GREG(0x16), 1);			/* RBBM_GBIF_HALT */
+ 	(void)wait_bit(GREG(0x17), 1, 1, 100);	/* RBBM_GBIF_HALT_ACK */
+ 	wr32(GREG(0x43), 1);
+diff --git a/bsd/dev/sweet_a6xx.h b/bsd/dev/sweet_a6xx.h
+index dee7f4c..6cff89e 100644
+--- a/bsd/dev/sweet_a6xx.h
++++ b/bsd/dev/sweet_a6xx.h
+@@ -147,6 +147,8 @@ extern int a6_tlb_stat_off;		/* 0254: set during a recovery */
+ extern uint32_t a6_tlb_busy_before, a6_tlb_max_sync_us, a6_tlb_hist[5];	/* 0254: < 10 us, 100 us, 1 ms, 10 ms, timeout */
+ extern uint64_t a6_tlb_last_timeout_us;	/* 0254 */
+ void a6_tlb_regs_log(void);		/* 0254 */
++void a6_wedge_log(const char *when);	/* 0263: G1 probes, read-only */
++void a6_sync_probe(const struct a6_gpu *g);	/* 0263: with sweet_gpu_lock; real GMU bank and global syncs */
+ uint64_t a6_now_us(void);		/* 0254 */
+ void sweet_gpu_tlb_first_timeout(uint64_t ra);	/* 0254 */
+ void a6_tlb_diag(const struct a6_gpu *g, unsigned secs);	/* 0253: logs TLBSTATUS */
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 035f35e..aa8449b 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -305,6 +305,46 @@ gpu_bus_vote(void)
+ 	}
+ }
+ 
++/*
++ * 0263: boot-arg sweettlbhammer=N (default 0: no thread): a6_tlb_flush about every N us while the GPU has work
++ * outstanding (1 ms polls otherwise), to find out if flushes trigger G1. Under sweet_gpu_lock, which a recovery holds
++ * from start to end, so it never runs inside one. Ends at the first sync timeout, whoever's flush hit it.
++ */
++static void
++gpu_hammer_thread(void *arg, wait_result_t wr __unused)
++{
++	static int chan;
++	uint32_t n = (uint32_t)(uintptr_t)arg;
++	uint64_t flushes = 0, logged = 0, log_us = a6_now_us(), deadline;
++	bool ready;
++	a6_log("hammer %u us started\n", n);
++	for (;;) {
++		lck_mtx_lock(&sweet_gpu_lock);
++		ready = gpu_ready;
++		bool busy = ready && !a6_tlb_sync_timeouts && gpu.fence != a6_fence_read(&gpu);
++		if (busy) {
++			a6_tlb_flush(&gpu);
++			flushes++;
++		}
++		bool stop = !ready || a6_tlb_sync_timeouts;
++		lck_mtx_unlock(&sweet_gpu_lock);
++		if (stop) {
++			break;
++		}
++		if (flushes != logged && a6_now_us() - log_us >= 30000000) {
++			a6_log("hammer %llu flushes\n", flushes);
++			logged = flushes;
++			log_us = a6_now_us();
++		}
++		clock_interval_to_deadline(busy ? n : MAX(n, 1000), NSEC_PER_USEC, &deadline);
++		(void)assert_wait_deadline(&chan, THREAD_UNINT, deadline);
++		thread_block(THREAD_CONTINUE_NULL);
++	}
++	a6_log("hammer stopped after %llu flushes%s\n", flushes, ready ? "" : " (gpu not recovered)");
++	(void)thread_terminate(current_thread());
++	thread_block(THREAD_CONTINUE_NULL);
++}
++
+ static void
+ gpu_thread(void *arg __unused, wait_result_t wr __unused)
+ {
+@@ -331,6 +371,12 @@ gpu_thread(void *arg __unused, wait_result_t wr __unused)
+ 	absolutetime_to_nanoseconds(mach_absolute_time() - t0, &ns);
+ 	a6_log("bring-up %s in %llu ms (pool 0x%llx)\n", rc ? "FAILED" : "done, GPU ready", ns / 1000000,
+ 	    gpu.pool_pa);
++	uint32_t hammer = 0;		/* 0263 */
++	PE_parse_boot_argn("sweettlbhammer", &hammer, sizeof(hammer));
++	thread_t hammer_thread;
++	if (!rc && hammer && kernel_thread_start(gpu_hammer_thread, (void *)(uintptr_t)hammer, &hammer_thread) == KERN_SUCCESS) {
++		thread_deallocate(hammer_thread);
++	}
+ 	(void)thread_terminate(current_thread());
+ 	thread_block(THREAD_CONTINUE_NULL);
+ }
+@@ -780,6 +826,20 @@ gpu_recover_diag_thread(void *arg __unused, wait_result_t wr __unused)
+ 		(void)assert_wait_deadline(&chan, THREAD_UNINT, deadline);
+ 		thread_block(THREAD_CONTINUE_NULL);
+ 		a6_tlb_diag(&gpu, secs[i]);
++		if (secs[i] == 1) {
++			/* 0263: probes, and the syncs under the lock: at most 1 s for it, the wedge may be holding it */
++			bool locked = false;
++			a6_wedge_log("+1 s");
++			for (unsigned t = 0; t < 100 && !(locked = lck_mtx_try_lock(&sweet_gpu_lock)); t++) {
++				a6_delay_ms(10);
++			}
++			if (locked) {
++				a6_sync_probe(&gpu);
++				lck_mtx_unlock(&sweet_gpu_lock);
++			} else {
++				a6_log("sync probe: gpu lock busy, not run\n");
++			}
++		}
+ 		prev = secs[i];
+ 	}
+ 	(void)thread_terminate(current_thread());
+@@ -823,6 +883,7 @@ gpu_recover_locked(const char *why)
+ 		    tlbf_total[TLBF_SKIPPED]);
+ 		for (uint32_t f = done + 1; (int32_t)(gpu.fence - f) >= 0 && f - done <= 6; f++)
+ 			a6_log("%s: fence %u pid %d ib1 %llx\n", why, f, gstat_pid[f % A6_TS_SLOTS], gstat_ib1[f % A6_TS_SLOTS]);
++		a6_wedge_log("hang");		/* 0263 */
+ 	}
+ 	lost[recoveries % LOST_RING].lo = done;
+ 	lost[recoveries % LOST_RING].hi = gpu.fence;
+-- 
+2.56.0
+
