@@ -152,6 +152,8 @@ def screen(a):
         reason = 'openapp failed'
     elif swaps == 0:
         reason = '0 swaps'
+    elif (rate or 0) < 3:
+        reason = 'almost no swaps'          # the screen wasn't moving: e.g. d4 df3 b3, 1.4 swaps/s
     elif a.secs >= 6 and not fb:
         reason = 'no SWEET FB lines'        # one is due every 5 s while swapping
     elif fb and (copies == 0 or (ratio is not None and ratio < 0.5)):
