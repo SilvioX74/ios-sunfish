@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 07:35 st5: at minimum brightness each frame has two full-size passes
+- MESA_GPU_TRACES=print, Settings long swipes, kernel139, modes on, 5 nits, boot of 07:27, no crash, research/notes/st5-settings-trace.txt. 648 passes of 1125x2436, 2 per moving frame: 9.5 then 8.3 ms traced, 44 bins, about 7.91 mean with idle frames. Copies 0.01 ms per frame. So the 7 ms second submit is a whole second full-screen pass that iOS adds at low brightness. Which code adds it isn't known yet.
+
 ### 2026-11-01 07:40 Settings' limit at low brightness: a second submit of 7 ms; G3 may be this
 - Read-only, logs since Oct 30 22:00. Second-submit p50 by nits: 2 nits 6.66 ms, 5 nits 7.02 (82 k pairs), 92 nits 0.57, 101 nits 0.60, 160 nits 0.59. Same boot, 92 then 2 nits (20261031-001444): 0.57 then 5.59. So below some brightness iOS or the bridge adds a pass; this fits Home 38 against 31 (nd1). Mechanism unknown.
 - Stages, Settings, cs1 b1 (5 nits): 48.9 swaps/s, p50 19.45, 1st + 2nd submit 8.1 + 7.0, present 2.65, GPU 17.7 per frame, so GPU-bound. sh1 s1 b1 (101 nits): 56.4, p50 16.70, p95 18.7, 7.9 + 0.56, 2.56, GPU 11.1, idle 5.6.
