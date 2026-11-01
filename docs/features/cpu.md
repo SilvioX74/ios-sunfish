@@ -15,6 +15,10 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-10-31 20:48 xnu 0258 sunfish-cpu-rows written, not built, not run
+- `sweetrowa55=R`, `sweetrowa76=R` (decimal, each optional; absent: flamecpufreq picks as before): that cluster's boot row, so the thermal cap and the dark clock restore to it. Wins over flamecpufreq (also `flamecpufreq=0`), with a log line. A row past the table or a 1-core boost row is ignored with a log line. Log `SWEET CPUFREQ: rows a55 R=MHz a76 R=MHz (boot-arg)`. The table was already printed per cluster at init (rows count from 0); no second print. The `SWEET THERM:` layout is unchanged.
+- Rows from the table in `../logs/boots/20261029-125039.log` (read from OSM at init, not in the source): A55 6=1497, 7=1612, 8=1708, 9=1804; A76 9=1843, 10=1939, 11=2169, 12=2208.
+
 ### 2026-10-31 19:46 xnu 0257 sunfish-dark-clk written, not built, not run
 - `sweetdarkclk=1` (default 0; needs `sweetdark` on): while dark A55 row 4 (1248 MHz), A76 row 1 (652 MHz); effective row = lower of cap row and dark row; leaving dark restores the cap row. Log `SWEET THERM: dark a55 4=1248 a76 1=652`, `SWEET THERM: bright a55 9=1804 a76 12=2208`, `dark 0|1` after `cap N` on the busy line. Rows are lowered as soon as the off request arrives, while the panel thread's sleep-in (about 200-350 ms) is still running, not after it ends. Raised at the top of RequestPowerChange(on); the key press that leads there still runs at dark rows.
 
