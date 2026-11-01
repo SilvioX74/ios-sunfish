@@ -805,7 +805,7 @@ static void cullWhy(int why,NSString *l,const char *extra="") {
 // transform maps it onto the whole target, the pass clears to its colour (8-bit code) and the draw goes. backboardd's passes only:
 // colour 0 an 8-bit unorm single-sample 2D IOSurface, no depth/stencil/visibility; colours 1..7 may be attached (a clear is refused when
 // the fill writes one that is not memoryless). Uses sweet cull's deferral; the telemetry's "DF" row counts drops and clears.
-// 3 as 1 (no held pass, no clear), and fills needn't cover the target: one is also dropped when the next fill's rectangle contains its own,
+// 3 as 2 (the clear still needs a fill covering the target), and fills needn't cover the target to be dropped: one also goes when the next fill's rectangle contains its own,
 // both flat at one z. Same pipeline and bindings: the same transform, so what contains in vertex space contains on screen.
 static int deadfillMode() {
  static const int mode=[]{const char *p=getenv("SWEET_DEADFILL");if(strcmp(getprogname(),"backboardd"))return 0;if(!p||!*p)return 1;return std::max(0,std::min(3,atoi(p)));}();   // default 1: drops only (m1, 53 swaps/s); 0 off
@@ -1001,7 +1001,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  for(unsigned k=0;k<count;k++)e.rok=e.rok&&vz[k]==vz[0];   // NaN z: refused
  // may it be the pass's clear? CA's fixed vertex function, no lasting colour 1..7 written, and the transform taking every vertex onto
  // a corner of clip space (w 1, z in [0,1]): the whole target whatever the positions' space
- if(deadfillMode()==3||p.vertexName.compare(0,18,"fixed_vert_lph_spc")||(p.writtenMask&_dfAttached))return;
+ if(!e.full||p.vertexName.compare(0,18,"fixed_vert_lph_spc")||(p.writtenMask&_dfAttached))return;
  const float *m=[self dfTransform:p.dfPosBuf];if(!m)return;
  float cx0=1e30f,cx1=-1e30f,cy0=1e30f,cy1=-1e30f;
  for(unsigned k=0;k<count;k++) {
@@ -1014,7 +1014,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
 }
 // sweet deadfill mode 2: hold the creation of a deferred pass that loads colour 0 (made in dfResolve)
 - (bool)dfHold:(const NmbRenderPassDescriptor &)pass load:(MTLLoadAction)load {
- if(!_dfOn||deadfillMode()!=2||(load!=MTLLoadActionLoad&&load!=MTLLoadActionDontCare))return false;
+ if(!_dfOn||deadfillMode()<2||(load!=MTLLoadActionLoad&&load!=MTLLoadActionDontCare))return false;
  _dfPass=pass;_dfPending=YES;gDfPasses++;
  return true;
 }
