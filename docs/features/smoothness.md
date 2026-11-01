@@ -95,6 +95,13 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 07:40 Settings' limit at low brightness: a second submit of 7 ms; G3 may be this
+- Read-only, logs since Oct 30 22:00. Second-submit p50 by nits: 2 nits 6.66 ms, 5 nits 7.02 (82 k pairs), 92 nits 0.57, 101 nits 0.60, 160 nits 0.59. Same boot, 92 then 2 nits (20261031-001444): 0.57 then 5.59. So below some brightness iOS or the bridge adds a pass; this fits Home 38 against 31 (nd1). Mechanism unknown.
+- Stages, Settings, cs1 b1 (5 nits): 48.9 swaps/s, p50 19.45, 1st + 2nd submit 8.1 + 7.0, present 2.65, GPU 17.7 per frame, so GPU-bound. sh1 s1 b1 (101 nits): 56.4, p50 16.70, p95 18.7, 7.9 + 0.56, 2.56, GPU 11.1, idle 5.6.
+- G3 ("slower mode after a backboardd restart", 2nd submit 6 ms slower) lines up with the same drop: possibly not a restart effect at all. Unverified.
+- Bench caveat: 16 swipes in 15 s leave 16 gaps of about 65 ms, so Settings tops out near 57 swaps/s on this bench (estimate): the 58 target can't show there. Judge by p50 and p95, or lengthen swipes.
+- Tail: 17 % of cs1 frames exceed 22 ms with the same GPU time and 13 ms idle before submit: cause not observed; p95 23-32 at 101 nits too in rows2.
+
 ### 2026-11-01 06:20 cs1: Control Center backdrop at quarter size: 28.9 -> 32.9 swaps/s, p95 72 -> 49 ms
 - tools/sunfish-install-ccscale.sh (backdropScale 0.25 in modulesBackground.materialrecipe, .orig kept), `tools/sunfish-perfab.sh cs1 4 --secs 15 --screens cc,home,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, SWEET_CULL=2, minimum brightness, 4 boots, 36 k submits, 0 G1, 0 G2, 0 G4, 0 void. Control Center 32.9 (32.1-33.5), frame 30.4 ms, p95 49.3, >100 ms gaps 0.5, 1st submit 18.5. Before (cu1 c2, 3 boots, no interleave, cc after home): 28.9, 34.6 ms, p95 72.2, 5.7, 27.8. Home 49.6, Settings 49.1. Not an interleaved A/B; cc ran first here. Look not checked in motion. Why: recipe and traces in home-cc-gpu-2026-10-31.md (cc2) and research/re/CoreMaterial.s.
 
