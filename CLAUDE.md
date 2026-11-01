@@ -86,8 +86,15 @@ This file is the one home for the project's rules (AGENTS.md and the memory note
   is in flight.
 - **Need the user's input:** take the recommended path, push-notify the user, and add the question (with the
   choice made) to the "Questions for you" list in `docs/plan.md`, so they can answer later. Don't wait.
-- **Needs the user's hands at the phone** (feel, listen, look, plug in; the user, 2026-10-30): add it to
-  `docs/user-tasks.md` (not the plan's priority list), push-notify, and move straight on to the next item.
+- **Needs the user's hands at the phone** (feel, listen, look, plug in; the user, 2026-10-30, 2026-11-01): the user often
+  can't do these, so nothing waits on them:
+  - Add it to `docs/user-tasks.md` (not the plan's priority list) and move straight on. Don't repeat the ask; one push when
+    a task is added is enough. Answers come when they come.
+  - A user task never gates a change: if the automated checks pass (bench, screenshots, soak), ship it as the default with
+    an off switch. A later "this looks wrong" from the user is a bug report: switch it off and fix it.
+  - First try to check it without the user: a better tool (faster capture, webcam, measurement) beats asking.
+  - The phone is Claude's unless the user says otherwise: don't hold it free for them. "The phone's mine" stops phone work
+    until they hand it back.
 - **Reliability** (the user, 2026-10-31): normal test runs are 15 min at most, plus one 1 h soak per day, overnight.
   Runs with a hang, a backboardd restart, the panel off or 0 swaps are void. Outside the speed focus, a fix needing
   repeated tests of an hour or more goes to the "Later" list (`docs/backlog.md`).
