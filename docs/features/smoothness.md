@@ -1,5 +1,5 @@
 # Smoothness
-**State:** 🟡 Settings about 51, Home 49, Control Center 29 swaps/s at full canvas, at minimum brightness, with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_CULL=2 (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
+**State:** 🟡 Settings about 51, Home 49, Control Center 33 swaps/s at full canvas, at minimum brightness, with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_CULL=2 and the quarter-size Control Center backdrop (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
 
 ## How to use
 - Bench: `tools/sunfish-fpsbench.sh TAG SECONDS` (BENCH_TIGHT=1); config matrix `tools/sunfish-cfgbench.sh`; timeline `sweettrace=1` + `tools/sunfish-timeline.py`. Details in [methods.md](../methods.md).
@@ -94,6 +94,9 @@ Kernels:
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-01 06:20 cs1: Control Center backdrop at quarter size: 28.9 -> 32.9 swaps/s, p95 72 -> 49 ms
+- tools/sunfish-install-ccscale.sh (backdropScale 0.25 in modulesBackground.materialrecipe, .orig kept), `tools/sunfish-perfab.sh cs1 4 --secs 15 --screens cc,home,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, SWEET_CULL=2, minimum brightness, 4 boots, 36 k submits, 0 G1, 0 G2, 0 G4, 0 void. Control Center 32.9 (32.1-33.5), frame 30.4 ms, p95 49.3, >100 ms gaps 0.5, 1st submit 18.5. Before (cu1 c2, 3 boots, no interleave, cc after home): 28.9, 34.6 ms, p95 72.2, 5.7, 27.8. Home 49.6, Settings 49.1. Not an interleaved A/B; cc ran first here. Look not checked in motion. Why: recipe and traces in home-cc-gpu-2026-10-31.md (cc2) and research/re/CoreMaterial.s.
 
 ### 2026-11-01 05:50 cc2: Control Center's slow frames: two full-size backdrop captures, not the blur chain
 - Light trace of 10 open and close rounds, kernel139, modes on, boot of 05:45, no crash, research/notes/cc2-trace.txt (numbers in home-cc-gpu-2026-10-31.md). 54 of 582 frames over 25 ms: 1.96 passes of 1127x2438 at about 9.9 ms each, main pass 11.2 ms, blur chain under 2 ms. 127 frames at 12-25 ms: a main pass of 18.6 ms alone. Traced times.
