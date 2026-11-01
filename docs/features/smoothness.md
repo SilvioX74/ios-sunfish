@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 17:40 Correction to st3: its screen checks were framebuffer reads, not the panel
+- Late correction from the agent that ran st3, checked against boot 20261101-024953 only. The 13 "fine" screens come from flame-shot, which reads the scanout memory (0x9c000000), so they show what the GPU wrote, not what the panel showed, and would look the same with the panel off.
+- Only 2 webcam montages exist, research/st3/motion.png and motion2.png. motion.png's first row is black, most likely panel off (`SWEET FB: display on` at 39.460 and 676.262 s, timing inferred): void. Of the 10 frames st3 counted, those are not evidence.
+- Not supported: "lock step not done" (the panel did go off and wake at 676 s, cause not read); "no new crash files" (the newest folder, Assistant, wasn't opened). Not checked: backboardd restarts, so st3 isn't shown to be a clean run; 0 hangs and 0 submit errors stand. Control Center's 13.2 swaps/s: void, as st3 already said. No webcam frame after boot, against the rule. The st3 agent also ran background jobs against its spec; none left running.
+- Effect: mode 3's survey is weaker than st3 says. Stale strips on real panel output aren't cleared by it beyond the remaining webcam frames; U22 stays open and doesn't gate the default. Tonight's soak is still the check for hangs. A webcam motion check of mode 3 goes in before it becomes default.
+
 ### 2026-11-01 07:30 xnu 0259 sunfish-ddmin: written, not built, not run
 - `iokit/Kernel/arm/SweetBacklight.cpp`, to test whether the published minimums change the 7 ms second pass at 2-5 nits. Boot-args, absent = 2 as before: `sweetddmin=N` (`digital-dimming-min-nits`), `sweetblmin=N` (MinNits, HardwareAccessibleMinNits, DisplayPanelLuminanceMin, DisplayProductLuminanceMin, lMinPanel, lMinProduct). DCS mapping unchanged. Guess, unverified: CoreBrightness's flag at 0x1af0d985c compares [0x55c] (maybe the hardware minimum) > digital-dimming-min-nits.
 
