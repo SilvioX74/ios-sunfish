@@ -15,6 +15,11 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-01 13:50 xnu 0261 sunfish-governor written, not built, not run
+- `sweetgov=1` (default 0: no thread, busy line and rows as before). Thread tick 20 ms display on, 100 ms dark. Per domain: boot row at once on touch (`sweet_hid_touch`), GPU submit burst (4 in 33 ms, `gpu_note_submit_locked`) or display wake (`sweet_cpufreq_dark(0)`), held 300 ms; else busiest core over the tick: over 70 % boot row, under 30 % for 100 ms a row down. Effective row = lowest of cap, dark, governor, written only by `osm_rows_apply`. Busy line adds `gov up N dn M` after `dark N`; `SWEET THERM: gov on ...` at start; perfab regexes checked against a sample line.
+- Floors `sweetgovfloor55=R` (default 6, 1497 MHz), `sweetgovfloor76=R` (default 5, 1209 MHz), kept within cap floor..boot row. With the 0260 boot row 6 the A55 doesn't move by default; only the A76 is governed, unless `sweetrowa55` is higher.
+- Guesses, to measure: burst threshold from the 5 s counts in the last 60 boots (scrolling about 160 submits/s, a band at 20-30/s); touch-to-write about 8 ms poll plus thread wake, up to about 28 ms if a kick misses the wake, plus OSM settling (not measured). Risks: first-touch hitch at low rows, wake-from-dark ordering with the panel thread, up to about 20 row writes/s per domain under load, and any link to GPU hangs (A55 at 1248 MHz raised G1 in rows2, cause not known). A/B against sweetgov=0 is needed before it stays on.
+
 ### 2026-10-31 20:48 xnu 0258 sunfish-cpu-rows written, not built, not run
 - `sweetrowa55=R`, `sweetrowa76=R` (decimal, each optional; absent: flamecpufreq picks as before): that cluster's boot row, so the thermal cap and the dark clock restore to it. Wins over flamecpufreq (also `flamecpufreq=0`), with a log line. A row past the table or a 1-core boost row is ignored with a log line. Log `SWEET CPUFREQ: rows a55 R=MHz a76 R=MHz (boot-arg)`. The table was already printed per cluster at init (rows count from 0); no second print. The `SWEET THERM:` layout is unchanged.
 - Rows from the table in `../logs/boots/20261029-125039.log` (read from OSM at init, not in the source): A55 6=1497, 7=1612, 8=1708, 9=1804; A76 9=1843, 10=1939, 11=2169, 12=2208.
