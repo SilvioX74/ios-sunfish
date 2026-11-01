@@ -14,7 +14,7 @@ each of its runs to "Bench runs" below; add the counts by hand after each soak.
 ## Bugs
 | ID | Bug | Log line to count | Latest rate or count | Recovers? | Fix now? |
 |---|---|---|---|---|---|
-| G1 | No-fault hang, stuck TLB sync | `GPU hang or fault` with `fsr 0`, `tlb sync -> timeout` | kernel134: 2 in ~113 k submits; kernel135: 0 in 151 k | No, 0 of 8; reboot needed | Only if it voids benches |
+| G1 | No-fault hang, stuck TLB sync | `GPU hang or fault` with `fsr 0`, `tlb sync -> timeout` | kernel134: 2 in ~113 k submits; kernel135: 0 in 151 k; kernel138-139: 2 in ~380 k; **sweetrowa55=4: 3 in ~43 k (reproducer)** | No, 0 of 8; reboot needed | Only if it voids benches |
 | G2 | Submit error, backboardd restarts | `submit failed: 0xe00002c2` | kernel135: 3 in ~34 min (151 k submits) | Restart, then G3 | Yes if it voids benches |
 | G3 | Slower mode after a backboardd restart | 2nd submit about 6 ms slower | Every restart seen (m1, z1) | Reboot | Yes if it voids benches |
 | G4 | SMMU-fault hang | `GPU hang or fault` with `fsr 40000002` | kernel135: 2 in 151 k (z1 boot 20261031-073304; first listed as 1) | Yes, ~28 ms | No |
@@ -31,6 +31,7 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-01 | rows2 | r6=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2,+M2V_SHADOW_CACHE=1,sweetrowa55=6; r4=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2,+M2V_SHADOW_CACHE=1,sweetrowa55=4 | 10 | 86 k | 3 | 0 | 0 | 9 |
 | 2026-10-31 | sh1 | s0=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2,@work/metal2-shadow/out/phone/metal2/out; s1=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2,@work/metal2-shadow/out/phone/metal2/out,+M2V_SHADOW_CACHE=1; s2=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2,@work/metal2-shadow/out/phone/metal2/out,+M2V_SHADOW_CACHE=2 | 9 | 78 k | 0 | 0 | 0 | 0 |
 | 2026-10-31 | rows1 | base=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2; a55l=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2,sweetrowa55=6 | 10 | 55 k | 0 | 0 | 0 | 2 |
 | 2026-10-31 | df5 | base=138,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1; df2=138,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,+SWEET_DEADFILL=2 | 10 | 69 k | 1 | 0 | 0 | 4 |

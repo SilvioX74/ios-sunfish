@@ -22,6 +22,12 @@ Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features
 ### 2026-10-31 19:46 xnu 0257 sunfish-dark-clk written, not built, not run
 - `sweetdarkclk=1` (default 0; needs `sweetdark` on): while dark A55 row 4 (1248 MHz), A76 row 1 (652 MHz); effective row = lower of cap row and dark row; leaving dark restores the cap row. Log `SWEET THERM: dark a55 4=1248 a76 1=652`, `SWEET THERM: bright a55 9=1804 a76 12=2208`, `dark 0|1` after `cap N` on the busy line. Rows are lowered as soon as the off request arrives, while the panel thread's sleep-in (about 200-350 ms) is still running, not after it ends. Raised at the top of RequestPowerChange(on); the key press that leads there still runs at dark rows.
 
+### 2026-11-01 00:45 rows2: A55 at 1248 MHz: no speed gain, 3 no-fault GPU hangs in 5 boots; 1497 MHz stays
+- `tools/sunfish-perfab.sh rows2 5 --secs 15 --screens settings,home,cc,apps`, kernel139, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1, sweetrowa55=6 against 4, 10 boots, 86 k submits. G1 3, all on row 4 (boots 2, 3, 4), at uptime 104-212 s, recovery FAILED; 0 on row 6. Boots lost on row 4 voided 7 runs, row 6 2 (both `0 swaps`, b1 home and cc, unexplained).
+- Home 38.6 / 38.8 swaps/s, Control Center 28.8 / 28.6, apps 22.7 / 24.5. Open ms: Notes 236 / 314, Clock 475 / 500, Calculator 520 / 521. No speed gain from row 4, so it's off.
+- Observed: 3 G1 in about 43 k submits at 1248 MHz against 2 in about 380 k before: the lowest A55 clock seems to raise G1. A reproducer for G1 (gpu-bugs.md): cause not known. Everyday boot now adds sweetrowa55=6; xnu default unchanged.
+- Correction to smoothness.md n2: mode 2 had 2 G1 in about 380 k submits, not 250 k (df5, rows1, sh1, n1, n2).
+
 ### 2026-10-31 21:40 rows1: A55 at 1497 MHz: cooler and faster on Settings
 - `tools/sunfish-perfab.sh rows1 5 --secs 15 --screens settings,home`, kernel139 (xnu 0258) sweetswapbig=6 sweetse9=2 sweetcampmic=2 sweetampreset=1 SWEET_DEADFILL=2, sweettrace=1, base against `sweetrowa55=6`, 10 boots, 55 k submits, 0 G1, 0 G2, 0 G4.
 - Settings: base 3 ok, 2 void (too hot), 49.6 (48.3-50.7) swaps/s, frame 20.2 ms, p50 19.0, <=17 ms 32 %, start / max 91.6 / 94.6 C, A76 min 2006 MHz. A55 1497: 5 ok, 0 void, 52.1 (49.1-55.0) swaps/s, frame 19.2 ms, p50 17.3, <=17 ms 55 %, 86.1 / 90.5 C, A76 min 2185 MHz. p95 30.1 and 30.2.
