@@ -1,5 +1,5 @@
 # Smoothness
-**State:** 🟡 Settings 50-56 swaps/s, Home 41-44, Control Center 29 at full canvas, at minimum brightness, with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
+**State:** 🟡 Settings about 51, Home 49, Control Center 29 swaps/s at full canvas, at minimum brightness, with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_CULL=2 (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
 
 ## How to use
 - Bench: `tools/sunfish-fpsbench.sh TAG SECONDS` (BENCH_TIGHT=1); config matrix `tools/sunfish-cfgbench.sh`; timeline `sweettrace=1` + `tools/sunfish-timeline.py`. Details in [methods.md](../methods.md).
@@ -94,6 +94,9 @@ Kernels:
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-01 05:20 st4: SWEET_CULL=2 on the phone: nothing wrong seen, short check
+- kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, SWEET_CULL=2, boot st4, 4454 mV. Stills fine: lock, Home x2, Control Center. Webcam frames during slow swipes: Home to Today mid-motion, Settings closing to Home: no black holes or bands. 0 hangs, 0 submit errors, 60.6 C at 5 min. The agent's run covered only lock and Home (its swipes didn't register; direct ones did), so App Library, Spotlight and the apps weren't rechecked with the cull. Left on the phone for U22.
 
 ### 2026-11-01 05:10 cu1: SWEET_CULL=2 on Home: 42.5 -> 49.2 swaps/s, steadier; 1 G1 on its side
 - `tools/sunfish-perfab.sh cu1 4 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, minimum brightness, 8 boots, 67 k submits, G1 1 (c2 b3), G2 0, G4 0, 2 void from it. c0 then c2: Home 42.5 (37.1-44.5) / 49.2 (48.6-49.5), frame 23.5 / 20.3 ms, p95 45.2 / 38.9, 1st submit 20.9 / 17.4; Control Center 28.5 / 28.9; Settings 51.1 / 50.8. Stills fine (Home, Control Center, Settings at b1). Not checked for holes or rim errors in motion. Stays env-only and not on the everyday setup until checked. Whether the wallpaper draw can discard pixels is unverified (no metallib).

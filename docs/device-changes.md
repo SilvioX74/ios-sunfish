@@ -108,3 +108,5 @@ output in /var/local.
 2026-10-31 22:15: everyday candidate on test: /var/local/mtl2-env = SWEET_DEADFILL=2 and M2V_SHADOW_CACHE=1; bundle from `METAL2_VARIANT=shadow tools/build-metal2-linux.sh`, installed with `tools/sunfish-metal2-install.sh work/metal2-shadow/out/phone/metal2/out --no-restart`; boot args add sweetrowa55=6. Unfinished, under soak; log line only for now.
 
 2026-11-01 03:05: everyday candidate on the phone: /var/local/mtl2-env = SWEET_DEADFILL=3 and M2V_SHADOW_CACHE=1, bundle work/metal2-shadow (installed as for 2026-10-31 22:15), boot kernel139 with sweetrowa55=6. Log line only for now; script when defaults change.
+
+2026-11-01 05:20: /var/local/mtl2-env adds SWEET_CULL=2 (under test with U22); bundle work/metal2-shadow rebuilt with it; same boot args. Remove the line to turn it off.
