@@ -39,7 +39,7 @@ Finished items: [completed.md](completed.md) (not auto-loaded).
 - PowerLog and CoreDuet databases on the phone were moved aside (not deleted) to /var/local/idlefix-db, to stop the idle CPU burn; `tools/sunfish-idlefix-db.sh --undo` restores them. Battery usage history and app suggestions start fresh. OK to delete them later? (Kept for now.)
 
 ## Your tasks at the phone
-In [user-tasks.md](user-tasks.md) (not auto-loaded): 10 open. Claude doesn't wait on them; it moves to the next item.
+In [user-tasks.md](user-tasks.md) (not auto-loaded): 11 open. Claude doesn't wait on them; it moves to the next item.
 
 ## Dev speed (on top of the priority list when found; ~1 h max each)
 - (none)

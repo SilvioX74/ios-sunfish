@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-10-31 21:15 sv2, sv3, gh1: mode 2 survey; doubling mostly camera; traces void
+- sv2, kernel139 SWEET_DEADFILL=2, boot 20261031-205524, research/df5: lock, Home x2, Today, Control Center, Settings x2, Calculator, Notes, Clock, Mail, Reminders, Calendar, Files fine. Maps: horizontal slice tears on the blue dot and a button, first try one torn frame. Photos: black gaps (B44). Safari: black tab thumbnail, not conclusive. 0 hangs, 0 restarts.
+- gh1, boots 20261031-210714 (off) and the one from 21:08:52 (on), 8 webcam frames each: Settings doubling in both modes, along the scroll axis by about one glyph: exposure. Mode 2 had 2 strong frames in 4, off 1 heavy in 4: too few, and pages differed (Focus against root). Home frames static: inconclusive. No torn or stale region in any frame. Earlier "ghosted icons" (:141) not confirmed as real. Needs a look by eye: docs/user-tasks.md.
+- sv3, boot 20261031-210239, MESA_GPU_TRACES=print, TU_SWEET_DRAW_TRACE=1: backboardd signal 11 at 0x8 once in the Home window and once in Control Center at about 12 MB/s of trace; both trace files were partial, void as timings; shares in research/notes/sv3-*-trace.txt. Cause not separated from mode 2, but df5 had no restart.
+- Shares, Home full pass 1125x2436: 45.6 bins, 21.3 ms, 74 draws, 8.8 ms in draw spans (33 %), f8357eea3897 49 % of that; copy_buffer_to_image 6.0 ms per frame, 22.5 copies. Control Center: 45 bins, 19.3 ms, 6.6 ms draws.
+
 ### 2026-10-31 20:55 df5: SWEET_DEADFILL=2: Settings 47.2 -> 54.8 swaps/s, Home and Control Center nearly flat; 1 hang
 - `tools/sunfish-perfab.sh df5 5 --secs 15 --screens home,cc,settings`, kernel138 sweetswapbig=6 sweetse9=2 sweetcampmic=2 sweetampreset=1, sweettrace=1, 10 boots. 69 k submits, G1 1 (df2 b5), G2 0, G4 0, 4 void runs (2 too hot, 1 hang + the screen after it). Base then df2:
 
