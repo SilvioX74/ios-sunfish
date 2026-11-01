@@ -805,15 +805,18 @@ static void cullWhy(int why,NSString *l,const char *extra="") {
 // transform maps it onto the whole target, the pass clears to its colour (8-bit code) and the draw goes. backboardd's passes only:
 // colour 0 an 8-bit unorm single-sample 2D IOSurface, no depth/stencil/visibility; colours 1..7 may be attached (a clear is refused when
 // the fill writes one that is not memoryless). Uses sweet cull's deferral; the telemetry's "DF" row counts drops and clears.
+// 3 as 1 (no held pass, no clear), and fills needn't cover the target: one is also dropped when the next fill's rectangle contains its own,
+// both flat at one z. Same pipeline and bindings: the same transform, so what contains in vertex space contains on screen.
 static int deadfillMode() {
- static const int mode=[]{const char *p=getenv("SWEET_DEADFILL");if(strcmp(getprogname(),"backboardd"))return 0;if(!p||!*p)return 1;return std::max(0,std::min(2,atoi(p)));}();   // default 1: drops only (m1, 53 swaps/s); 0 off
+ static const int mode=[]{const char *p=getenv("SWEET_DEADFILL");if(strcmp(getprogname(),"backboardd"))return 0;if(!p||!*p)return 1;return std::max(0,std::min(3,atoi(p)));}();   // default 1: drops only (m1, 53 swaps/s); 0 off
  return mode;
 }
 static std::atomic<uint64_t> gDfDropped,gDfCleared,gDfPasses;
 // sweet dfwhy (SWEET_DFWHY=1): why fills weren't dropped: per 5 s, how many draws each test of dfNote turned away, and of the fills it found, why dfResolve
-// kept them (next: the next surviving draw is no fill; pipe, bind: another fill; last: none follows; nocull: the pass doesn't cull). Counts only. Off: unset.
-enum {DFW_NOPIPE,DFW_DSS,DFW_VIS,DFW_INST,DFW_PRIM,DFW_LABEL,DFW_OPAQUE,DFW_MSAA,DFW_BLEND,DFW_CULL,DFW_VFMT,DFW_VP,DFW_SC,DFW_DATA,DFW_INDEX,DFW_RANGE,DFW_W,DFW_COL,DFW_ALPHA,DFW_NOTFULL,DFW_CORNER,DFW_TRIS,DFW_NEXT,DFW_PIPE,DFW_BIND,DFW_LAST,DFW_NOCULL,DFW_N};
-static const char *const gDfWhyName[DFW_N]={"nopipe","dss","vis","inst","prim","label","opaque","msaa","blend","cull","vfmt","vp","sc","data","index","range","w","col","alpha","notfull","corner","tris","next","pipe","bind","last","nocull"};
+// kept them (next: the next surviving draw is no fill; pipe, bind: another fill; rect: mode 3, its rectangle not contained; last: none follows; nocull: the pass
+// doesn't cull). Counts only. Off: unset. SWEET_DFWHY=2 also logs a not-full fill's rectangle and target, at most once per second.
+enum {DFW_NOPIPE,DFW_DSS,DFW_VIS,DFW_INST,DFW_PRIM,DFW_LABEL,DFW_OPAQUE,DFW_MSAA,DFW_BLEND,DFW_CULL,DFW_VFMT,DFW_VP,DFW_SC,DFW_DATA,DFW_INDEX,DFW_RANGE,DFW_W,DFW_COL,DFW_ALPHA,DFW_NOTFULL,DFW_CORNER,DFW_TRIS,DFW_NEXT,DFW_PIPE,DFW_BIND,DFW_LAST,DFW_NOCULL,DFW_RECT,DFW_N};
+static const char *const gDfWhyName[DFW_N]={"nopipe","dss","vis","inst","prim","label","opaque","msaa","blend","cull","vfmt","vp","sc","data","index","range","w","col","alpha","notfull","corner","tris","next","pipe","bind","last","nocull","rect"};
 static std::atomic<uint64_t> gDfWhy[DFW_N];
 static bool dfWhyOn() {static const bool on=[]{const char *p=getenv("SWEET_DFWHY");return p&&atoi(p)!=0;}();return on;}
 static void dfWhy(int why) {if(dfWhyOn())gDfWhy[why]++;}
@@ -825,8 +828,14 @@ static void dfWhyLog() {
  for(int i=0;i<DFW_N&&n<(int)sizeof t-32;i++)if(const uint64_t c=gDfWhy[i].exchange(0))n+=snprintf(t+n,sizeof t-n," %s %llu",gDfWhyName[i],(unsigned long long)c);
  sm2_logs(t);
 }
+static void dfRectProbe(float x0,float y0,float x1,float y1,unsigned long tw,unsigned long th) {
+ static const bool on=[]{const char *p=getenv("SWEET_DFWHY");return p&&atoi(p)==2;}();if(!on)return;
+ static std::atomic<uint64_t> last{0};const uint64_t now=nowUs();uint64_t was=last.load();
+ if(now-was<1000000||!last.compare_exchange_strong(was,now))return;
+ char t[128];snprintf(t,sizeof t,"SWEET DFWHY: notfull rect %.3f,%.3f..%.3f,%.3f target %lux%lu",x0,y0,x1,y1,tw,th);sm2_logs(t);
+}
 #define DFRET(why) do{dfWhy(why);return;}while(0)
-struct CullEntry {bool fill=false,clearOK=false;float col[4]={};uint64_t bind=0;__unsafe_unretained NBRenderPipeline *fpipe=nil;   // sweet deadfill
+struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4]={},rx0=0,ry0=0,rx1=0,ry1=0,rz=0;uint64_t bind=0;__unsafe_unretained NBRenderPipeline *fpipe=nil;   // sweet deadfill: r*: mode 3, the fill's vertex bbox and z; rok: finite, one z
  void (^blk)(void)=nil;bool draw=false,covering=false;unsigned writes=0xff,over=0;long cx0=0,cy0=0,cx1=0,cy1=0;NSString *label=nil;};   // c*: the draw's clip (scissor within the target)   // writes: targets the draw may change; over: targets a covering draw overwrites
 @interface NBRenderEncoder : NBEncoder
 - (void)drawLogStart:(MTLRenderPassDescriptor *)d;
@@ -977,7 +986,7 @@ struct CullEntry {bool fill=false,clearOK=false;float col[4]={};uint64_t bind=0;
  if(c0[3]!=1)DFRET(DFW_ALPHA);
  const bool pixels=fabsf(x0)<=0.01f&&fabsf(y0)<=0.01f&&fabsf(x1-(float)_tw)<=0.01f&&fabsf(y1-(float)_th)<=0.01f;
  const bool clip=fabsf(x0+1)<=1e-4f&&fabsf(y0+1)<=1e-4f&&fabsf(x1-1)<=1e-4f&&fabsf(y1-1)<=1e-4f;
- if(!pixels&&!clip)DFRET(DFW_NOTFULL);
+ if(!pixels&&!clip){dfRectProbe(x0,y0,x1,y1,_tw,_th);if(deadfillMode()!=3)DFRET(DFW_NOTFULL);}   // sweet deadfill: mode 3 goes on (its rectangle is tested in dfResolve)
  // two triangles, each three distinct corners, sharing a diagonal (as sweet cull's test)
  int cr[6];
  for(unsigned k=0;k<count;k++){if(!(vx[k]==x0||vx[k]==x1)||!(vy[k]==y0||vy[k]==y1))DFRET(DFW_CORNER);cr[k]=(vx[k]==x1?1:0)|(vy[k]==y1?2:0);}
@@ -988,9 +997,11 @@ struct CullEntry {bool fill=false,clearOK=false;float col[4]={};uint64_t bind=0;
  unsigned ma=(1u<<t0[0])|(1u<<t0[1])|(1u<<t0[2]),mb=(1u<<t1[0])|(1u<<t1[1])|(1u<<t1[2]),sh=ma&mb;
  if((ma|mb)!=15||__builtin_popcount(sh)!=2||(__builtin_ctz(sh)^(31-__builtin_clz(sh)))!=3)DFRET(DFW_TRIS);
  e.fill=true;memcpy(e.col,c0,sizeof c0);e.fpipe=p;e.bind=[self dfBindHash:p.dfPosBuf]^(clip?0x9e3779b97f4a7c15ull:0);
+ e.full=pixels||clip;e.rx0=x0;e.ry0=y0;e.rx1=x1;e.ry1=y1;e.rz=vz[0];e.rok=std::isfinite(x0)&&std::isfinite(y0)&&std::isfinite(x1)&&std::isfinite(y1);
+ for(unsigned k=0;k<count;k++)e.rok=e.rok&&vz[k]==vz[0];   // NaN z: refused
  // may it be the pass's clear? CA's fixed vertex function, no lasting colour 1..7 written, and the transform taking every vertex onto
  // a corner of clip space (w 1, z in [0,1]): the whole target whatever the positions' space
- if(p.vertexName.compare(0,18,"fixed_vert_lph_spc")||(p.writtenMask&_dfAttached))return;
+ if(deadfillMode()==3||p.vertexName.compare(0,18,"fixed_vert_lph_spc")||(p.writtenMask&_dfAttached))return;
  const float *m=[self dfTransform:p.dfPosBuf];if(!m)return;
  float cx0=1e30f,cx1=-1e30f,cy0=1e30f,cy1=-1e30f;
  for(unsigned k=0;k<count;k++) {
@@ -1003,21 +1014,24 @@ struct CullEntry {bool fill=false,clearOK=false;float col[4]={};uint64_t bind=0;
 }
 // sweet deadfill mode 2: hold the creation of a deferred pass that loads colour 0 (made in dfResolve)
 - (bool)dfHold:(const NmbRenderPassDescriptor &)pass load:(MTLLoadAction)load {
- if(!_dfOn||deadfillMode()<2||(load!=MTLLoadActionLoad&&load!=MTLLoadActionDontCare))return false;
+ if(!_dfOn||deadfillMode()!=2||(load!=MTLLoadActionLoad&&load!=MTLLoadActionDontCare))return false;
  _dfPass=pass;_dfPending=YES;gDfPasses++;
  return true;
 }
 // sweet deadfill: a fill whose next surviving draw is the same fill is dropped; mode 2: the first surviving draw, a fill covering the
-// target, becomes the held pass's clear. Then the held pass is made.
+// target, becomes the held pass's clear. Then the held pass is made. Mode 3: a pair not both covering the target also needs a's rectangle
+// inside b's and one z (a z outside the clip range would leave b's pixels undrawn).
 - (void)dfResolve:(const std::vector<CullEntry> &)ops dead:(std::vector<char> &)dead {
  bool clear=false;float col[4]={};
  if(_noCull&&dfWhyOn())for(const CullEntry &o:ops)if(o.draw&&o.fill)dfWhy(DFW_NOCULL);   // sweet dfwhy
  if(!_noCull) {
   long prev=-1;
+  auto covered=[](const CullEntry &a,const CullEntry &b){   // sweet deadfill: modes 0..2 only note fills covering the target
+   return (a.full&&b.full)||(a.rx0>=b.rx0&&a.ry0>=b.ry0&&a.rx1<=b.rx1&&a.ry1<=b.ry1&&a.rok&&b.rok&&a.rz==b.rz);};
   for(long i=0;i<(long)ops.size();i++) {
    if(!ops[i].draw||dead[i])continue;
-   if(prev>=0&&ops[prev].fill&&ops[i].fill&&ops[prev].fpipe==ops[i].fpipe&&ops[prev].bind==ops[i].bind){dead[prev]=1;gDfDropped++;}
-   else if(prev>=0&&ops[prev].fill)dfWhy(!ops[i].fill?DFW_NEXT:ops[prev].fpipe!=ops[i].fpipe?DFW_PIPE:DFW_BIND);   // sweet dfwhy
+   if(prev>=0&&ops[prev].fill&&ops[i].fill&&ops[prev].fpipe==ops[i].fpipe&&ops[prev].bind==ops[i].bind&&covered(ops[prev],ops[i])){dead[prev]=1;gDfDropped++;}
+   else if(prev>=0&&ops[prev].fill)dfWhy(!ops[i].fill?DFW_NEXT:ops[prev].fpipe!=ops[i].fpipe?DFW_PIPE:ops[prev].bind!=ops[i].bind?DFW_BIND:DFW_RECT);   // sweet dfwhy
    prev=i;
   }
   if(prev>=0&&ops[prev].fill)dfWhy(DFW_LAST);   // sweet dfwhy
