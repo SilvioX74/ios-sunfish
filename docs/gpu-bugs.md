@@ -43,5 +43,6 @@ Newest first. Earlier soaks were shorter or used other loads, so compare rates, 
 
 | Date | Kernel, bundle | Length | Submits | G1 | G2 | G4 | Other |
 |---|---|---|---|---|---|---|---|
+| 2026-10-31 n1 | kernel139, shadow cache, mode 2, A55 1497 MHz | 24.5 min, silent reset | 127 k | 0 | 0 | 0 | Reset to fastboot, no panic line |
 | 2026-10-31 z1 | kernel135, allocator | ~34 min, stopped early | 151 k | 0 | 3 | 2 | - |
 | 2026-10-31 soak1 | kernel134, allocator | 2 boots | ~113 k | 2 | at least 1 | not counted | - |

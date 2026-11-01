@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-10-31 22:55 n1: UI soak: 24.5 min, 0 GPU bugs, then a silent reset to fastboot
+- tools/sunfish-uisoak.sh n1, kernel139 sweetrowa55=6 and everyday args, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1, boot 20261031-221630, started 22:30. 1470 s, 126.8 k submits, G1 0, G2 0, G4 0, backboardd restarts 0, max 96.1 C, caps 0. The log just stops at uptime 2258.298 at normal `MTL2` lines; 72.8 C at 2256 s; phone in fastboot at 22:54. No panic line, no hang line. Before: z1 3 G2 and 1-2 G4 in 34 min.
+- Cause unknown; silent resets are backlog B4. Whether the new settings are involved isn't shown.
+
 ### 2026-10-31 22:30 st1: stale-content survey of M2V_SHADOW_CACHE=1: nothing stale from the cache
 - kernel139 sweetrowa55=6 and everyday args, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1, bundle work/metal2-shadow, boot 20261031-221630, 4454 mV, 0 hangs, 0 submit errors. `SHADOW: 5s copies 2 skipped 639 hashed 94521 KB, hash 40966 us`. research/st1.
 - Pass: lock clock, Notes typing, Calculator digits, Settings long scroll, Stopwatch, Rotation Lock tile, App Library and Spotlight, Safari page and scroll, wallpaper on lock and wake. Status bar clock stale for about 1 min at Home: same as the old B49 (seen without the cache). Thin dotted fragments under Calculator digits (calc2, calc3): being checked. Maps dark map, Photos grid fine, not compared with df5.
