@@ -110,3 +110,5 @@ output in /var/local.
 2026-11-01 03:05: everyday candidate on the phone: /var/local/mtl2-env = SWEET_DEADFILL=3 and M2V_SHADOW_CACHE=1, bundle work/metal2-shadow (installed as for 2026-10-31 22:15), boot kernel139 with sweetrowa55=6. Log line only for now; script when defaults change.
 
 2026-11-01 05:20: /var/local/mtl2-env adds SWEET_CULL=2 (under test with U22); bundle work/metal2-shadow rebuilt with it; same boot args. Remove the line to turn it off.
+
+2026-11-01 06:00: CoreMaterial modulesBackground.materialrecipe gets backdropScale 0.25 (under test, cs1): `tools/sunfish-install-ccscale.sh`, `--undo` restores from .orig on the phone.
