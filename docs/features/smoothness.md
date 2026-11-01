@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-10-31 23:05 ca1: cache not the cause of the Calculator fragments; clock not clipped
+- kernel139, everyday args + sweetrowa55=6, boots ca1b (SWEET_DEADFILL=2) and ca1c (+ M2V_SHADOW_CACHE=1). Tap AC, 7, 8, 9, shots after 3 s. Rows 800-880: 0 lit pixels in all 8 shots, cache on and off, so st1's fragments didn't come back (one-off, cause unknown). Cache off showed a faint dotted line above the digits once (rows 560-600, 8 px over 120); cache on none. research/ca1.
+- Status bar clock fully visible in the framebuffer on still Home, Settings, Maps, Notes. The clipped clock and doubled back label in the 22:49 shot were an app switch caught by the 8 s readout (the user spotted it); the digits in the webcam frame sit under the camera hole (the user's point).
+
 ### 2026-10-31 22:55 n1: UI soak: 24.5 min, 0 GPU bugs, then a silent reset to fastboot
 - tools/sunfish-uisoak.sh n1, kernel139 sweetrowa55=6 and everyday args, SWEET_DEADFILL=2, M2V_SHADOW_CACHE=1, boot 20261031-221630, started 22:30. 1470 s, 126.8 k submits, G1 0, G2 0, G4 0, backboardd restarts 0, max 96.1 C, caps 0. The log just stops at uptime 2258.298 at normal `MTL2` lines; 72.8 C at 2256 s; phone in fastboot at 22:54. No panic line, no hang line. Before: z1 3 G2 and 1-2 G4 in 34 min.
 - Cause unknown; silent resets are backlog B4. Whether the new settings are involved isn't shown.
