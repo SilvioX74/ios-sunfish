@@ -23,6 +23,10 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 11:10 mf4: flushes on or off in the daytime state: 1 against 0 G1 in 144 k
+- `tools/sunfish-perfab.sh mf4 8 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, nits 32, 16 boots, 144 k submits. G1 1 (flushes on, b4, boot 20261101-103432, uptime 172 s), G2 0, G4 0. Too few to say. Speed the same: Control Center 35.8 / 35.8; Settings 52.8 (49.6-55.5) / 53.4 (47.5-56.6). 2 Control Center runs read 0 swaps (fl1 b1, b4), not explained.
+- Today's G1 uptimes: 84, 103, 156, 162, 172, 242 s: all early in a boot, but benches only run early, so that isn't shown to be a pattern. sweetmapflush stays default.
+
 ### 2026-11-01 03:45 mf3: 1248 MHz didn't reproduce G1: 0 in 81 k with flushes on or off
 - `tools/sunfish-perfab.sh mf3 8 --secs 15 --screens home,apps`, kernel139 sweetrowa55=4, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, 16 boots, 81 k submits, flushes on against off, G1 0, G2 0, G4 0, 1 void (too hot). So the control side, flushes on, had 0 in about 40 k where rows2 had 3 in 43 k.
 - Reading: row 4 isn't a reliable reproducer; "reproducer" in rows2 and mf1 was premature. Either rows2's 3 were chance, or mode 2 matters (rows2 ran mode 2, this ran mode 3, which drops more fills: untested guess). mf1 says nothing about flushes. sweetmapflush stays default. No more boots on this for now.

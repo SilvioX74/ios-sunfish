@@ -34,6 +34,7 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-01 | mf4 | fl1=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1; fl0=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,sweetmapflush=0 | 16 | 144 k | 1 | 0 | 0 | 4 |
 | 2026-11-01 | lo3 | luma=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1 | 3 | 29 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | lo2 | low=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1 | 3 | 14 k | 1 | 0 | 0 | 5 |
 | 2026-11-01 | lo1 | fix=139,sweetswapbig=6,sweetse9=2,sweetcampmic=2,sweetampreset=1,sweetrowa55=6,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1 | 3 | 28 k | 0 | 0 | 0 | 1 |
