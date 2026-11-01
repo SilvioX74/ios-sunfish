@@ -18,9 +18,9 @@ Targets (Claude's numbers, the user can change them):
 
 ## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each)
 Only items Claude can move now. Items waiting on the user are in "Waiting on you" below; parked ones in docs/backlog.md.
-1. ▶ **Heat**: idle fixed (58 C after 8 min; aggregated and coreduetd data moved aside). Heat still caps speed: Settings hits 90+ C within 5 s of swiping and the A76 falls to 1800-2100 MHz in a 15-s window. Next: `sweetdarkclk=1` test (kernel138), then lower-power clocks under load (A55 row, DDR vote) A/B. (cpu.md)
+1. ▶ **Heat**: idle fixed (53-59 C; aggregated and coreduetd data moved aside). A55 at 1497 MHz: 5 C cooler, +2.5 swaps/s, now everyday (`sweetrowa55=6`); 1248 MHz raises GPU hangs. Next: DDR vote, A76 rows, screen-on governor. Screen-off clocks work, no gain shown. (cpu.md)
 2. **CPU cost per frame** (about 14 ms): phone-CPU build tried, no gain (cpu1); redfin 0130-0137, unchanged-draw fast path, cache flush off the render thread, app and CA threads on the A76s (backlog O9, O11). (smoothness.md)
-3. ▶ **GPU cost per frame** (Settings about 13 ms; Home 36 ms and 27 swaps/s, Control Center 41 ms and 22 swaps/s: these two first; research/notes/home-cc-gpu-2026-10-31.md): shadow copy cache works (Home 26 -> 38, Control Center 23 -> 29; env M2V_SHADOW_CACHE=1, not default yet), then overdrawn fills on Home (`SWEET_DFWHY=1`; sysmem tried, no gain); mode 2 (+7.6 swaps/s on Settings) awaits U22; morning: bright against minimum A/B (Home 38 against 31, smoothness.md nd1); re-measure the 5 draws that were 52 % of draw time (trace before dead fill); 650 MHz (O16, +11 % earlier; 800 fails); retest `sweetddr=1` (last tried Oct 24 on the old present path); fill as a clear (mode 2) only if clean. (smoothness.md)
+3. ▶ **GPU cost per frame**: done so far: shadow copy cache, dead fill mode 3: Home 26 -> 41-44, Control Center 23 -> 29, Settings 50-56 swaps/s (env on the phone, not default). Next: Control Center trace without per-draw tracing (crashes backboardd); bright against minimum A/B (Home 38 against 31; drag the slider live with `SWEET_DFWHY=1`; research/notes/home-cc-gpu-2026-10-31.md); then `SWEET_CULL=2` for the fill under the wallpaper; 650 MHz (O16); `sweetddr=1`. Mode 3 and cache become defaults after U22. (smoothness.md)
 4. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30, before the recent fixes); time app opens and the keyboard. Then the screen-on CPU governor (redfin 0963, touch and animation at full speed), kept only if the A/B shows no speed loss. (smoothness.md, cpu.md)
 
 After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.
@@ -40,6 +40,9 @@ Finished items: [completed.md](completed.md) (not auto-loaded).
 
 ## Your tasks at the phone
 In [user-tasks.md](user-tasks.md) (not auto-loaded): 11 open. Claude doesn't wait on them; it moves to the next item.
+
+## G1 lead (not a priority, background only)
+A55 at 1248 MHz reproduces the no-fault hang (3 in 43 k submits). `sweetmapflush=0` there: 0 in 35 k, not proof; control run mf3 overnight. (gpu.md)
 
 ## Dev speed (on top of the priority list when found; ~1 h max each)
 - (none)

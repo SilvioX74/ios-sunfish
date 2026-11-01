@@ -1,5 +1,5 @@
 # Smoothness
-**State:** 🟡 Settings 56 swaps/s, p95 20.5 ms, Home 38, Control Center 29 at full canvas with env SWEET_DEADFILL=2 M2V_SHADOW_CACHE=1 (2026-10-31; not default yet); 60 not reached. **Updated:** 2026-10-31.
+**State:** 🟡 Settings 50-56 swaps/s, Home 41-44, Control Center 29 at full canvas, at minimum brightness, with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
 
 ## How to use
 - Bench: `tools/sunfish-fpsbench.sh TAG SECONDS` (BENCH_TIGHT=1); config matrix `tools/sunfish-cfgbench.sh`; timeline `sweettrace=1` + `tools/sunfish-timeline.py`. Details in [methods.md](../methods.md).
@@ -94,6 +94,10 @@ Kernels:
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-01 03:05 st3: mode 3 survey: no stale strip seen; motion not fully caught
+- kernel139 sweetrowa55=6, SWEET_DEADFILL=3, M2V_SHADOW_CACHE=1, boot 20261101-024953, 4455 mV, DCS 33. Fine: Home x2, App Library, Spotlight, Control Center, Settings, Calculator, Notes, Safari, Mail, Calendar, Reminders, Files. Stopwatch digits garbled while running (8 s readout likely); Maps shot mid-transition, not rechecked; Photos black gaps (B44); lock step and Settings subpage not done. Wi-Fi icon absent at 60 s, present at 120 s: the d3 difference is timing.
+- 10 webcam frames: no stale strip, wrong band or flash, but Home frames caught settled pages, not mid-swipe, so this doesn't clear motion: U22. 0 hangs, 0 submit errors, no new crash files. Control Center bench in this run read 13.2 swaps/s in one 5-s window: a bad test (margin swipes alone). Phone left on this setup as the everyday candidate.
 
 ### 2026-11-01 02:45 d4: mode 3 with the held clear: Home 31.4 -> 40.8, Settings unchanged
 - `tools/sunfish-perfab.sh d4 5 --secs 15 --screens home,cc,settings`, kernel139 sweetrowa55=6, M2V_SHADOW_CACHE=1, minimum brightness, 10 boots, 83 k submits, 0 G1, 0 G2, 0 G4, 1 void (Home too hot, 95 C). Mode 2 then 3: Home 31.4 (28.2-33.3) / 40.8 (37.4-44.1), frame 31.9 / 24.5 ms, 1st submit 28.6 / 20.6; Settings 49.3 / 49.5, 1st 8.1 / 8.1; Control Center 26.4 / 23.1 including one run at 1.4 swaps/s (see below), 1st 28.2 / 25.9. Not default yet: stale-strip survey next.
