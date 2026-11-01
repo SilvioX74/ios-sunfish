@@ -26,6 +26,9 @@ each of its runs to "Bench runs" below; add the counts by hand after each soak.
 Failed recoveries leave `device refused: OutOfMemory(Device)` and CPU drawing until reboot (G1). CPU drawing can reach
 60 swaps/s on some screens, so a good speed number alone doesn't prove the GPU ran. Silent resets are backlog B4.
 
+## 2026-11-01: G1 rate with SWEET_CULL=2
+G1 by setup since df5: mode 2 or 3 without cull: 2 in about 500 k submits (df5, rows2 excluded: 3 more at 1248 MHz); with SWEET_CULL=2: 3 in about 143 k (cu1, ni1, br1; sy1-style runs excluded). All no-fault, recovery failed. That is more than double: by the rule, cull goes off the everyday setup until understood. a76r (running) has it on and adds data.
+
 ## Bench runs
 Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, not boots.
 
