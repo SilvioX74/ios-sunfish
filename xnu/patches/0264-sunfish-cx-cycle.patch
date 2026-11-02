@@ -1,0 +1,416 @@
+From 778cef817bc24007f9e7d1ba1dafa1fa306ae109 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 19:11:20 -0500
+Subject: [PATCH] sunfish: CX-cycle GPU recovery, sweetcxcycle, off by default
+
+---
+ bsd/dev/sweet_a6xx.c | 252 +++++++++++++++++++++++++++++++++++++++++++
+ bsd/dev/sweet_a6xx.h |   5 +
+ bsd/dev/sweet_gpu.c  |  28 ++++-
+ 3 files changed, 280 insertions(+), 5 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index e396b0a..662f3e8 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -526,6 +526,10 @@ int a6_clear_fault(const struct a6_gpu *g)
+ 
+ /* ---- stage 2: GMU boot ---- */
+ 
++#if A6_GPU_ID == 618
++static int32_t gmu_smr4 = -1;	/* 0264: for a6_recover_cx */
++#endif
++
+ static int gmu_smmu(struct a6_gpu *g)
+ {
+ 	if (smmu_pick(&g->gmu_smr, &g->gmu_cb, 0)) {
+@@ -549,6 +553,7 @@ static int gmu_smmu(struct a6_gpu *g)
+ 	if (!smmu_pick(&smr4, &cb_unused, g->gmu_cb + 1)) {
+ 		wr32(S2CR(smr4), (uint32_t)g->gmu_cb);
+ 		wr32(SMR(smr4), (1u << 31) | 4);
++		gmu_smr4 = smr4;
+ 		a6_log("smmu: smr%d %x (gmu sid 4) -> cb%d\n", smr4, rd32(SMR(smr4)), g->gmu_cb);
+ 	}
+ #endif
+@@ -972,11 +977,14 @@ static int a6_gx_off(void)
+ 	return up ? -1 : 0;
+ }
+ 
++static uint32_t gbif_ack_seen = 3;	/* 0264: AND of the GBIF halt acks of this recovery, for a6_cxcycle_due */
++
+ static int gbif_halt_bounded(void)
+ {
+ 	wr32(GREG(0x3c45), 0x3);		/* GBIF_HALT: client + arbiter */
+ 	int a = gbif_ack_wait();		/* 0263 */
+ 	uint32_t ack = rd32(GREG(0x3c46));
++	gbif_ack_seen &= ack;			/* 0264 */
+ 	wr32(GREG(0x16), 1);			/* RBBM_GBIF_HALT */
+ 	int b = wait_bit(GREG(0x17), 1, 1, 100);	/* RBBM_GBIF_HALT_ACK */
+ 	/* 0263: 0x17 reads deafbead on A618, so its wait always passes and says nothing */
+@@ -1647,6 +1655,7 @@ static bool a6_gbiforder(void)
+ 
+ /* 0253: set around the last CP init of a recovery; with sweettlbwait=2 it starts the SQE despite a busy sync */
+ static bool tlb_last_try;
++static bool recover_tlb_busy;		/* 0264: this recovery aborted on a busy TLB sync, for a6_cxcycle_due */
+ 
+ /* 0207: sweettlbwait=0 keeps the old unchecked TLB sync in the recovery and the ungated SQE start (default 1) */
+ /* 0253: sweettlbwait=2 is 1 + the SQE start on the last try (reset risk, k81/k82; only on the boot line) */
+@@ -1918,6 +1927,240 @@ int a6_recover_cold(struct a6_gpu *g)
+ 	a6_hang_diag("recover3 end");
+ 	return rc;
+ }
++
++/*
++ * 0264: boot-arg sweetcxcycle: 0 (default) off; 1 a6_recover_cx in place of recover3 when this recovery saw a busy TLB
++ * sync or a GBIF ack other than 3 (G1: the whole SMMU is stuck, and a GX cycle doesn't clear it); 2 on every hang, without
++ * a6_recover (sweethangtest on a healthy GPU, the first test).
++ */
++int a6_cxcycle_mode(void)
++{
++	static int v = -1;
++	if (v < 0) {
++		v = 0;
++		(void)PE_parse_boot_argn("sweetcxcycle", &v, sizeof(v));
++	}
++	return v;
++}
++
++bool a6_cxcycle_due(void)
++{
++	int m = a6_cxcycle_mode();
++	return m == 2 || (m == 1 && (recover_tlb_busy || (gbif_ack_seen & 3) != 3));
++}
++
++/*
++ * 0264: for reads outside sweet_gpu_lock (sweet_gpu_timestamp, the failed-recovery diag thread). A read with CX off can
++ * end in a bus error, so a6_recover_cx waits for holders first, and a6_cx_hold says no until it has finished.
++ */
++static volatile uint32_t cx_gate, cx_holders;
++
++bool a6_cx_hold(void)
++{
++	__sync_fetch_and_add(&cx_holders, 1);
++	if (cx_gate) {
++		__sync_fetch_and_sub(&cx_holders, 1);
++		return false;
++	}
++	return true;
++}
++
++void a6_cx_release(void)
++{
++	__sync_fetch_and_sub(&cx_holders, 1);
++}
++
++/*
++ * 0264: what the SMMU held once the boot was done, to compare after a CX cycle (+offset, words): sCR0..sACR, IDR, SMR,
++ * S2CR, CBAR, CBA2R, the attach-impl-defs of smmu_bank, context banks 0 and 1. First boot state not listed here is not
++ * checked. Only with sweetcxcycle set: on the default path these registers aren't read.
++ */
++static const uint32_t cx_snap_regs[][2] = {
++	{ 0x00, 5 }, { 0x20, 8 }, { 0x800, 8 }, { 0xc00, 8 }, { 0x1000, 5 }, { 0x1800, 5 }, { 0x6000, 1 }, { 0x6060, 1 },
++	{ 0x678c, 1 }, { 0x6794, 1 }, { 0x6800, 1 }, { 0x6900, 1 }, { 0x6924, 2 }, { 0x6930, 1 }, { 0x6960, 1 },
++	{ 0x6b64, 2 }, { 0x8000, 16 }, { 0x9000, 16 },
++};
++static uint32_t cx_snap[83];
++
++/* when NULL: save; else log what differs from the saved values */
++static void cx_snap_walk(const char *when)
++{
++	unsigned k = 0, n = 0;
++	for (unsigned i = 0; i < sizeof(cx_snap_regs) / sizeof(cx_snap_regs[0]); i++) {
++		for (uint32_t j = 0; j < cx_snap_regs[i][1]; j++, k++) {
++			uint32_t o = cx_snap_regs[i][0] + 4 * j, v = rd32(SMMU + o);
++			if (!when)
++				cx_snap[k] = v;
++			else if (v != cx_snap[k] && n++ < 16)
++				a6_log("cx cycle: smmu +%x boot %x now %x\n", o, cx_snap[k], v);
++		}
++	}
++	if (when)
++		a6_log("cx cycle: smmu %s: %u regs differ from boot\n", when, n);
++}
++
++static void branch_off(const char *name, uint64_t reg)
++{
++	wr32(reg, rd32(reg) & ~1u);
++	if (wait_bit(reg, 1u << 31, 1, 10))
++		a6_log("cx cycle: %s still running, %x TIMEOUT\n", name, rd32(reg));
++}
++
++static int cx_end(int rc, uint64_t t0)
++{
++	a6_log("cx cycle: done rc %d after %llu us\n", rc, a6_now_us() - t0);
++	SWEET_CRUMB("cx cycle %s rc %d", rc ? "failed" : "done", rc);
++	cx_gate = 0;
++	return rc;
++}
++
++#define CX(x, rc) a6_log("cx cycle: stage %s -> %d, cx gdsc %x gx gdsc %x\n", x, rc, \
++	    rd32(GPUCC + GPUCC_CX_GDSCR), rd32(GPUCC + GPUCC_GX_GDSCR))
++/*
++ * 0264: last stage, what Linux's a6xx_recover ends with (a6xx_gmu_force_off + a CX GDSC collapse + hw_init): CP stop, GBIF
++ * halt (Linux carries on if it times out, so do we), GX off, RPMh votes and CM3 down, the clocks stock turns off first
++ * (DT gmu node), CX GDSC collapse, then power_cx, both SMMU banks, GMU firmware + HFI + GX, PLL0, CP init. Not redone: page
++ * tables and GMU memory, which are in RAM (gmu_smmu and map_gpu_low would zero them). Zap: zap_load, then zap_resume, as
++ * recover2 and recover3: Linux only resumes, but no boot log has run zap_resume, and zap_load works in every recovery so far.
++ * With sweet_gpu_lock; every failure but CX refusing to come back leaves CX on.
++ */
++int a6_recover_cx(struct a6_gpu *g)
++{
++	uint64_t t0 = a6_now_us(), t1, us, gdsc = GPUCC + GPUCC_CX_GDSCR;
++	int rc = 0;
++	SWEET_CRUMB("cx cycle enter");
++	cx_gate = 1;
++	__sync_synchronize();
++	for (unsigned i = 0; cx_holders; i++) {
++		if (i >= 100) {
++			a6_log("cx cycle: %u register readers still busy, TIMEOUT\n", cx_holders);
++			return cx_end(-1, t0);
++		}
++		a6_delay_ms(1);
++	}
++	if (a6_gx_up()) {
++		wr32(GREG(CP_SQE_CNTL), 0);
++		rc = gbif_halt_bounded();
++		wr32(GREG(0x43), 1);		/* RBBM_SW_RESET_CMD */
++		(void)rd32(GREG(0x43));
++		a6_delay_us(100);
++		wr32(GREG(0x43), 0);
++	}
++	CX("cp stop + gbif halt + reset", rc);
++	SWEET_CRUMB("cx cycle: gx off");
++	rc = a6_gx_off();
++	CX("gx off", rc);
++	if (rc)
++		return cx_end(-1, t0);		/* never collapse CX under a live GX */
++	/* kgsl a6xx_complete_rpmh_votes: TCS0..3 idle; a6xx_rpmh_power_off_gpu: CM3 in reset, RSC sleep sequence */
++	static const uint16_t tcs[] = { 0x346, 0x3ee, 0x496, 0x53e };
++	for (unsigned i = 0; i < sizeof(tcs) / sizeof(tcs[0]); i++)
++		if (wait_bit(RSCC_REG(tcs[i]), 1, 1, 10))
++			a6_log("cx cycle: rscc tcs%u %x not idle, TIMEOUT\n", i, rd32(RSCC_REG(tcs[i])));
++	wr32(GMU_REG(GMU_SYSRESET), 1);		/* CM3 held in reset */
++	a6_delay_ms(1);
++	wr32(GMU_REG(GMU_G2H_CLR), 0xffffffff);
++	wr32(GMU_REG(GMU_H2G_SET), 0);
++	wr32(GMU_REG(GMU_RSCC_REQ), 1);
++	if (wait_bit(RSCC_REG(0x0004), 1u << 16, 1, 10))
++		a6_log("cx cycle: rsc sleep status %x TIMEOUT\n", rd32(RSCC_REG(0x0004)));
++	wr32(GMU_REG(GMU_RSCC_REQ), 0);
++	CX("gmu reset + rsc sleep", 0);
++	/* the DT gmu node's gmu_clk, cxo_clk, axi_clk, memnoc_clk, as stock before the collapse; gpucc ahb and gcc cfg_ahb stay on */
++	SWEET_CRUMB("cx cycle: clocks off");
++	branch_off("gpucc cx_gmu", GPUCC + GPUCC_CX_GMU);
++	branch_off("gpucc cxo", GPUCC + GPUCC_CXO);
++	branch_off("gcc gpu_memnoc_gfx", GCC + 0x7100c);
++	branch_off("gcc ddrss_gpu_axi", GCC + 0x4452c);
++	SWEET_CRUMB("cx cycle: gdsc collapse, gdscr %x", rd32(gdsc));
++	t1 = a6_now_us();
++	wr32(gdsc, rd32(gdsc) | 1u);		/* SW_COLLAPSE */
++	for (;;) {
++		us = a6_now_us() - t1;
++		if (!is_on(gdsc) || us >= 500000)
++			break;
++		a6_delay_us(10);
++	}
++	if (is_on(gdsc)) {
++		a6_log("cx cycle: gdsc won't collapse, TIMEOUT after %llu us, gdscr %x hw ctrl %x\n", us, rd32(gdsc),
++		    rd32(GPUCC + 0x1540));
++		SWEET_CRUMB("cx cycle: gdsc won't collapse");
++		(void)power_cx();		/* SW_COLLAPSE off and clocks back: later register reads stay safe */
++		return cx_end(-1, t0);
++	}
++	a6_log("cx cycle: gdsc off after %llu us, gdscr %x hw ctrl %x\n", us, rd32(gdsc), rd32(GPUCC + 0x1540));
++	SWEET_CRUMB("cx cycle: gdsc off after %llu us", us);
++	a6_delay_ms(1);
++	rc = power_cx();
++	CX("cx on", rc);
++	if (rc)
++		return cx_end(-1, t0);
++	SWEET_CRUMB("cx cycle: cx on");
++	/* did the collapse clear the SMMU? DT kgsl-iommu has qcom,retention: stock doesn't reattach after a CX collapse */
++	cx_snap_walk("after cx on");
++	wr32(SMMU + 0x48, rd32(SMMU + 0x48));	/* sGFSR, as arm_smmu_device_reset */
++	smmu_bank(g->gmu_smr, g->gmu_cb, GMEM_L1(g), GMU_SID, GMU_SID_MASK);
++	if (gmu_smr4 >= 0) {
++		wr32(S2CR(gmu_smr4), (uint32_t)g->gmu_cb);
++		wr32(SMR(gmu_smr4), (1u << 31) | 4);
++	}
++	smmu_bank(g->gpu_smr, g->gpu_cb, a6_pool_pa(g, A6_OFF_GT_L1), GPU_SID, GPU_SID_MASK);
++	/* last, as arm_smmu_device_reset: nothing has written sCR0 here since before this kernel; its reset value bypasses the banks */
++	if (rd32(SMMU) != cx_snap[0]) {
++		wr32(SMMU, cx_snap[0]);
++		(void)rd32(SMMU);
++	}
++	(void)a6_tlb_sync_poll(SMMU_CB(g->gmu_cb));
++	(void)a6_tlb_sync_poll(SMMU_CB(g->gpu_cb));
++	wr32(SMMU + 0x70, 0);			/* TLBGSYNC */
++	(void)wait_bit(SMMU + 0x74, 1, 0, 10);
++	uint32_t ts = (rd32(SMMU_CB(g->gpu_cb) + CB_TLBSTATUS) & 1) | (rd32(SMMU_CB(g->gmu_cb) + CB_TLBSTATUS) & 1) << 1 |
++	    (rd32(SMMU + 0x74) & 1) << 2;
++	cx_snap_walk("after setup");
++	if (a6_hangdiag())
++		a6_wedge_log("cx cycle");
++	if (ts) {
++		a6_log("cx cycle: smmu still busy, tlbstatus %x (bit 0 gpu cb, 1 gmu cb, 2 global), TIMEOUT\n", ts);
++		SWEET_CRUMB("cx cycle: smmu still busy %x", ts);
++		return cx_end(-1, t0);
++	}
++	a6_log("cx cycle: smmu ok, tlbstatus %x\n", ts);
++	SWEET_CRUMB("cx cycle: smmu ok");
++	/* Linux and kgsl program RSCC and PDC once per boot, so this should have survived: redo it only if it didn't */
++	if (rd32(RSCC_REG(0x0180)) != 0xa7a506a0) {
++		a6_log("cx cycle: rscc seq %x lost, rpmh_init again\n", rd32(RSCC_REG(0x0180)));
++		rpmh_init();
++	}
++	rc = gmu_start(g);
++	CX("gmu fw", rc);
++	if (rc)
++		return cx_end(-1, t0);
++	gmu_cold_recover = true;
++	rc = gmu_hfi(g);
++	gmu_cold_recover = false;
++	CX("hfi + gx on", rc);
++	if (rc || !a6_gx_up())
++		return cx_end(-1, t0);
++	rc = gpucc_pll0_restore();
++	CX("pll0", rc);
++	a6_clk_diag(g, "cx cycle");
++	recover_diag = true;
++	recover2_active = true;			/* zap_load, then zap_resume if TZ still has it */
++	tlb_last_try = true;
++	rc = gpu_cp_init(g, false);		/* the init table, hwcg, SQE, ring, me_init, zap */
++	tlb_last_try = false;
++	recover2_active = false;
++	CX("cp init + zap", rc);
++	a6_hang_diag("cx cycle end");
++	return cx_end(rc, t0);
++}
++
++/* 0264: for a6_recover_cx: the banks as boot left them, only if it can run */
++static void a6_cx_snap_boot(void)
++{
++	if (a6_cxcycle_mode())
++		cx_snap_walk(NULL);
++}
+ #endif
+ 
+ /* After a hang or fault: soft reset of the GPU core, then the CP up again (page tables and SMMU banks kept). */
+@@ -1925,6 +2168,8 @@ int a6_recover(struct a6_gpu *g)
+ {
+ #if A6_GPU_ID == 618
+ 	me_init_timed_out = false;		/* 0208 */
++	recover_tlb_busy = false;		/* 0264 */
++	gbif_ack_seen = 3;
+ 	if (a6_recover_mode == 2 && a6_recover_full(g) == 0) {
+ 		a6_log("recover: full (GX power cycle) -> 0\n");
+ 		return 0;
+@@ -1960,6 +2205,9 @@ int a6_recover(struct a6_gpu *g)
+ 	wr32(GREG(0x3c45), 0x3);		/* GBIF_HALT: client + arbiter */
+ 	int gack = gbif_ack_wait();		/* 0263 */
+ 	a6_log("recover: gbif halt ack %x %s\n", rd32(GREG(0x3c46)), gack ? "TIMEOUT" : "ok");
++#if A6_GPU_ID == 618
++	gbif_ack_seen &= rd32(GREG(0x3c46));	/* 0264 */
++#endif
+ 	wr32(GREG(0x16), 1);			/* RBBM_GBIF_HALT */
+ 	(void)wait_bit(GREG(0x17), 1, 1, 100);	/* RBBM_GBIF_HALT_ACK */
+ 	wr32(GREG(0x43), 1);
+@@ -2128,6 +2376,7 @@ static int gpu_cp_init(struct a6_gpu *g, bool resume)
+ 			SWEET_CRUMB("cp_init: forced sqe start, tlbstatus %x", ts);
+ 		} else if (ts & 1) {
+ 			a6_log("recovery aborted: TLB sync busy, SQE not started\n");
++			recover_tlb_busy = true;	/* 0264 */
+ 			return -1;
+ 		}
+ 	}
+@@ -2184,6 +2433,9 @@ int a6_power_up(struct a6_gpu *g)
+ {
+ 	if (power_cx() || gmu_boot(g) || gmu_hfi(g) || gpu_cp(g))
+ 		return -1;
++#if A6_GPU_ID == 618
++	a6_cx_snap_boot();			/* 0264 */
++#endif
+ 	return 0;
+ }
+ 
+diff --git a/bsd/dev/sweet_a6xx.h b/bsd/dev/sweet_a6xx.h
+index 6cff89e..6d2f592 100644
+--- a/bsd/dev/sweet_a6xx.h
++++ b/bsd/dev/sweet_a6xx.h
+@@ -101,6 +101,11 @@ extern int a6_inject_bad_ib;	/* 0167: sweethangtest: the next async submit carri
+ int a6_recover(struct a6_gpu *g);	/* after a hang/fault: soft reset, CP re-init (mappings kept); 0 = ok */
+ int a6_recover_cold(struct a6_gpu *g);	/* 0200: GMU restart + HFI + CP init (CX and SMMU kept); 0 = ok */
+ bool a6_cold_enabled(void);	/* 0200: boot-arg sweetgpucold (default 1) */
++int a6_recover_cx(struct a6_gpu *g);	/* 0264: CX GDSC power cycle, SMMU banks, GMU, GX, CP; 0 = ok */
++int a6_cxcycle_mode(void);	/* 0264: boot-arg sweetcxcycle (default 0) */
++bool a6_cxcycle_due(void);	/* 0264: use a6_recover_cx in place of recover3 */
++bool a6_cx_hold(void);		/* 0264: false during a CX cycle; true: register reads are safe until a6_cx_release */
++void a6_cx_release(void);
+ bool a6_cx_up(void);
+ bool a6_gx_up(void);
+ bool a6_core_cycles(uint64_t *out);	/* 0169: RBBM always-count perf counter; false if GX is down */
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index aa8449b..68f40be 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -825,11 +825,18 @@ gpu_recover_diag_thread(void *arg __unused, wait_result_t wr __unused)
+ 		clock_interval_to_deadline(secs[i] - prev, NSEC_PER_SEC, &deadline);
+ 		(void)assert_wait_deadline(&chan, THREAD_UNINT, deadline);
+ 		thread_block(THREAD_CONTINUE_NULL);
+-		a6_tlb_diag(&gpu, secs[i]);
++		bool held = a6_cx_hold();		/* 0264: this thread reads without the lock */
++		if (held) {
++			a6_tlb_diag(&gpu, secs[i]);
++		}
+ 		if (secs[i] == 1) {
+ 			/* 0263: probes, and the syncs under the lock: at most 1 s for it, the wedge may be holding it */
+ 			bool locked = false;
+-			a6_wedge_log("+1 s");
++			if (held) {
++				a6_wedge_log("+1 s");
++				a6_cx_release();
++				held = false;
++			}
+ 			for (unsigned t = 0; t < 100 && !(locked = lck_mtx_try_lock(&sweet_gpu_lock)); t++) {
+ 				a6_delay_ms(10);
+ 			}
+@@ -840,6 +847,9 @@ gpu_recover_diag_thread(void *arg __unused, wait_result_t wr __unused)
+ 				a6_log("sync probe: gpu lock busy, not run\n");
+ 			}
+ 		}
++		if (held) {
++			a6_cx_release();
++		}
+ 		prev = secs[i];
+ 	}
+ 	(void)thread_terminate(current_thread());
+@@ -890,8 +900,10 @@ gpu_recover_locked(const char *why)
+ 	recoveries++;
+ 	bool rec_ok = true;
+ 	a6_tlb_stat_off = 1;			/* 0254 */
+-	int rrc = a6_recover(&gpu);
+-	if (rrc && a6_recover_mode == 2 && a6_cold_enabled()) {
++	int rrc = a6_cxcycle_mode() == 2 ? -1 : a6_recover(&gpu);	/* 0264: sweetcxcycle=2 goes straight to the cycle */
++	if (rrc && a6_cxcycle_due()) {
++		rrc = a6_recover_cx(&gpu);	/* 0264: in place of recover3 */
++	} else if (rrc && a6_recover_mode == 2 && a6_cold_enabled()) {
+ 		/* 0200: recover2 and the GBIF-halt path failed: GMU cold restart (sweetgpucold=0: off) */
+ 		uint64_t t3 = mach_absolute_time(), ns3;
+ 		rrc = a6_recover_cold(&gpu);
+@@ -1758,6 +1770,12 @@ sweet_gpu_recoveries(void)
+ uint64_t
+ sweet_gpu_timestamp(void)
+ {
+-	return gpu_ready ? a6_timestamp(&gpu) : 0;
++	/* 0264: no lock here, and a CX cycle may be running */
++	if (!gpu_ready || !a6_cx_hold()) {
++		return 0;
++	}
++	uint64_t t = a6_timestamp(&gpu);
++	a6_cx_release();
++	return t;
+ }
+ #endif /* ARM64_BOARD_CONFIG_SWEET */
+-- 
+2.56.0
+
