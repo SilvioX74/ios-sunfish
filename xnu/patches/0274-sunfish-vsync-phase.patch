@@ -1,0 +1,100 @@
+From 816547ee1c8831a2eb5cd436a4443ded8508be2a Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Mon, 2 Nov 2026 08:05:07 -0500
+Subject: [PATCH] sunfish: sweetvsyncphase, lock the vsync tick to CA's
+ display-link grid, off by default
+
+---
+ iokit/Kernel/arm/SweetFramebuffer.cpp | 41 +++++++++++++++++++++++----
+ 1 file changed, 36 insertions(+), 5 deletions(-)
+
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index a226146..e3dc6ef 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -143,9 +143,12 @@ class AppleCLCD : public IOMobileFramebuffer {
+ 	uint64_t            fNextVsync;     /* absolute deadline of the next tick */
+ 	uint64_t            fVsyncAbs;      /* tick period in absolute time units */
+ 	uint64_t            fVsyncAheadAbs; /* 0165: added to the vsync time CA is told (sweetvsyncahead=us) */
++	uint64_t            fVsyncPhaseAbs; /* 0274: ticks sit this long before CA's display-link grid */
++	bool                fVsyncPhaseOn;  /* 0274: sweetvsyncphase=us given */
+ 	uint64_t            fStatSwaps, fStatPresents, fStatPresentAbs;
+ 
+ 	static void vsyncFired(OSObject *owner, IOTimerEventSource *sender);
++	uint64_t vsyncSnap(uint64_t t);
+ 	/* 0210 (sweetpresentwait=2): a put-off present is retried every 1 ms for up to 10 ms after its tick */
+ 	IOTimerEventSource *fLate;
+ 	uint32_t            fPresentWait;
+@@ -321,6 +324,21 @@ AppleCLCD::start(IOService *provider)
+ 	uint32_t ahead = 0;
+ 	PE_parse_boot_argn("sweetvsyncahead", &ahead, sizeof(ahead));
+ 	nanoseconds_to_absolutetime(ahead * 1000ULL, &fVsyncAheadAbs);
++	/*
++	 * 0274: without frame-info Presentation_time, apps' CADisplayLinks fire on a fixed grid of exactly 1/60 s
++	 * from mach time 0; when that lands 12.5-14.8 ms after our tick, commits hit backboardd's render gate edge
++	 * and ~30 % of frames are skipped. sweetvsyncphase=US (0..16000) makes the period exactly 1 s / 60 and
++	 * keeps ticks at k * period - US, so the display link fires US us after the tick. Absent: unchanged.
++	 */
++	uint32_t phase = 0;
++	if (PE_parse_boot_argn("sweetvsyncphase", &phase, sizeof(phase)) && phase <= 16000) {
++		uint64_t sec = 0;
++		nanoseconds_to_absolutetime(NSEC_PER_SEC, &sec);
++		nanoseconds_to_absolutetime(phase * 1000ULL, &fVsyncPhaseAbs);
++		fVsyncAbs = sec / 60;
++		fVsyncPhaseOn = true;
++		IOLog("SWEET FB: vsync phase %u us, period %llu ticks\n", phase, fVsyncAbs);
++	}
+ 	fVsync->setTimeoutUS(SWEET_FB_VSYNC_US);
+ 	PE_parse_boot_argn("sweetpresentwait", &fPresentWait, sizeof(fPresentWait));	/* 0210 */
+ 	if (fPresentWait == 2) {
+@@ -439,6 +457,17 @@ sweet_fb_fade(AppleCLCD *fb, uint32_t step)
+ 	}
+ }
+ 
++/* 0274: the first grid point k * period - phase at or after t (sweetvsyncphase); t itself when off */
++uint64_t
++AppleCLCD::vsyncSnap(uint64_t t)
++{
++	if (!fVsyncPhaseOn) {
++		return t;
++	}
++	uint64_t k = (t + fVsyncPhaseAbs + fVsyncAbs - 1) / fVsyncAbs;
++	return k * fVsyncAbs - fVsyncPhaseAbs;
++}
++
+ void
+ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ {
+@@ -451,14 +480,16 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ 	 * Re-arming 16.7 ms after the panel copy made "60 Hz" vsync run at
+ 	 * ~40 Hz with jitter, and backboardd paces its frames on it.
+ 	 */
+-	if (fb->fVsyncAbs == 0) {
+-		nanoseconds_to_absolutetime(SWEET_FB_VSYNC_US * 1000ULL, &fb->fVsyncAbs);
+-		fb->fNextVsync = now;
++	if (fb->fVsyncAbs == 0 || fb->fNextVsync == 0) {
++		if (fb->fVsyncAbs == 0) {
++			nanoseconds_to_absolutetime(SWEET_FB_VSYNC_US * 1000ULL, &fb->fVsyncAbs);
++		}
++		fb->fNextVsync = fb->vsyncSnap(now);	/* 0274 */
+ 	}
+ 	uint64_t grid = fb->fNextVsync;		/* 0273: this tick's deadline, before the jitter of the wake */
+ 	fb->fNextVsync += fb->fVsyncAbs;
+ 	if (fb->fNextVsync <= now || __atomic_exchange_n(&fb->fDarkKick, false, __ATOMIC_ACQ_REL)) {
+-		fb->fNextVsync = now + fb->fVsyncAbs;   /* 0242: also after a slow dark tick */
++		fb->fNextVsync = fb->vsyncSnap(now + fb->fVsyncAbs);   /* 0242: also after a slow dark tick; 0274 */
+ 	}
+ 	/* 0242: dark for 5 s (fade and panel sleep long done): one tick per 500 ms; display on kicks it */
+ 	if (__atomic_load_n(&sweet_display_dark, __ATOMIC_ACQUIRE) && fb->fPowerOff) {
+@@ -466,7 +497,7 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ 		nanoseconds_to_absolutetime((uint64_t)sweet_dark_fb_after_ms * NSEC_PER_MSEC, &after);
+ 		nanoseconds_to_absolutetime((uint64_t)sweet_dark_fb_ms * NSEC_PER_MSEC, &slow);
+ 		if (now - fb->fOffAt >= after) {
+-			fb->fNextVsync = now + slow;
++			fb->fNextVsync = fb->vsyncSnap(now + slow);	/* 0274 */
+ 		}
+ 	}
+ 	sender->wakeAtTime(fb->fNextVsync);
+-- 
+2.56.0
+
