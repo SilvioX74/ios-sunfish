@@ -32,14 +32,35 @@ history in the feature Logs. Finished items move to [completed.md](completed.md)
 
 - Screen-off clocks (`sweetdarkclk=1`, xnu 0257, works, off by default): no heat gain shown yet; compare from the same start temperature (cpu.md dk1).
 
+Upstream survey 2026-11-01 (research/notes/upstream-2026-11-01.md; their numbers, guesses on how they map to us):
+- hakios-xnu 78b518b: xpcproxy keeps its identity version across exec (theirs SecTaskLoadEntitlements failures 1111 -> 0, webkit assertion errors 22 -> 2). Safari/WebKit errors and wasted CPU. No p_idversion patch of ours found, grep needs a second look. 1 h, boot-arg off switch. APSL. [phone]
+- hakios-xnu e5b01a0, 7822f30: RPMh lock audit, they found two drivers on TCS 0 at once; maybe B4, G1 (guess). Ours rh_lock in 0062, 0085, 0102; check every writer, including 0233, 0264. 1 h read-only.
+- hakios-xnu 1c320ad: capture-audio start error treated as a graph error; maybe B48's ignored first shutter (guess; their symptom was a rebuild loop). 1-2 h, MIT, parked with B48. [phone]
+- hakios-xnu 502aee8: entitlement-based privilege table, 40 privileges; NECP errors in mediaserverd, mDNSResponder. 2 h, grants more. APSL. [phone]
+- ios-fajita 0ecd69c: b3a8 read as 10-bit in the swap copy; conflicts with our 0104 (BGRA + A8, 5 bytes per pixel). Probably not B44; check the Tips banner's surface format when B44 resumes. No license, idea only.
+
 ## Later (needs repeated 1 h+ tests)
 - O16 GPU at 650 MHz: moved to plan priority 4 on 2026-10-31 (38 swaps/s against 34 on the full canvas before dead fill, clean for ~1 min only; the daily soak covers it). 800 MHz fails bring-up (me_init timeout).
 - Camera far focus: the user (2026-10-30): can't focus on far things. Lens range 400..725 is inferred; infinity is probably below code 400 (the board at 10 cm peaked at the 725 end). Next: read the per-unit AF calibration from the OIS flash (research/notes/camera-af.md) or widen the range in small steps and sweep on a far scene.
 - Compass accuracy: parked 2026-10-30 after a long day (sensors.md rec1, dm11, dm12): usable as a rough compass; on dm12 the user finds it much more consistent, still 20-30 deg off a Pixel 8 Pro and it still jumps; live gyro-aided fit idle (status line counters in dm12 say why); next: read a recording from normal use (/var/local/motion-dump.csv), U21 comparison away from electronics.
 - B21 GPU hang recovery: real no-fault hangs are back and don't recover: G1 in gpu-bugs.md. Pool growth unchanged.
 - B4 Silent resets in long app soaks (PON reason is sticky, no lead).
+- Upstream 2026-11-01, audio (with B16, for later): hakios-xnu 315e973, 14c6a78 speaker guard: high-pass, power averages, limiter, amp temperature (their amp Awinic, ours CS35L41; 3-5 h, hardware risk, baby steps). hakios-xnu 2bb073e, 9082e00 iOS microphone: fourth Codec device with data source imic, MediaSafetyNet 9 s stop note (1-2 days, B23 reset risk). Copy logic.
+- Upstream 2026-11-01, reviews: hakios-xnu 230762c, 5429d38, 1800069 driver audit reports (GLINK length wrap, SMEM offsets, freed camera ring; 2-3 h read-only).
 
 ## Optimize (last)
+Upstream survey 2026-11-01 (research/notes/upstream-2026-11-01.md; their numbers, from other phones, none measured here), speed items ranked:
+- U1 hakios-metal e59090f: uber shaders specialised per configuration (theirs 15000 instructions, 9.6 ms a draw -> 16-48, 0.2 ms). Measure our top Control Center pipelines first with SWEET_PIPESTATS (1 h, [phone]); a bridge fold is 1-2 days if they are big. Idea only.
+- U2 hakios-xnu cd8fdbb `fb_filter=2`: nearest-neighbour present while moving, bilinear redraw when still (theirs 1.9 ms against 3.6; ours bilinear ~2.5 ms, sweet_gpu.c:1105). 1-2 h, text may shimmer while scrolling; 5-boot perfab A/B and webcam [phone]. APSL, copy.
+- U3 hakios-xnu ee69ef6: stale-size piece clogging the surface cache (theirs create 2.6-4 ms -> 0.15-0.28, free 1.7-2.1 -> 0.02). Time our surface create/free first (1 h); their allocator differs, may not apply. APSL.
+- U4 hakios-metal 5980a94, 24a8cec, 0c78612, cc08862: light full-size passes in sysmem, judged by peak draws over the last 16 passes (theirs 5 ms in tiles against 0.13 ms). Fits plan priority 3's next step. 2-3 h in Turnip. Overall gain small for them. Idea.
+- U5 hakios-xnu 3aef7e3, 6d8f818: cputop (one line per 5 s of who holds the CPUs) and settled benches; may explain low Settings runs (guess: widget extensions, searchd, logd_helper busy for the first 1-2 min). 1 h, MIT, writing needs no phone.
+- U6 UniXNU f749a7d, 36247a1, hakios-metal 5e26504: per-pass CP timestamps, undistorted traces (ours ~61 us per bin; misled hw2, cc3). 2-3 h, dev speed. Copy.
+- U7 UniXNU 359d77c: bridge threads' QoS (bridge 0023; 1 h; ours unknown) and ring contention by other clients (doc; 1-2 h read-only; maybe the widgets page's 26 swaps/s, guess).
+- U8 hakios-xnu 6d8f818 `touch_poll_us=1000` and tools/latency.py stages: felt lag (theirs 55-59.5 -> 44-51 ms, mixed with other changes; our touch poll is 8 ms). 1 h poll, 3-4 h stages; only while touched, for heat. [phone]
+- U9 hakios-metal e7e7ad1, 61ef867: UBWC for sampled textures (theirs 9.4 ms against 18.4 linear). Ours probably has it for private images, IOSurfaces linear. 3-5 h census first; B44-style garble risk. Idea.
+- U10 UniXNU 7329ccc, 407db1a, 9bfc45a, hakios-metal 9d52b51: shipped pipeline pack and on-disk stage cache for first-use hitches (plan priority 4). 3-5 h; the pack stays out of git. UniXNU 49524f0 spare image blocks: 1 h to measure, our blocks are 8 MB.
+- U11 hakios-metal + hakios-xnu f693d9d, 3776b53, 96ffbc5: native Metal driver as the window server's backend, frames could overlap, theirs 38-47 us per draw (ours 55-63). 2+ weeks, high risk, needs A618 bring-up. Strategic bet if the bridge stalls; first their probe against our bridge (~1 day, [phone]). MIT.
 - O15 Live Photo: with it on, mediaserverd allocates ~1 GB/s until killed (camera.md lp1); off by default (tools/sunfish-camera-prefs.sh). Stale-worker wait in camera_client_open (camera.md 23:15) still lengthens any restart.
 - O14 (parked 2026-10-31 for the speed focus; camera preview takes ~5 cores, not profiled) Battery drain: ~9% in 10 min of use (the user, 2026-10-30, kernel127, AirPods + screen on; Live Photo churn in mediaserverd and ~5 cores while previewing are suspects): measure per-subsystem (screen, BT, sensors fusion, camd) once U3 battery % is trustworthy (battery.md).
 - O13 Compass fusion keeps accel+gyro+compass at >= 100 Hz whenever the screen is on and the DeviceMotion service exists, even with no CoreMotion client: gate it on a client having set a ReportInterval (sensors.md dm4).
