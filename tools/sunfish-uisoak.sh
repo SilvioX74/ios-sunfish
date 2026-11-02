@@ -17,6 +17,7 @@ while [ $SECONDS -lt $end ]; do
 		[ -n "$p" ] || { stop="ssh lost at $((SECONDS - t0)) s"; break 2; }
 		tail -c +"$off" "$L" | grep -a -q 'recover2: FAILED' && { stop="failed GPU recovery at $((SECONDS - t0)) s: rest would be CPU drawing"; break 2; }
 		[ "$p" != "$p0" ] && { restarts=$((restarts + 1)); echo "=== uisoak $tag backboardd $p0 -> $p at $((SECONDS - t0)) s" >> "$L"; p0=$p; }
+		echo "=== uisoak $tag app $a $((SECONDS - t0)) s" >> "$L"	# per-app heat and load from the log
 		timeout 25 tools/sunfish-ssh "/var/local/bin/openapp $a" >/dev/null 2>&1; sleep 2
 		for d in 0 1 2; do
 			[ $SECONDS -ge $end ] && break 3

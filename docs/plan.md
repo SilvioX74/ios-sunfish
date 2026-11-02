@@ -6,8 +6,8 @@ details and history in the feature Logs (`docs/features/<name>.md`).
 ## Focus (the user, 2026-10-31)
 Make the phone fast and smooth first, stability later, and stop it running hot all the time.
 Targets (Claude's numbers, the user can change them):
-- Settings scrolling: at least 58 swaps/s with p95 at or under 20 ms, across 5 boots (now 57.0, p95 20.2 ms, nearly there).
-- Control Center: at least 45 swaps/s (now 36).
+- Settings scrolling: at least 58 swaps/s with p95 at or under 20 ms, across 5 boots (good boots 56-57, 20-30 ms; about 1 in 6 boots 42-49).
+- Control Center: at least 45 swaps/s (now 38.7).
 - Soak: no UI restarts in 30 min of hard scrolling (n7: 1 restart in 60 min).
 
 ## Test schedule
@@ -33,12 +33,12 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `sweetsmmutcr=3` (stock SMMU walks and ACTLR), default in kernel153. Watch it in the next soaks. A CX cycle doesn't recover a real G1 (the GDSC refuses, n6), so off. Silent reset n1, n5: not seen in n7; pet crumb on in soaks (gpu.md).
 
 ## Phone
-Claude's. `work/night` set until the morning session. Everyday setup being installed: kernel153 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3 by default) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, bundle work/metal2-next (mode 3, cache, knobs on by default), luma boost off.
+Claude's. `work/night` set until the morning session. Everyday setup: kernel153 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3 by default) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, bundle work/metal2-next (mode 3, cache, knobs on by default), luma boost off.
 
 ## Next (in this order)
-1. ▶ Defaults: tools/sunfish-install-speed.sh, boot kernel153, check. Webcam motion check of mode 3 in the morning (st3 correction; dim screen at night).
+1. Webcam motion check of mode 3 in the morning (st3 correction; dim screen at night). Defaults installed and checked: 2 boots, 15 min UI run clean (df, smoothness.md).
 2. Heat under load: n7 peaked 95.7 C on cpu6, 60 of 730 readings at 90 C or more, 0 caps. When and in which app, and do caps ever fire? A76 at 1939 MHz is 5 C cooler for 0.4 ms (cpu.md hot1).
-3. Fence poll: work/metal2-fence, `sweetfencepoll=200`, Turnip 100 ms slice: 5-boot A/B, waiter tid's ms, A55 temperature, p95 (read-only: about 2 ms/frame of A55 polling; backlog O11). Bridge QoS `SWEET_BRIDGE_QOS=1`, 5-boot A/B (guess 0-0.5 ms; backlog U7).
+3. ▶ Fence poll A/B running (fa): work/metal2-fence, `sweetfencepoll=200`, Turnip 100 ms slice: 5-boot A/B, waiter tid's ms, A55 temperature, p95 (read-only: about 2 ms/frame of A55 polling; backlog O11). Bridge QoS `SWEET_BRIDGE_QOS=1`, 5-boot A/B (guess 0-0.5 ms; backlog U7).
 4. fg1 again in full, kernel146, read `SWEET SCHED: fg` per window: do low Settings runs show more A55 time? (smoothness.md 20:10.)
 
 ## User tasks (details in user-tasks.md; nothing waits on these)

@@ -34,6 +34,8 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | df2 | def=153,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | df1 | def=153,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | tm0c | off=152,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetrowa55=6,sweetgpufreq=6,sweethwcg=1,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_U0011=1,+SWEET_U0012=1,+SWEET_U0013=1,+SWEET_U0014=1 | 1 | 8 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | tm3c | tcr=152,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetrowa55=6,sweetgpufreq=6,sweethwcg=1,sweetsmmutcr=3,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_U0011=1,+SWEET_U0012=1,+SWEET_U0013=1,+SWEET_U0014=1 | 1 | 7 k | 0 | 0 | 0 | 0 |
 | 2026-11-01 | tm0b | off=152,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetrowa55=6,sweetgpufreq=6,sweethwcg=1,+SWEET_DEADFILL=3,+M2V_SHADOW_CACHE=1,+SWEET_U0011=1,+SWEET_U0012=1,+SWEET_U0013=1,+SWEET_U0014=1 | 1 | 8 k | 0 | 0 | 0 | 0 |

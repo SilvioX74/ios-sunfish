@@ -1,5 +1,5 @@
 # Smoothness
-**State:** 🟡 Safari 60, Settings 57 (p95 20 ms), Home about 52, Control Center 36 swaps/s at full canvas (internal 5 nits fixed by luma boost off, Settings 56.5, Home 53, 2026-11-01), with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1 and the quarter-size Control Center backdrop (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
+**State:** 🟡 Safari 60, Settings 56-57 (p95 20-30 ms), Home about 53, Control Center 38.7 swaps/s at full canvas, defaults since 2026-11-02 (luma boost off, mode 3, shadow cache, SWEET_U0011..14) and the quarter-size Control Center backdrop (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
 
 ## How to use
 - Bench: `tools/sunfish-fpsbench.sh TAG SECONDS` (BENCH_TIGHT=1); config matrix `tools/sunfish-cfgbench.sh`; timeline `sweettrace=1` + `tools/sunfish-timeline.py`. Details in [methods.md](../methods.md).
@@ -94,6 +94,12 @@ Kernels:
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-02 01:23 df: speed settings are the real defaults now
+- tools/sunfish-install-speed.sh: bundle work/metal2-next, Control Center backdrop 0.25, luma boost off, env lines out. Kernel153 (xnu 0271) has sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3 compiled in.
+- `SWIPE_MS=3000 SETTLE=60 tools/sunfish-perfab.sh`, empty mtl2-env, args only sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, 2 boots, 5 nits, 649-650 MHz, `tcr 802019 actlr 70000000` and `hwcg on` in the log, 0 hangs, 0 void. Settings 55.6 (p95 30.3), 46.0 (33.4, 45 % busy: low run); Home 53.3 (32.6), 52.1 (32.8); Control Center 38.5 (37.6), 38.8 (38.4). Max C 87-92. Screenshots normal.
+- `tools/sunfish-uisoak.sh d1 900`, everyday boot: 906 s, 97.9 k submits, G1 0, G2 0, G4 0, 0 restarts, max 93.2 C, 0 caps. With n7: 495 k submits, 0 G1.
+- Open: Control Center 38.7 against the target 45; Settings low runs (42-49 swaps/s, about 1 in 6) now the main miss against 58, p95 20 ms; webcam motion check of mode 3 in the morning. Off: `tools/sunfish-install-speed.sh --undo`, `sweetsmmutcr=0 sweethwcg=0 sweetgpufreq=5` on the boot line.
 
 ### 2026-11-01 23:19 lb0-lb3: luma boost is it: CA_DISABLE_LUMA_BOOST=1 now the default
 - `SWIPE_MS=3000 SETTLE=60 tools/sunfish-perfab.sh`, 2 boots per side, settings,home, 15 s, kernel150 base args, metal2-cpu, mode 3, cache, knobs on, all 8 boots at `SWEET BL: nits 5`, 0 hangs, 0 void, 22:51-23:18. Boots 20261101-225145 to -231505.
