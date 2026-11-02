@@ -34,6 +34,10 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | mkb2 | m0=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3,+SWEET_CULL_MASK0=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | mka2 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | mkb1 | m0=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3,+SWEET_CULL_MASK0=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | mka1 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 10 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | cvt1 | c3=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 3 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | cvb5 | c3=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 10 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | cva5 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1 | 1 | 10 k | 0 | 0 | 0 | 0 |

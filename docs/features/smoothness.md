@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 20:50 mk: SWEET_CULL_MASK0 no gain (2 boots a side, as expected after b54); steady Control Center frames captured
+- Bundle 0167c75 (mask-0 skip), kernel158 everyday + SWEET_CULL=3, 2 boots a side (cut short): home def 53.1, 53.1 / m0 53.8, 52.1; cc 43.7, 42.6 / 43.8, 42.2; settings 56.9, 55.0 / 56.4, 54.8. All within noise, screenshots identical, 0 G1/G2/G4. Stays off.
+- dl4: SWEET_DRAWLOG_MIN=30 SKIP=40 COUNT=8, fixed cc motion, webcam: Control Center. 8 passes 1125x2436, 83 draws each (one 94): work/cc/drawlog-dl4.txt. Analysis running.
+
 ### 2026-11-02 20:20 b54: correction to dl3: the "S1" draws write CA's second colour attachment; they are not empty (read-only)
 - The drawlog logs only colorAttachments[0].writeMask (NativeBridgeMetalFrontend.mm:2348), so "mask=0" hid that S1 pipelines write c1 (pipeline dump `PBGRAXm_TatcA2S1Xhf`, boot 20261030-214341: c0 writeMask 0, c1 all; stencil off). Later `..._IsrcM1` draws read c1 onto c0. "S" + digit in CA's labels comes from an index table (research/re/QuartzCore.s 0x18837b898). No stencil, nothing dropped (research/notes/b54-stencil-2026-11-02.md).
 - So dl3's "draws 9-12, 27 write nothing (2.65 Mpx)" was wrong. SWEET_CULL_MASK0 requires all 8 attachments' masks to be 0, so it leaves S1 draws alone and should skip about nothing; its A/B is cut to 2 boots a side. Open idea: c1 is a second full-size BGRA8 attachment in every Home pass; whether Turnip stores it out (cost) isn't known: log its storeAction/storage mode.
