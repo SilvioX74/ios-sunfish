@@ -129,3 +129,4 @@ output in /var/local.
 2026-11-02 08:05: /var/local/bin/nohup shim (`exec "$@"`) put there by a phone-runner for perfab CATRACE=1; perfab no longer uses nohup (no nohup on the phone). Not needed; remove with `rm /var/local/bin/nohup` at the next phone job.
 2026-11-02 10:10: backboardd env CA_ENABLE_MEMORYLESS=0 toggled for the ml A/B (tools/sunfish-install-caenv.sh); ends at the everyday CA_DISABLE_LUMA_BOOST=1 only. Unfinished; the script is the reproduction.
 2026-11-02 10:45: ml A/B finished; backboardd env restored to the everyday CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1 (correction to the 10:10 line, which said luma only).
+2026-11-02 10:50: /var/mobile/Library/Preferences/com.apple.coremedia.plist: VideoToolbox transfer keys (allowPixelTransferGraph, allowPixelTransferFallbacks, maybe allowSoftwareTransferSession) set for the vt A/B with tools/sunfish-vt-prefs.sh, removed at the end with --undo. Unfinished feature; the script is the reproduction.
