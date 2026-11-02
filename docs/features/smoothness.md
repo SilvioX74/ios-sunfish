@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 10:45 ml: CA_ENABLE_MEMORYLESS=0 is much worse: Control Center 40.5 -> 26.7, Home 54.2 -> 40.5
+- `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh mlo1/mlx1/mlo2/mlx2 1 --screens cc,home`, kernel157 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20; backboardd env via tools/sunfish-install-caenv.sh: OFF = CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1 (the everyday plist), ON adds CA_ENABLE_MEMORYLESS=0. 4453-4454 mV, 0 G1/G2/G4, 0 void.
+- OFF: cc 40.3, 40.7 (p95 47.7, 47.8), home 54.6, 53.7. ON: cc 27.5, 25.9 (p95 60.0, 63.2), home 40.2, 40.8 (p95 48.5). Screenshots the same. Stopped at 2 boots a side: the gap is 13.7 swaps/s. Memoryless stays on (default).
+- Correction to the plan's note: the everyday backboardd env also has CA_FORCE_TIMER=1 (needed: CA renders on our kernel tick). Restored and rebooted (mlend, lock screen OK).
+
 ### 2026-11-02 09:30 k157: kernel157 everyday check
 - `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh k157 1 --screens settings,home,cc`, kernel157 (sweetvsyncphase=5000 built in), everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, 0 void, 0 G1/G2/G4 in 10 k submits. Settings 56.4 (p95 20.9), Home 52.8 (31.8), Control Center 40.3 (39.2); max 83.5-86.7 C. One launch per screen, so the Settings number is one sample. Webcam after the hs1 boot: lock screen normal.
 
