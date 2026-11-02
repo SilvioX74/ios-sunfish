@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 10:00 ph2: Photos' heat is CPU: the app +31 CPU s and mediaserverd +17 per minute against Settings
+- Running boot hs1 (kernel157 everyday), 60 s of grid scrolling each (`flame-cmd --wait 0`, a swipe about every 1 s; the first try ph1/se1 was void: flame-cmd's default 3 s wait left 2 s of 3 idle). Start under 70 C both.
+- Photos / Settings: swaps/s 40.8 / 55.5; GPU submits 8722 / 9444, GPU busy 46.7 / 53.5 %; A55 busy cpu0-5 39-24 / 21-10 % (+14-18 on every A55), cpu6 69.6 / 73.7, cpu7 31.6 / 22.0. Clocks fixed (A55 1497, A76 2208), no caps. Max: cpu6 85.8 / 83.2, cpu7 84.8 / 78.7, a55 83.2 / 79.9; GPU, DDR and the rest equal.
+- CPU s in the 60 s: MobileSlideShow 47.1 against Preferences 16.5; mediaserverd 17.3 (not in Settings' top 8); backboardd 59.5 / 68.7; SpringBoard 6.8 / 6.2. Webcam: Photos thumbnails all drawn while scrolling.
+- So Photos' extra heat is CPU on the A55s and cpu7, not GPU. Guess: thumbnail decode in software (mediaserverd, the app). Next: pstack samples of both (running), symbolized.
+
 ### 2026-11-02 09:30 hs1: which app runs hottest: Photos (15-min UI soak, kernel157)
 - Everyday setup kernel157 (sweetvsyncphase=5000) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, mtl2-env SWEET_U0011..14=1 + TU_FETCH_GMEM_MIN_DRAWS=20, boot 20261102-091254, on charge 4437-4438 mV. `tools/sunfish-uisoak.sh hs1a 450` then `hs1b 450`: 50.9 k + 50.4 k submits, 0 G1/G2/G4, 0 backboardd restarts, 0 caps. Max 95.7 C (hs1a), 93.2 (hs1b); 13 of 180 readings at 90+ (7.2 %).
 - Per app (hottest of a55/cpu6/cpu7 per reading; max / mean C, readings at 90+): Photos 95.7 / 87.9, 9 of 22; Safari 92.2 / 83.9, 4 of 34; Settings 89.9 / 84.2, 0 of 35; Maps 86.7 / 82.1, 0; Calendar 85.4 / 78.9, 0; Notes 82.8 / 74.8, 0.
