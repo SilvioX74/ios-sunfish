@@ -34,6 +34,13 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | ts2c | atp=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+TU_AUTOTUNE_ALGO=profiled | 1 | 5 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ts2b2 | d100=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=100 | 1 | 6 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ts2b | d100=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=100 | 1 | 235 | 0 | 0 | 0 | 2 |
+| 2026-11-02 | ts2a | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 5 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ts1c | atp=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+TU_AUTOTUNE_ALGO=profiled | 1 | 6 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ts1b | d100=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=100 | 1 | 6 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ts1a | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 5 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | po0b | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1; po0=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+TU_SWEET_PRIM_ORDER=0 | 2 | 11 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | po0a | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1; po0=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+TU_SWEET_PRIM_ORDER=0 | 2 | 12 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | sfb5 | f1=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1 | 1 | 10 k | 0 | 0 | 0 | 0 |

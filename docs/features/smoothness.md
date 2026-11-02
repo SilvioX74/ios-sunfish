@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 16:50 ts: Turnip env sweep on Control Center: TU_AUTOTUNE_ALGO=profiled about +1 swap/s (2 boots), GMEM_MIN_DRAWS=100 no gain
+- kernel158 everyday args + SWEET_SURF_FLUSH=1, new bundle, 2 boots per config, cc,home, 4453-4455 mV, 0 G1/G2/G4; one void run (lock screen, ts2b) rerun.
+- cc swaps/s (p95) / home: def (GMEM_MIN_DRAWS=20) 39.4 (36.9), 39.2 (35.9) / 53.1, 52.9; d100 38.8 (40.4), 39.1 (37.8) / 51.9, 52.7; atp (TU_AUTOTUNE_ALGO=profiled) 40.2 (36.6), 40.5 (34.7) / 52.7, 51.9. atp minus def: cc +1.05, home -0.7. Screenshots normal.
+- Under the 1 ms stop rule: a 5-boot A/B with Settings added is running (ata/atb).
+
 ### 2026-11-02 16:20 po0: per-overlap flush off gives nothing on Control Center: Turnip 0111 dropped
 - Bundle metal2-next with Turnip 0111 (4bba3bf, off by default), kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20 + SWEET_SURF_FLUSH=1, 2 boots a side (po0a, po0b), cc,home, 4441-4455 mV, 0 G1/G2/G4, 0 void.
 - def: cc 40.4, 40.3 (p95 39.7, 37.2), home 52.4, 53.4. TU_SWEET_PRIM_ORDER=0 (flush fully off, picture broken: cyan background, no blur, garbage at slider edges): cc 39.0, 38.7 (p95 35.0, 37.3), home 53.9, 52.0. cc median frame 24.7 -> 25.8 ms, GPU busy 88 -> 86-87 %.
