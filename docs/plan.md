@@ -37,7 +37,8 @@ Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup
 
 ## Next (in this order)
 1. Low Settings launches: read-only comparison of a low and a good launch (Priority 1, investigator running); logs vg*/va*/rl* in work/perfab, per-boot logs 20261102-04* and -05*.
-2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel154 + `sweetwdtcrumb=1`).
+2. Control Center `TU_FETCH_GMEM_MIN_DRAWS` A/B, 4 boots each of base, d5, d20 (cs4a-d, running; Priority 3).
+3. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel154 + `sweetwdtcrumb=1`).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),
