@@ -38,7 +38,7 @@ Claude's. `work/night` set until the morning session. Everyday setup: kernel154 
 ## Next (in this order)
 1. Webcam motion check of mode 3 in the morning (st3 correction; dim screen at night). Defaults installed and checked: 2 boots, 15 min UI run clean (df, smoothness.md).
 2. Heat under load: n7 peaked 95.7 C on cpu6, 60 of 730 readings at 90 C or more, 0 caps. When and in which app, and do caps ever fire? A76 at 1939 MHz is 5 C cooler for 0.4 ms (cpu.md hot1).
-3. ▶ Low Settings runs (about 1 in 3): not idle, not A55 (fg1); fixed per launch, backboardd's GPU end -> swap waits (p95 27 vs 14 ms). Next: relaunch Settings 4-5 times per boot, with `SWEET_CTL` stage timing (smoothness.md).
+3. ▶ Low Settings runs: per launch (rl, 2 clearly low of 20, mixed in every boot); the extra time is Core Animation between completion handlers and swap (p95 24 vs 12 ms). Next: what sets that phase, CA_FORCE_TIMER (smoothness.md).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),

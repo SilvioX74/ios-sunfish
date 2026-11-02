@@ -34,6 +34,11 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | rl4 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_CTL=/var/local/turnip/ctl.txt | 1 | 21 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | rl3 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_CTL=/var/local/turnip/ctl.txt | 1 | 22 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | rl2 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_CTL=/var/local/turnip/ctl.txt | 1 | 21 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | rl1 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_CTL=/var/local/ctl.txt | 1 | 23 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | rl1 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_CTL=/var/local/ctl.txt | 1 | 20 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | qs1e | qos=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_BRIDGE_QOS=1 | 1 | 7 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | qs0e | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 8 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | qs1d | qos=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_BRIDGE_QOS=1 | 1 | 7 k | 0 | 0 | 0 | 0 |

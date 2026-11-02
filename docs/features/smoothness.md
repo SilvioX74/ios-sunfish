@@ -95,6 +95,13 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 04:39 rl: low Settings runs are per launch; the extra time is Core Animation's wait after the GPU (handlers done -> swap)
+- `RELAUNCH=5 SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh`, kernel154, no QoS, settings only, 4 boots (logs 20261102-040337, -041725, -042245, -043010), Preferences killed and relaunched between launches (pid 277 -> 414 checked), 0 hangs.
+- Per boot (swaps/s): rl1 57.0 56.3 55.0 57.5 57.0; rl2 55.9 53.9 57.1 46.8 57.0; rl3 56.6 54.6 56.9 57.4 57.3; rl4 57.4 57.0 57.7 41.5 57.2. Low launches mixed with good ones in 4 of 4 boots; clearly low 2 of 20 (skip2 25, 42 %), milder 4 (skip2 5-7 %, p95 27-31 ms). No pattern in launch order or start temperature (75-80 C both).
+- `tools/sunfish-timeline.py --ctl`, p50 / p95 ms, low against good in the same boot: GPU end -> completed 0.64 / 0.82 both; flushSurfaces 1.5-1.7 / 1.8-1.9 both; commit -> GPU start 7.8 / 8.1 both; handlers done -> swap 8.2-9.9 / 23.8-24.8 low, 6.8-6.9 / 11.3-12.9 good. All the extra time is there.
+- Gotcha: `SWEET_CTL=/var/local/ctl.txt` writes nothing (backboardd runs as mobile, /var/local is root's); use /var/local/turnip/ctl.txt.
+- Guess: the phase between backboardd's render and the display tick is set per launch (backboardd env has CA_FORCE_TIMER=1, a timer display link). Next: read-only, what CA does between handlers and swap and what sets that phase.
+
 ### 2026-11-02 04:02 qs: bridge QoS no gain, stays off; without QoS 5 of 5 Settings boots at 56.6-57.2, p95 19.4-21.1
 - `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh`, kernel154, metal2-next, 5 boots a side, settings,home, 0 hangs, 0 restarts, 0 void (qs0a redone as qs0a_r after the runner's own timeout).
 - Settings off 57.2, 56.8, 56.8, 56.8, 56.6, p95 19.4, 19.4, 20.1, 19.6, 21.1: median 56.8, p95 19.6, no low run. `SWEET_BRIDGE_QOS=1`: 57.0, 53.1, 57.0, 41.2, 51.4, p95 median 32.4: 2 low (41.2 with skip2 42 %). Home 53.7 and 52.9. The metal2vulkan threads didn't move to A76 (names not in the log). QoS stays off; whether it causes low runs isn't separable from the base rate in 5 boots.
