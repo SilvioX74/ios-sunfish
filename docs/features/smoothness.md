@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 18:06 gt1: GPU trace of Control Center open/close: load+store only ~0.47 ms per full-screen GMEM pass
+- kernel158 everyday + SWEET_CULL=3, MESA_GPU_TRACES=print with TU_GPU_TRACEPOINT=-draw_ib_gmem -draw_ib_sysmem -sysmem_clear -gmem_clear -sysmem_clear_all (one boot, gt1, boot 20261102-180209; 3 cycles: open 114.876/120.957/127.626, close 117.911/124.582/130.662 s). work/cc/gt1-trace.log (12.5 MB), gt1-sum.txt.
+- render_pass n=3543 mean 2.16 ms; 1125x2436 n=1377 mean 5.10 ms GPU (44 bins; load 0.18, store 0.29, binning 0.07 ms per pass); 207x460 (sliders) 0.79 ms, 284x611 (blur) 0.83 ms; small passes 0.1-0.4 ms. So load/store is a small share of a full-screen pass, which is why the render-area shrink (ra) gave nothing; the time is in the draws. Per-frame split by open/close and GMEM/sysmem: analysis running.
+
 ### 2026-11-02 18:01 dl6b: Control Center held still renders nothing; all cost is the open/close animation (read-only)
 - work/cc/drawlog-dl6.txt passes 993-1330 (pid 60; screen = ios 2/3 double buffer), research/notes/cc-draws-dl6-2026-11-02.md. t is CPU encode time; drawlog writing slows frames (open ~33 ms apart, close 44-59 ms), so rates are inflated.
 - Open (181.50-182.69 s, 33 frames): 5 passes each: A screen 80-91 draws (fills, wallpaper, Home icons, then draw 79 an opaque full-screen 284x611 blur image over the changed region; cull 3 drops draws 4-78), B 207x460 volume slider offscreen, C screen 63-79 draws (~2-3 Mpx, module backgrounds read the framebuffer: GMEM), D 207x460 brightness slider, E screen 17-21 draws. No blur computed in open frames (reused). 182.2-182.69: spring tail, full cost for 2.5 -> 0.35 px of movement.
