@@ -143,3 +143,4 @@ output in /var/local.
 2026-11-02 20:00: bundle work/metal2-next with SWEET_CULL_MASK0 (0167c75, SweetMetal2 4C4C44E6) installed with --no-restart; off unless SWEET_CULL_MASK0=1.
 2026-11-02 17:00: bundle work/metal2-next with drawlog attachment info (228e2cc, SweetMetal2 4C4C449C) installed with --no-restart (defaults unchanged); drawlog env lines for one boot (dl5), restored after.
 2026-11-02 17:40: bundle work/metal2-next with bridge 0124 SWEET_M2V_RENDER_AREA (9314dc0, SweetMetal2 4C4C4422) installed with --no-restart; off unless the env is set (A/B raa/rab).
+2026-11-02 17:49: bundle work/metal2-next with drawlog header ids (fe75b25, SweetMetal2 4C4C44B8) installed --no-restart (defaults unchanged); drawlog env lines for one boot (dl6), restored after.
