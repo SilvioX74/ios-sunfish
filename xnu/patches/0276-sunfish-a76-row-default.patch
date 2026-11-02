@@ -1,0 +1,37 @@
+From eb070d7855b31c4d2b2b2fccaba01ca70a31f3d9 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Mon, 2 Nov 2026 11:01:12 -0500
+Subject: [PATCH] sunfish: A76 boot row 10 (1939 MHz) by default,
+ sweetrowa76=12 turns it off
+
+---
+ bsd/dev/sweet_cpufreq.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/bsd/dev/sweet_cpufreq.c b/bsd/dev/sweet_cpufreq.c
+index f00c7a2..44caf65 100644
+--- a/bsd/dev/sweet_cpufreq.c
++++ b/bsd/dev/sweet_cpufreq.c
+@@ -28,6 +28,10 @@
+  * 0260: with neither sweetrowa55 nor flamecpufreq given, the A55 boot row is 6 (1497 MHz). Off: sweetrowa55=9 (1804 MHz) or
+  * any flamecpufreq=N. Log line "rows ... (default)" when only this picked a row.
+  *
++ * 0276: the same for the A76: boot row 10 (1939 MHz) without sweetrowa76 or flamecpufreq. A 4-boot UI soak (hA/hB,
++ * 2026-11-02) ran 6 C cooler at the peak with no 90 C readings left (5 of 90 before) and swaps/s within 0.1-0.7 on most
++ * apps. Off: sweetrowa76=12 (2208 MHz).
++ *
+  * 0261 (idea from ios-redfin 0963, MIT): boot-arg sweetgov=1 (default 0: off), a governor thread, tick 20 ms with the
+  * display on, 100 ms dark. Per domain: to the boot row at once on touch, a GPU submit burst (4 submits in 33 ms) or a
+  * display wake, held 300 ms; else busiest core of the domain over the last tick: over 70 % to the boot row, under 30 %
+@@ -96,7 +100,7 @@ static const struct {
+ 	unsigned cpu_first, cpu_n;      /* 0261 */
+ } osm_clusters[] = {
+ 	{"pwrcl (A55 x6)", 0x18323000u, "a55", 0x18358800u + LMH_REG, 4, 4, "sweetrowa55", 6, "sweetgovfloor55", 6, 0, 6},  /* 1248 MHz */
+-	{"perfcl (A76 x2)", 0x18325800u, "a76", 0x18350800u + LMH_REG, 1, 1, "sweetrowa76", 0, "sweetgovfloor76", 5, 6, 2}, /* 652 MHz */
++	{"perfcl (A76 x2)", 0x18325800u, "a76", 0x18350800u + LMH_REG, 1, 1, "sweetrowa76", 10, "sweetgovfloor76", 5, 6, 2}, /* 652 MHz; 0276: boot row 10 */
+ };
+ 
+ /* 0255: what sweet_cpufreq_log() needs; each block is mapped once, in sweet_cpufreq_init */
+-- 
+2.56.0
+
