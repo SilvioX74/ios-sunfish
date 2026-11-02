@@ -22,6 +22,7 @@ Only items Claude can move now. User tasks are listed below and never gate work;
 2. **CPU cost per frame** (about 14 ms): phone-CPU build tried, no gain (cpu1); redfin knobs 0117-0120: Settings 57, p95 20.2 ms (cp1), on for the soak; low Settings runs (42-49 swaps/s, 1 in 6) are real: the app misses ticks; `sweetfgbig`, xnu 0265, A/B running (fg1). Then cache flush off the render thread (backlog O9, O11). (smoothness.md)
 3. ▶ **GPU cost per frame**: at internal 5 nits (not 32) a second full-size pass costs 7 ms per frame: couldn't get back to that state on demand; done so far: shadow copy cache, dead fill mode 3: Home 26 -> 52, Control Center 23 -> 37, Settings 50-56 swaps/s (env on the phone, not default). Next: Control Center trace without per-draw tracing (crashes backboardd); `SWEET_CULL=2`: off, more G1 and little gain; Control Center backdrop at quarter size: 33 swaps/s, p95 49 ms (cs1), on the phone under test; Home is redrawn at full size behind Control Center each frame (cc3), but pass hash shows no repeats (ph1): reuse parked; scratch trim no gain (hw2): off; low-draw full-size passes in sysmem next (guess 1-3 ms); widgets page draws at 26 swaps/s, not looked at; 650 MHz gave Home 48.6, Control Center 30.8 but a bad Settings boot (smoothness.md gd1); `sweetddr=1` no gain. Mode 3 and cache become defaults once tonight's soak is clean (U22 no longer gates this). (smoothness.md)
 4. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30, before the recent fixes); time app opens and the keyboard. Then the screen-on CPU governor (redfin 0963, touch and animation at full speed), kept only if the A/B shows no speed loss. (smoothness.md, cpu.md)
+5. **Upstream takeaways** (backlog U4-U7, U9, U10; needs the phone, after the Next list below): bridge thread QoS (one line, up to 1 ms, guess); `TU_FETCH_GMEM_MIN_DRAWS=5`/`20` on Control Center (0.5-2 ms, guess; may be worse), 5-boot A/B for both; `SETTLE=90` benches; trace filter env. Then UBWC census, spare image blocks timing.
 
 After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.
 
@@ -39,7 +40,6 @@ Night soak n3 didn't run: the session couldn't stop `tools/sunfish-nightsoak.sh 
 1. Soak: 1 h after `work/night`, on kernel144 + sweethwcg=1 (edit the boot line in sunfish-nightsoak.sh). Clean (no silent reset, no failed recovery): defaults with tools/sunfish-install-speed.sh, a rebuilt `METAL2_VARIANT=next` with 0117-0120 knobs on by default, sweetgpufreq and sweethwcg default on. Include a webcam motion check of mode 3 (st3 correction).
 2. CX-cycle recovery: kernel147 `sweetcxcycle=1` boot only, then `sweetcxcycle=2 sweethangtest=0xC0000040`, then the rest of cx1's steps (gpu.md 20:50).
 3. fg1 again in full, kernel146, read `SWEET SCHED: fg` per window: do low Settings runs show more A55 time? (smoothness.md 20:10.)
-4. Upstream quick tests (backlog U4-U7): bridge QoS one-liner, `TU_FETCH_GMEM_MIN_DRAWS=5`/`20` on Control Center, `SETTLE=90`, trace filter; 5-boot A/B for the first two.
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),
@@ -47,6 +47,14 @@ Files check (U13), touch while plugged in (U14).
 Parked for later (the user, 2026-10-30): Compass accuracy (20-30 deg off, jumps; dm12, recorder on), camera far focus (lens range; backlog Later), auto-brightness (B42), headphone jack iOS side (audio.md jack10b).
 Parked for the speed focus (the user, 2026-10-31): speaker volume (B16), garbled images (B44), stale clock (B49), battery + camera CPU (O14), camera polish (B48).
 Finished items: [completed.md](completed.md) (not auto-loaded).
+
+## Upstream, not CPU/GPU (the daily check adds here during the speed focus; details in backlog.md)
+- Touch poll under 8 ms while touched (hakios-xnu 6d8f818; ~3.5 ms input lag, guess; needs a latency tool).
+- RPMh try-lock: retry on EBUSY, a vote can fail silently now (0.5 h; found reading ours for e5b01a0).
+- xpcproxy identity version (hakios-xnu 78b518b): first count the errors in one Safari oslog.
+- Privilege table (hakios-xnu 502aee8, 2 h): may wake daemons quieted for heat, watch idle CPU.
+- Speaker guard for louder sound (315e973, 3-5 h), iOS microphone (2bb073e, 1-2 days, B23 risk): with B16.
+- Driver review reports (230762c, 5429d38, 1800069; 2-3 h read-only): SMEM padding underflow found in phone/wifi/smem.c.
 
 ## Questions for you (Claude took the recommended path meanwhile)
 - PowerLog and CoreDuet databases on the phone were moved aside (not deleted) to /var/local/idlefix-db, to stop the idle CPU burn; `tools/sunfish-idlefix-db.sh --undo` restores them. Battery usage history and app suggestions start fresh. OK to delete them later? (Kept for now.)

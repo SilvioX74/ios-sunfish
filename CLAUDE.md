@@ -126,9 +126,11 @@ This file is the one home for the project's rules (AGENTS.md and the memory note
   the USB measurement mic (EM-01) is fine to use outside those hours.
 - **Upstream check** (the user, 2026-10-30): related ports (ios-redfin, iOSPlus10, UniXNU, metal2vulkan, hakios-*, ...)
   are listed in `tools/upstream.list`. A daily scheduled task (06:30, "sunfish-upstream-check") runs
-  `tools/sunfish-upstream-check.sh`, surveys the new commits with investigators, writes
-  `research/notes/upstream-YYYY-MM-DD.md`, adds takeaways to `docs/backlog.md` and marks them surveyed
-  (`--mark NAME`). Add a project to the list when a new related port turns up.
+  `tools/sunfish-upstream-check.sh`, surveys the new commits with investigators, checks each candidate against our
+  actual code (grep over patch names has been wrong), writes `research/notes/upstream-YYYY-MM-DD.md` and marks them
+  surveyed (`--mark NAME`). Whatever benefits our build goes in `docs/backlog.md` and on a list in `docs/plan.md`
+  (the user, 2026-11-01): Priority for CPU/GPU speed, smoothness and heat; "Upstream, not CPU/GPU" for the rest during
+  the speed focus. Add a project to the list when a new related port turns up.
 - **Other optimization** (GPU/CPU speed and heat are exempt during the speed focus): make systems usable, not fast. Once something works and could be faster, add it to the
   "Optimize (last)" list (`docs/backlog.md`) and move on.
 
