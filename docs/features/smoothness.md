@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 13:40 sf: SWEET_SURF_FLUSH=1 (no flush at completion): speed unchanged, picture fine; default now for heat
+- Bundle metal2-next de4fcfd (UUID 4C4C44C6), kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, 5 boots a side alternating (sfa = default 3, sfb = 1), `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh TAG 1 --screens settings,home,cc`, 4453-4455 mV, 0 G1/G2/G4, 0 void. mtl2.log: `SWEET SURF FLUSH: mode 3` / `mode 1` for backboardd.
+- Settings 56.60 / 56.54 swaps/s (p95 median 19.6 / 20.2), Home 53.39 / 52.85, Control Center 40.18 / 40.35; GPU busy the same; max C rises with run order, no side difference (79.9 / 79.0). Screenshots (Settings, Control Center) and the app switcher look normal.
+- The flush at completion cost ~1.17 ms per frame on the completion worker (rc): CPU time, not on the frame's path, so no speed change was expected; the heat saving isn't measured separately. Default now in mtl2-env (tools/sunfish-install-speed.sh; off: delete the line). Risk to watch: the kernel's CPU-copy present fallback (used around GPU recoveries) could show stale strips.
+
 ### 2026-11-02 12:30 rc: backboardd's render CPU on Settings: mostly bridge per-draw work; the surface cache flush is the one hot spot (read-only)
 - 300 pstack samples of backboardd over 5.4 s of Settings scrolling (kernel158 everyday, metal2-next; work/heat/bbd-settings-raw.txt), symbolized (research/notes/bbd-cpu-2026-11-02.md). No thread spins: threads 25-28 are parked workqueue threads (pc 0, never in user space).
 - Render thread (thread 3): busy 13.4 ms per 16.7 ms frame (catrace: 13.2). Per frame: bridge Rust runtime 4.90, bridge allocation and collections 1.73, bridge ObjC mode-3 cull list (dfNote, dfBindHash, CullEntry copies) 1.28, CA's own code 2.00, Turnip 1.95, sys_dcache_flush at commit 0.72, other kernel calls ~0.6, idle 2.45. Inclusive: draw_resident 3.56, capture_backdrop 3.06 (reaches the deferred draws through cullReplay 2.56), malloc+free+FastAlloc ~2. Top leaf: sys_dcache_flush 5.4 %; the rest is a flat tail.
