@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 08:35 u6: TU_GPU_TRACEPOINT filter works but doesn't make Control Center traces cheap
+- `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh u6a/u6b/u6c 1 --screens cc,home`, kernel154 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, 4454 mV, 0 G1/G2/G4.
+- Untraced (u6a): cc 39.3 (p95 46.2), home 53.9 (32.5). `MESA_GPU_TRACES=print` (u6b): void, 0 swaps on both screens, 234 submits in all, no backboardd restart seen, 3.3 MB of trace. With `TU_GPU_TRACEPOINT=-draw_ib_gmem -gmem_load -gmem_store -binning_ib` (u6c; spaces as separators reach the env intact, the four names are gone from the file): cc 22.4 (p95 90.1), home 33.1, 55.5 MB of trace.
+- u6c's file is dominated by sysmem_clear and gmem_clear (117 k lines each), then cmd_buffer 21 k, render_pass 12.7 k. Full-size 1125x2436 pass 7.56 ms traced (u6b 8.61 ms with per-bin stamps), 44 bins.
+- Reading: per-bin stamps weren't the main cost; the clear tracepoints are. A next try would add `-sysmem_clear -gmem_clear -sysmem_clear_all` (untested). U6 parked: traces aren't needed for the current Priority 1 work.
+
 ### 2026-11-02 08:25 Low Settings launches found: display-link phase against our vsync tick (catrace, read-only)
 - Analysis of the 30 ct/st traces (research/notes/catrace-2026-11-02.md, scripts in catrace-2026-11-02/). Observed: apps' CADisplayLink timers (Preferences, SpringBoard) fire at exact multiples of 320000 ticks (1/60 s from mach time 0) in all 30 launches; no 0x31ca002c events, so CA's frame_info_callback/add_timing never ran (we send no IOMFB Presentation_time), and the display-link anchor never moves. Our tick (SweetFramebuffer.cpp:110, 16667 us = 320006 ticks) has its own phase, re-anchored after any late tick (:456-461); within a launch it drifts +0.08 ms per 4 s, between launches it jumps several ms.
 - DL = display-link fire minus our tick. All 7 low launches have DL 12.5-14.8 ms (42.7-50.8 swaps/s, 16-41 % of renders 33 ms); all 23 good ones are outside (0.8-11.3 ms, or 15.4-15.5 mild). Commits start at about max(tick + 11 ms, DL + 2-3 ms), so in the band a commit ends right at the next tick, within its +-1 ms wake jitter, and two commits share one render.

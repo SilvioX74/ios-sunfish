@@ -22,7 +22,7 @@ Only items Claude can move now. User tasks are listed below and never gate work;
 2. **Heat**: idle 53-59 C; under load peaks 93-96 C (n7 95.7, 60 of 730 readings at 90+, 0 caps). Defaults in: A55 1497 MHz, GPU clock gating, fence poll 200 us (1.3 ms/frame off the A55s, no heat shown). Next: which app peaks (uisoak now logs `=== uisoak TAG app`), A76 at 1939 MHz (5 C cooler for 0.4 ms, cpu.md hot1). (cpu.md)
 3. **Control Center** 39.1 -> 40.3 swaps/s with `TU_FETCH_GMEM_MIN_DRAWS=20` (default now, cs4; target 45); trace without per-draw tracing (it crashes backboardd); Home redrawn at full size behind it (cc3). (smoothness.md)
 4. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30); time app opens and the keyboard. (smoothness.md, cpu.md)
-5. **Upstream takeaways**: trace filter env (U6); UBWC census (U9), spare image blocks timing (U10). QoS (U7) no gain, off.
+5. **Upstream takeaways**: trace filter env (U6: works, still distorts, parked); UBWC census (U9), spare image blocks timing (U10). QoS (U7) no gain, off.
 
 After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.
 
@@ -36,7 +36,7 @@ G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `
 Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel154 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200 compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off; /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20. kernel155 = 154 + `sweetvsyncgrid` (off; no gain). Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted mo3 (everyday setup).
 
 ## Next (in this order)
-1. xnu 0274 sweetvsyncphase (implementer), build kernel156 (builder), then the US=13500 proof boot and the US=5000 5-boot A/B (RELAUNCH=5, CATRACE=1). U6 traced Control Center run on the phone now.
+1. kernel156 (xnu 0274 `sweetvsyncphase`): proof boot US=13500 (all launches should be low), then US=5000 vs off, 5 boots each (vp13, vpa/vpb; running).
 2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel154 + `sweetwdtcrumb=1`).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
