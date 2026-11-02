@@ -23,6 +23,12 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 23:01 CX refusal, read-only: no reference forces it down; stock SMMU attributes to test
+- gdscr f8222001: bit 0 collapse request accepted, PWR_ON still 1, HW_CONTROL and SW_OVERRIDE 0; hw ctrl 88809fe0 on, 5ff4 off. Linux only logs `cx gdsc didn't collapse` (a6xx_gpu.c:1627) and carries on; no source here forces it. Guess: waits on a bus-idle handshake from GBIF or SMMU to the NoC (a6xx_gmu.c:564-567, Qactive, not gated for A618). Notes in research/notes/g1-sources.
+- SMMU +0x6000 differs: all 4 G1 read 2270, the 3 non-G1 2378, 2378, 2370; bit 8 meaning unknown. Correction to the 17:45 entry: `+1554` going 0 isn't G1 only, G4 at 461.251 reads 0 with ack 3. HUPCF is out as a cause: G1 has fsr 0, far 0 (n6's far is stale from G4).
+- New: our CB_TCR walks are IS, WBWA (0x803519); Linux on this non-coherent SMMU uses OS, NC, NC; stock also sets ACTLR 0x70000000, we don't. Guess about 20 % and about 10 % that they cause G1. Weak guess: a cached walk could also link to the whole-phone freezes (n1, n5).
+- Next: xnu 0270 `sweetsmmutcr` (1 TCR, 2 ACTLR), 5 min Settings for TLB miss cost, then a soak: at 1 G1 per about 100 k submits, 47 min at 106 submits/s predicts 3. Later: `sweethangtest=0xA0000040 sweetcxcycle=2` as a test bed for collapse with a transaction outstanding, then Qactive and GPU_CC_CX_BCR +0x1068, reset risk only.
+
 ### 2026-11-01 22:50 n6: first real G1 under CX cycle: the CX GDSC won't collapse
 - Soak n6, kernel149 base args + `sweetcxcycle=1` (boot 20261101-223608), 22:37-22:49, 76.5 k submits. G4 at 461 s, `recover2: done after 36911 us`, `exec backboardd` 86 ms later. G1 at 897.349 s: `fsr 0`, `gbif halt ack 1 TIMEOUT`, soft reset + CP init -1, GBIF halt path -1, then CX cycle: stage `cp stop + gbif halt + reset -> -1` (carries on), `gx off -> 0`, `gmu reset + rsc sleep -> 0`, `gdsc collapse, gdscr f8222000`, `gdsc won't collapse, TIMEOUT after 500005 us, gdscr f8222001 hw ctrl 88809fe0`, `cx cycle: done rc -1 after 641794 us`, `recover2: FAILED after 1350076 us`.
 - On the injected hang (cx3b, `ack 3`) the same collapse took 16 us. So the stuck memory path also holds CX up, which fits G1 being stuck below the GPU. Recovery failed cleanly: no reset, 0 hangs after, CPU drawing.
