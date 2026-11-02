@@ -95,6 +95,13 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 19:10 cv: cover cull SWEET_CULL=3: Control Center 41.9 -> 43.8 swaps/s in 5 of 5 pairs, picture clean; default now
+- Bundle metal2-next 6826fcb (cull 3), kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20 + SWEET_SURF_FLUSH=1, fixed cc motion (cc2), 5 boots a side alternating, `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh TAG 1 --screens cc,home,settings`, 4453-4454 mV, 0 G1/G2/G4, 0 caps, 0 void. Webcam: the new cc motion opens and closes Control Center, no Spotlight.
+- Control Center def 41.70, 41.87, 41.64, 42.30, 42.21 (p95 mean 39.9) / c3 43.50, 43.75, 43.72, 43.80, 44.10 (p95 34.5): +1.83, ranges don't overlap. Home 52.55 / 53.36 (+0.8, noise), Settings 56.99 / 56.88. Max C 78.3 / 77.7.
+- Telemetry (extra c3 boot with /var/local/mtl2-telemetry): `DF3 covered` 790-947 draws/s, 133-157 Mpx/s skipped during the cc bench; Spotlight/Control Center by hand 118-428 draws/s.
+- Webcam on c3: Spotlight over Home, Control Center open and closed: clean. perfab screenshots cc/settings same as def.
+- Default now: SWEET_CULL=3 in /var/local/mtl2-env via tools/sunfish-install-speed.sh (off: delete the line). Watch G1 in tonight's soak (cull mode 2 once doubled it). Control Center 43.8 against the 45 target.
+
 ### 2026-11-02 18:40 cc2: the second draw log was Spotlight too; the Control Center bench could drift into Spotlight: fixed
 - work/cc/drawlog-dl2.txt (MIN=120): 12 passes of 147-157 draws = Spotlight with the keyboard up (no module grid; webcam frames agree), not Control Center. Draw 87 `PBGRAXm_TimgA2Xhfn_IsrcCcl` (blend 0, mask 15, the 509x1099 blur over the full screen) covers draws 0-86 (Home, wallpaper, dock; 19 framebuffer readers): ~25 Mpx hidden of 36 per pass, ~15 Mpx more than mode 3 already drops; SWEET_CULL=3 would catch them (research/notes/cc-draws-dl2-2026-11-02.md). Risk: if the cover's quad ends at 2429 instead of 2436, the bottom draws stay (the DF3 row will tell).
 - The bench's cc motion (open 1000,5->1000,900; down drag 30,1100->30,1900; up drag 30,1900->30,1100) opens Spotlight whenever a reopen misses, and the rest of the window measures Spotlight. ata5's 31.1 swaps/s (p95 64.7, 10 gaps) has a grey CC backdrop without dock colours, like CC over Spotlight on the webcam: about 1 in 60 cc runs today, -9 swaps/s each.
