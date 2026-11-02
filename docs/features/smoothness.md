@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 18:52 gm: TU_FETCH_GMEM_MIN_DRAWS=25 against 20: within noise; stays 20
+- kernel158 everyday + SWEET_SURF_FLUSH=1 + SWEET_CULL=3, bundle 82f6b41, 5 boots a side alternating (gma = 20, gmb = 25; gma1 void on cc/home, rerun gma1r), cc,home,settings, 4440-4454 mV, 0 G1/G2/G4.
+- cc 42.67, 42.60, 43.64, 43.70, 43.14 / 44.30, 41.85, 43.77, 43.55, 43.83 (means 43.15 / 43.46); home 53.26 / 53.43; settings 56.31 / 56.01. Pairs won by 25: cc 3, home 3, settings 1 of 5. Screenshots the same. The trace's 4.4 vs ~1 ms for pass E (gt1b) doesn't show up untraced (per-bin tracepoints inflate GMEM times).
+
 ### 2026-11-02 18:09 gt1b: Control Center is fill-bound; the spring tail after each open dominates; two cuts queued (read-only)
 - gt1 trace by frame (research/notes/cc-draws-dl6-2026-11-02.md; trace ns ~22.3 s behind uptime; traced times): "blur live" frames (3-6 per open, 7-9 per close) 32-40 ms GPU: Home full screen GMEM 15.8, blur 284x611 sysmem 1.6 (+0.5), one-draw cover full screen sysmem 2.8-4.3, sliders GMEM 1.0 + 0.6, modules full screen GMEM 6.4, E full screen GMEM 4.1-4.4. "Settled" frames (spring tail, 24-26 per open) 28.6-31.3 ms: A (11 draws after cull) GMEM 12.5, modules GMEM 7.1, E GMEM 4.4, small 2.5.
 - A full-screen GMEM pass has ~3.6 ms fixed cost here (identical 7-draw pass: 3.55-3.73 GMEM vs 1.08 sysmem; per-bin tracepoints may inflate it). A's remaining ~9 ms fits ~5.5 Mpx: one fill, the 2.05 Mpx cover, and c1-only draws 8, 9-12, 27 (~3.3 Mpx) that cull 3 keeps because the cover doesn't write c1, though c1 is memoryless and its readers (13, 33) are culled.
