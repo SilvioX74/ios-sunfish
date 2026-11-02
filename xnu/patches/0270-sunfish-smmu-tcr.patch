@@ -1,0 +1,127 @@
+From f639e738ca4481458461a997df50bce2d10dec53 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 23:05:35 -0500
+Subject: [PATCH] sunfish: stock SMMU walk attributes and ACTLR, sweetsmmutcr,
+ off by default; CX GDSC reads
+
+---
+ bsd/dev/sweet_a6xx.c | 42 ++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index ace4387..205c274 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -95,6 +95,7 @@ static void zero_pa(uint64_t pa, uint64_t size)
+ #define CBAR(n)		(SMMU_GR1 + 4 * (n))
+ #define CBA2R(n)	(SMMU_GR1 + 0x800 + 4 * (n))
+ #define CB_SCTLR	0x00
++#define CB_ACTLR	0x04
+ #define CB_RESUME	0x08
+ #define CB_TCR2		0x10
+ #define CB_TTBR0	0x20
+@@ -295,6 +296,28 @@ static uint32_t smmu_stall_bit(void)
+ 	return v ? 0x80u : 0;
+ }
+ 
++/*
++ * 0270: boot-arg sweetsmmutcr, a mask, default 0 (as before). Bit 0: table walks as Linux on this non-coherent SMMU, OS and
++ * non-cacheable; the tables are cached on the CPU, but every write to them goes through a6_write, which cleans to PoC.
++ * Bit 1: CB_ACTLR as stock (arm-smmu-dn.c).
++ */
++static int smmu_tcr_mode(void)
++{
++	static int v = -1;
++	if (v < 0) {
++		v = 0;
++		(void)PE_parse_boot_argn("sweetsmmutcr", &v, sizeof(v));
++	}
++	return v;
++}
++
++static uint32_t smmu_tcr(uint32_t t0sz)
++{
++	if (smmu_tcr_mode() & 1)
++		return t0sz | (2u << 12) | (1u << 23);
++	return t0sz | (1u << 8) | (1u << 10) | (3u << 12) | (1u << 23);
++}
++
+ /* T0SZ: 32 (4 GB) for the GMU, 25 (39-bit) for the GPU; walks start at level 1 either way. */
+ static void smmu_bank(int smr, int cb, uint64_t ttbr0, uint32_t sid, uint32_t mask)
+ {
+@@ -305,8 +328,10 @@ static void smmu_bank(int smr, int cb, uint64_t ttbr0, uint32_t sid, uint32_t ma
+ 	wr32(CBAR(cb), (1u << 16) | (0xfu << 12) | (3u << 8) | (uint32_t)(cb + 1));
+ 	wr32(c + CB_TCR2, TCR2_VAL);
+ 	wr64(c + CB_TTBR0, ttbr0);
+-	wr32(c + CB_TCR, t0sz | (1u << 8) | (1u << 10) | (3u << 12) | (1u << 23));
++	wr32(c + CB_TCR, smmu_tcr(t0sz));
+ 	wr32(c + CB_MAIR0, 0x0000ff44);
++	if (smmu_tcr_mode() & 2)
++		wr32(c + CB_ACTLR, 0x70000000);		/* 0270 */
+ 	wr32(c + CB_FSR, 0xffffffff);
+ 	wr32(c + CB_SCTLR, 1 | 2 | 4 | 0x20 | 0x40 | (sid == GPU_SID ? smmu_stall_bit() : 0));	/* M TRE AFE CFRE CFIE (+CFCFG, 0182) */
+ 	wr32(SMMU + 0x68, 0);					/* TLBIALLNSNH */
+@@ -324,6 +349,8 @@ static void smmu_bank(int smr, int cb, uint64_t ttbr0, uint32_t sid, uint32_t ma
+ 	    smr, rd32(S2CR(smr)), rd32(SMMU + 0x6000), rd32(SMR(0)), rd32(SMR(1)), rd32(SMR(2)), rd32(SMR(3)), rd32(SMR(4)));
+ 	a6_log("smmu: smr%d %x -> cb%d cbar %x sctlr %x tcr %x tcr2 %x\n", smr, rd32(SMR(smr)), cb,
+ 	       rd32(CBAR(cb)), rd32(c + CB_SCTLR), rd32(c + CB_TCR), rd32(c + CB_TCR2));
++	if (smmu_tcr_mode())
++		a6_log("smmu: tcr %x actlr %x (sweetsmmutcr %d)\n", rd32(c + CB_TCR), rd32(c + CB_ACTLR), smmu_tcr_mode());
+ }
+ 
+ static int smmu_pick(int32_t *smr_out, int32_t *cb_out, int cb_min)
+@@ -1591,7 +1618,7 @@ void a6_unmap_high(struct a6_gpu *g)
+ 	g->pt_next = 0;
+ 	/* Banks set up before 39-bit iovas were needed had T0SZ 32 and SEP 0. */
+ 	uint64_t c = SMMU_CB(g->gpu_cb);
+-	wr32(c + CB_TCR, 25 | (1u << 8) | (1u << 10) | (3u << 12) | (1u << 23));
++	wr32(c + CB_TCR, smmu_tcr(25));		/* 0270: the bank is live here, smmu_bank wrote its ACTLR */
+ 	wr32(c + CB_TCR2, TCR2_VAL);
+ 	a6_tlb_flush(g);
+ }
+@@ -2016,6 +2043,13 @@ static int cx_end(int rc, uint64_t t0)
+ 
+ #define CX(x, rc) a6_log("cx cycle: stage %s -> %d, cx gdsc %x gx gdsc %x\n", x, rc, \
+ 	    rd32(GPUCC + GPUCC_CX_GDSCR), rd32(GPUCC + GPUCC_GX_GDSCR))
++
++/* 0270: what holds the CX GDSC up. Not the SMMU here: its bus clocks are off by now */
++static void cx_gdsc_log(const char *when)
++{
++	a6_log("cx cycle: %s: gpucc +1540 %x +1070 %x\n", when, rd32(GPUCC + 0x1540), rd32(GPUCC + 0x1070));
++}
++
+ /*
+  * 0264: last stage, what Linux's a6xx_recover ends with (a6xx_gmu_force_off + a CX GDSC collapse + hw_init): CP stop, GBIF
+  * halt (Linux carries on if it times out, so do we), GX off, RPMh votes and CM3 down, the clocks stock turns off first
+@@ -2068,10 +2102,12 @@ int a6_recover_cx(struct a6_gpu *g)
+ 	CX("gmu reset + rsc sleep", 0);
+ 	/* the DT gmu node's gmu_clk, cxo_clk, axi_clk, memnoc_clk, as stock before the collapse; gpucc ahb and gcc cfg_ahb stay on */
+ 	SWEET_CRUMB("cx cycle: clocks off");
++	a6_log("cx cycle: smmu +6000 %x\n", rd32(SMMU + 0x6000));	/* 0270: while its clocks still run */
+ 	branch_off("gpucc cx_gmu", GPUCC + GPUCC_CX_GMU);
+ 	branch_off("gpucc cxo", GPUCC + GPUCC_CXO);
+ 	branch_off("gcc gpu_memnoc_gfx", GCC + 0x7100c);
+ 	branch_off("gcc ddrss_gpu_axi", GCC + 0x4452c);
++	cx_gdsc_log("before collapse");
+ 	SWEET_CRUMB("cx cycle: gdsc collapse, gdscr %x", rd32(gdsc));
+ 	t1 = a6_now_us();
+ 	wr32(gdsc, rd32(gdsc) | 1u);		/* SW_COLLAPSE */
+@@ -2084,6 +2120,7 @@ int a6_recover_cx(struct a6_gpu *g)
+ 	if (is_on(gdsc)) {
+ 		a6_log("cx cycle: gdsc won't collapse, TIMEOUT after %llu us, gdscr %x hw ctrl %x\n", us, rd32(gdsc),
+ 		    rd32(GPUCC + 0x1540));
++		cx_gdsc_log("refused");
+ 		SWEET_CRUMB("cx cycle: gdsc won't collapse");
+ 		(void)power_cx();		/* SW_COLLAPSE off and clocks back: later register reads stay safe */
+ 		return cx_end(-1, t0);
+@@ -2161,6 +2198,7 @@ static void a6_cx_snap_boot(void)
+ 	if (a6_cxcycle_mode()) {
+ 		a6_log("cx cycle: boot snapshot\n");
+ 		cx_snap_walk(NULL);
++		a6_log("cx cycle: boot smmu +6000 %x\n", rd32(SMMU + 0x6000));
+ 		a6_log("cx cycle: boot snapshot done\n");
+ 	}
+ }
+-- 
+2.56.0
+
