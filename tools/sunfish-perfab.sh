@@ -8,6 +8,7 @@
 # Env SETTLE: seconds between SSH up and the first screen (default 30). Exit: 0 done, 2 usage, 3 stopped early.
 # Env MAXSTART: each screen waits up to 3 min for the hottest CPU to read below this (default 75 C), then goes on and notes the temperature.
 # A window stops and is void at 95 C.
+# Env RELAUNCH=N (default 1): each screen runs N times in a row per boot, its app (Settings, Safari) killed before runs 2..N; adds a launch column and "launch L" markers.
 # About 2 min per boot with settings only, 4 min with all five screens (estimates: boot to SSH 20-40 s, SETTLE 30 s, screens ~30 s each).
 cd "$(dirname "$0")/.." || exit 1
 L=../logs/usb-live.log
@@ -15,7 +16,7 @@ usage() { sed -n 3,4p "$0" | cut -c3- >&2; exit 2; }
 die() { echo "perfab: $*" >&2; exit 2; }
 [ $# -ge 3 ] || usage
 TAG=$1 N=$2; shift 2
-SECS=15 SCREENS=settings,home,cc,apps,safari MAXSTART=${MAXSTART:-75}
+SECS=15 SCREENS=settings,home,cc,apps,safari MAXSTART=${MAXSTART:-75} RELAUNCH=${RELAUNCH:-1}
 SPECS=()
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -29,6 +30,7 @@ case $TAG in ''|*[!A-Za-z0-9_-]*) die "bad TAG '$TAG' (letters, digits, - and _)
 case $N in ''|*[!0-9]*|0) die "bad N '$N'";; esac
 case $SECS in ''|*[!0-9]*|0) die "bad --secs '$SECS'";; esac
 case $MAXSTART in ''|*[!0-9]*) die "bad MAXSTART '$MAXSTART'";; esac
+case $RELAUNCH in ''|*[!0-9]*|0) die "bad RELAUNCH '$RELAUNCH'";; esac
 [ ${#SPECS[@]} -ge 1 ] || usage
 IFS=, read -ra SCR <<< "$SCREENS"
 for s in "${SCR[@]}"; do
@@ -75,7 +77,7 @@ stop() { STOPPED=$*; exit 3; }
 
 # Phone state over the run; both files are kept on the phone, so they outlive reboots and hangs.
 KNOWN=0 PHONE_ENV= PHONE_BUNDLE= ORIG_ENV= ORIG_ENV_THERE=0 ORIG_CLIENTS= ORIG_CLIENTS_THERE=0 RUN_OFF= STOPPED=
-BOOTS_RUN=0
+BOOTS_RUN=0 LAUNCH=1 LMARK=
 
 # Sets RTEXT and RTHERE from a phone file; fails if SSH does.
 read_remote() {
@@ -302,12 +304,15 @@ run_screen() {	# config index, boot number, screen
 		lead_in "$s"
 		motion "$s" $((SECONDS + 5))
 		[ "$s" = home ] && go_home	# a swipe missed in the lead-in leaves the pair going between the icons and the widgets page (26 swaps/s)
-		mark "$name b$b $s start"
+		# RELAUNCH: " launch L" after start/end keeps the parser's prefix match (sunfish-perfab.py, sunfish-timeline.py load())
+		mark "$name b$b $s start$LMARK"
 		INWIN=1
 		motion "$s" $((SECONDS + SECS))
-		mark "$name b$b $s end"
-		[ "$s" = cc ] && [ "$b" = 1 ] && { C swipe 1000 5 1000 900 300; sleep 1.5; }	# the last up swipe closes it: reopen for the picture
-		{ [ "$s" = settings ] || [ "$s" = home ] || [ "$b" = 1 ]; } && timeout 30 tools/flame-shot "$OUT/$name-b$b-$s.png" >/dev/null 2>&1
+		mark "$name b$b $s end$LMARK"
+		if [ "$LAUNCH" = 1 ]; then	# RELAUNCH: pictures from launch 1 only
+			[ "$s" = cc ] && [ "$b" = 1 ] && { C swipe 1000 5 1000 900 300; sleep 1.5; }	# the last up swipe closes it: reopen for the picture
+			{ [ "$s" = settings ] || [ "$s" = home ] || [ "$b" = 1 ]; } && timeout 30 tools/flame-shot "$OUT/$name-b$b-$s.png" >/dev/null 2>&1
+		fi
 		go_home
 		pid1=$(bb_pid) || SSH_LOST=1
 		[ -z "$SSH_LOST" ] && [ "$pid0" != "$pid1" ] && flags+=(--restart)
@@ -317,11 +322,31 @@ run_screen() {	# config index, boot number, screen
 	[ -n "$TOO_HOT" ] && flags+=(--too-hot)
 	VERDICT=$($PY screen --log "$L" --offset "$OFF" --out "$R" --tag "$TAG" --name "$name" --boot "$b" --screen "$s" --secs "$SECS" \
 		--kernel "${KNUM[$1]}" --batt "$BATT" --bootlog "$BLOG" --opens "$OPENS" "${flags[@]}")
+	add_launch
 	OFF=$(logsize)
 }
 void_row() {	# config index, boot number, screen, reason
 	$PY screen --out "$R" --tag "$TAG" --name "${NAMES[$1]}" --boot "$2" --screen "$3" --kernel "${KNUM[$1]}" --batt "$BATT" \
 		--bootlog "$BLOG" --void "$4" >/dev/null
+	add_launch
+}
+# RELAUNCH > 1: a launch column after the parser's columns; the last row gets LAUNCH only if the parser just wrote it (one field short).
+add_launch() {
+	[ "$RELAUNCH" -gt 1 ] && [ -s "$R" ] || return 0
+	head -1 "$R" | grep -q $'\tlaunch$' || sed -i '1s/$/\tlaunch/' "$R"
+	[ "$(tail -1 "$R" | awk -F'\t' '{ print NF }')" -lt "$(head -1 "$R" | awk -F'\t' '{ print NF }')" ] && sed -i "\$s/\$/\t$LAUNCH/" "$R"
+	return 0
+}
+# Process name (psx, p_comm) of a screen's app; empty for screens that aren't one app.
+app_proc() {
+	case $1 in
+	settings) echo Preferences;;
+	safari) echo MobileSafari;;
+	esac
+}
+# RELAUNCH: SIGTERM the app, wait up to 5 s for it to be gone, then SIGKILL and 2 s more. Fails if it is still there.
+kill_app() {	# process name
+	SSHT=20 S "psx -k $1 >/dev/null; for i in 1 2 3 4 5; do psx | grep -q ' $1\$' || exit 0; sleep 1; done; psx -k $1 9 >/dev/null; sleep 2; ! psx | grep -q ' $1\$'"
 }
 
 # On any exit: back to the env and bundle from the start, when SSH answers; counts, table.
@@ -366,7 +391,7 @@ for b in $(seq "$N"); do
 		boot_cfg "$i"
 		line="b$b $name $BATT mV:"
 		if ! wait_ssh; then
-			for s in "${SCR[@]}"; do void_row "$i" "$b" "$s" "no SSH after boot"; done
+			for s in "${SCR[@]}"; do for LAUNCH in $(seq "$RELAUNCH"); do void_row "$i" "$b" "$s" "no SSH after boot"; done; done
 			echo "$line no SSH after boot"
 			continue
 		fi
@@ -376,19 +401,31 @@ for b in $(seq "$N"); do
 		night_dim
 		abort=
 		for s in "${SCR[@]}"; do
-			if [ -n "$abort" ]; then
-				void_row "$i" "$b" "$s" "rest of boot after: $abort"
-				line+=" $s void"
-				continue
-			fi
-			wait_cool
-			line+=$COOLED
-			run_screen "$i" "$b" "$s"
-			case $VERDICT in
-			OK*) line+=" $s ${VERDICT#OK }";;
-			ABORT*) abort=${VERDICT#ABORT }; line+=" $s VOID ($abort)";;
-			*) line+=" $s VOID (${VERDICT#VOID })";;
-			esac
+			for LAUNCH in $(seq "$RELAUNCH"); do
+				# RELAUNCH: LMARK and the " Ln" in the summary line only with RELAUNCH > 1, so the default run is unchanged
+				LMARK= sl=$s
+				[ "$RELAUNCH" -gt 1 ] && LMARK=" launch $LAUNCH" sl="$s L$LAUNCH"
+				if [ -n "$abort" ]; then
+					void_row "$i" "$b" "$s" "rest of boot after: $abort"
+					line+=" $sl void"
+					continue
+				fi
+				# RELAUNCH: runs 2..N of an app screen start from a fresh launch
+				aproc=$(app_proc "$s")
+				if [ "$LAUNCH" -gt 1 ] && [ -n "$aproc" ] && ! kill_app "$aproc"; then
+					void_row "$i" "$b" "$s" "$aproc not killed"
+					line+=" $sl VOID ($aproc not killed)"
+					continue
+				fi
+				wait_cool
+				line+=$COOLED
+				run_screen "$i" "$b" "$s"
+				case $VERDICT in
+				OK*) line+=" $sl ${VERDICT#OK }";;
+				ABORT*) abort=${VERDICT#ABORT }; line+=" $sl VOID ($abort)";;
+				*) line+=" $sl VOID (${VERDICT#VOID })";;
+				esac
+			done
 		done
 		echo "$line"
 	done
