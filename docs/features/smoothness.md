@@ -95,6 +95,14 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 08:25 Low Settings launches found: display-link phase against our vsync tick (catrace, read-only)
+- Analysis of the 30 ct/st traces (research/notes/catrace-2026-11-02.md, scripts in catrace-2026-11-02/). Observed: apps' CADisplayLink timers (Preferences, SpringBoard) fire at exact multiples of 320000 ticks (1/60 s from mach time 0) in all 30 launches; no 0x31ca002c events, so CA's frame_info_callback/add_timing never ran (we send no IOMFB Presentation_time), and the display-link anchor never moves. Our tick (SweetFramebuffer.cpp:110, 16667 us = 320006 ticks) has its own phase, re-anchored after any late tick (:456-461); within a launch it drifts +0.08 ms per 4 s, between launches it jumps several ms.
+- DL = display-link fire minus our tick. All 7 low launches have DL 12.5-14.8 ms (42.7-50.8 swaps/s, 16-41 % of renders 33 ms); all 23 good ones are outside (0.8-11.3 ms, or 15.4-15.5 mild). Commits start at about max(tick + 11 ms, DL + 2-3 ms), so in the band a commit ends right at the next tick, within its +-1 ms wake jitter, and two commits share one render.
+- Same in low and good: commit rate 61-62/s, commit 0.65-0.74 ms, Preferences main thread CPU (mostly cpu7), backboardd renders on cpu6.
+- Guess: the phase alone causes the lows (90 %); the band is about 3 ms of 16.7, so ~18 % of launches by chance (70 %). Launch 2's excess earlier isn't explained.
+- Evidence in QuartzCore: display_timer_callback 0x1882bacc8 -> get_phase 0x1882bab34 with IOMFBDisplay::timing_reference 0x1882bc40c (shmem +0x28/+0x30/+0x38), written only by add_timing 0x18853d33c from frame_info_callback 0x1882bc6d4.
+- Fix being written: xnu 0274 `sweetvsyncphase=US` locks our tick to the grid at k*P - US (P exactly 1/60 s). Tests: US=13500 one boot (all launches should be low: proof), then US=5000 against off, 5 boots each. The full fix later: send frame info so CA anchors the display links itself. Open: commits never start before tick + ~11 ms even when the display link fires at +1-4 ms (input or render handoff wait?).
+
 ### 2026-11-02 08:10 ct/st: catrace over 30 Settings launches; settle after kill doesn't remove the lows; d20 on Settings unsettled
 - `CATRACE=1 RELAUNCH=5 SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh TAG 1 --screens settings`, kernel154 everyday args, 4454-4455 mV, 0 G1/G2/G4, 0 void. catrace works (sanity run: 6905 records in 6 s, 0 lost); a trace file per launch.
 - Swaps/s L1-L5: cta base 56.8 56.8 56.8 56.8 55.9; ctb d20 47.8 44.4 55.3 57.9 50.8; ctc base 56.7 55.4 56.8 57.4 42.7; ctd d20 57.3 57.1 57.3 57.2 44.3; sta base + RELAUNCH_SETTLE=10 49.7 45.4 57.3 57.3 57.0; stb same 56.4 56.1 57.1 56.2 56.8. skip2 15-38 % in low launches, 1.6-6 in good.

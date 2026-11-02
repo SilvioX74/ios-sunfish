@@ -34,6 +34,8 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | u6b | tr=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+MESA_GPU_TRACES=print | 1 | 234 | 0 | 0 | 0 | 2 |
+| 2026-11-02 | u6a | notr=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 6 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | stb | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1 | 1 | 24 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | sta | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1 | 1 | 22 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | ctd | d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 22 k | 0 | 0 | 0 | 0 |
