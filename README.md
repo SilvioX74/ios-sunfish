@@ -19,7 +19,7 @@ iOS root lives in the `userdata` partition.
 > mostly switched off (permissive AMFI and sandbox, stub keystore), and many parts are missing. Do not put
 > anything personal on it.
 
-## Status (2026-10-31)
+## Status (2026-11-02)
 
 States: ✅ works, 🟡 partial, ❌ broken, ⬜ not started. Each row links to the feature file with the details; the
 plan is [docs/plan.md](docs/plan.md).
@@ -32,7 +32,7 @@ plan is [docs/plan.md](docs/plan.md).
 | [USB network](docs/features/usb-network.md) | ✅ | Ethernet 192.168.7.2, live kernel log; boot to SSH 16-18 s |
 | [SSH](docs/features/ssh.md) | ✅ | dropbear + dash + toybox; boot to SSH 16-18 s |
 | [Display](docs/features/display.md) | ✅ | 1080x2340, GPU-composited (Metal → Turnip), vsync-paced; apps rotate to landscape and back on command (`R 3`/`R 1`), touch follows; auto-rotate waits for sensors |
-| [Smoothness](docs/features/smoothness.md) | 🟡 | Safari 60, Settings 56-57 (p95 20-30 ms), Home about 53, Control Center 38.7 swaps/s, full resolution, defaults since 2026-11-02: luma boost off, was env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1 + tools/sunfish-install-ccscale.sh (2026-11-01, kernel139, not default yet); target 60 |
+| [Smoothness](docs/features/smoothness.md) | 🟡 | Safari 60, Settings 56-57 (p95 20-30 ms), Home about 53, Control Center 40.3 swaps/s (TU_FETCH_GMEM_MIN_DRAWS=20, 2026-11-02), full resolution, defaults since 2026-11-02: luma boost off, was env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1 + tools/sunfish-install-ccscale.sh (2026-11-01, kernel139, not default yet); target 60 |
 | [Haptics](docs/features/haptics.md) | ✅ | iOS haptics work: switch taps pulse the motor (DRV2624 via hapticd, launchd job, `HAPTICS=1` boot); feel check by the user open |
 | [Brightness](docs/features/brightness.md) | ✅ | Control Center slider drives the panel brightness (DCS 0x51, `sweetbl=2`) |
 | [GPU](docs/features/gpu.md) | 🟡 | Adreno 618 at 650 MHz; SMMU-fault hangs recover (~37 ms); no-fault hangs still need a reboot but none in the first full 1 h soak (397 k submits, stock SMMU walks, 2026-11-02) |

@@ -124,3 +124,5 @@ output in /var/local.
 2026-11-01 23:19: backboardd env CA_DISABLE_LUMA_BOOST=1, kept on as a default: `tools/sunfish-install-caenv.sh CA_DISABLE_LUMA_BOOST=1`, in tools/sunfish-install-speed.sh; off: --undo.
 2026-11-02 01:23: speed defaults installed: `tools/sunfish-install-speed.sh` (bundle work/metal2-next, mtl2-env keeps only SWEET_U0011..14, Control Center backdrop 0.25, luma boost off, daemon data moved). Everyday boot: kernel153 sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1.
 2026-11-02 03:16: bundle work/metal2-next rebuilt (Turnip 0110, bridge 0123 off) installed with tools/sunfish-metal2-install.sh --no-restart; everyday boot kernel154.
+2026-11-02 07:35: /var/local/mtl2-env gets TU_FETCH_GMEM_MIN_DRAWS=20 (Control Center +1.1 swaps/s, cs4): `tools/sunfish-install-speed.sh`; off: delete the line.
+2026-11-02 07:35: /var/local/bin/catrace (kdebug reader for Core Animation points) installed: `python3 -I tools/flame-files.py put work/userland-linux/out/catrace /var/local/bin/catrace 755`, built by tools/build-userland-linux.sh.

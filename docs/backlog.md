@@ -77,4 +77,4 @@ Upstream survey 2026-11-01 (research/notes/upstream-2026-11-01.md; verdicts chec
 - O7 Smoothness is the plan's focus since 2026-10-31: 50-58 swaps/s in Settings. The old ~21 fps explanation (research/notes/fps-limit.md) no longer holds. Two frames in flight (QuartzCore RE, days) remains an idea if priorities 3 and 4 fall short.
 - O5 display-off CPU fade when sweetpanelsleep is off.
 - O6 failed GPU hang recovery takes 3.9-12.8 s: fail faster.
-- O15 (2026-11-02) Control Center `TU_FETCH_GMEM_MIN_DRAWS=5` / `20`: about +1 swap/s in 2 and 1 boots (cs, smoothness.md); finish the 5-boot A/B and read the screenshots before making it a default.
+- O15 (2026-11-02) Control Center `TU_FETCH_GMEM_MIN_DRAWS`: [DONE 2026-11-02] =20 is +1.1 swaps/s over 5 boots, default in mtl2-env (cs4, smoothness.md).

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Speed defaults, the on-phone parts (docs/setup.md step 6): a bundle whose defaults are SWEET_DEADFILL 3 and
 # M2V_SHADOW_CACHE 1, so /var/local/mtl2-env drops those two lines; Control Center's backdrop scale; luma boost off in
-# backboardd (lb0-lb3, smoothness.md); the PowerLog, CoreDuet and Biome data moved aside. The A55 default (xnu 0260) comes with the kernel, not from here.
+# backboardd (lb0-lb3, smoothness.md); TU_FETCH_GMEM_MIN_DRAWS=20 in mtl2-env (Control Center about +1 swap/s, cs4;
+# off: delete the line); the PowerLog, CoreDuet and Biome data moved aside. The A55 default (xnu 0260) comes with the kernel, not from here.
 #   tools/sunfish-install-speed.sh           needs work/metal2-next (METAL2_VARIANT=next tools/build-metal2-linux.sh)
 #   tools/sunfish-install-speed.sh --undo    bundle, mtl2-env and backdrop back; the moved data stays moved
 # Safe to run twice: the first run's backup and the bundle's one level of undo stay. Reboot to apply; doesn't reboot.
@@ -15,7 +16,8 @@ step() { echo "== $1"; shift; "$@" || { echo "FAILED: $*"; fail=1; }; }
 
 env_off() {
 	$S "[ -f $EB ] || if [ -f $E ]; then cp -p $E $EB; else : > $EB; fi; [ -f $EB ] || exit 1
-		grep -vE '^(SWEET_DEADFILL|M2V_SHADOW_CACHE)=' $E > $E.new 2>/dev/null; cat $E.new > $E && rm -f $E.new
+		grep -vE '^(SWEET_DEADFILL|M2V_SHADOW_CACHE|TU_FETCH_GMEM_MIN_DRAWS)=' $E > $E.new 2>/dev/null; echo TU_FETCH_GMEM_MIN_DRAWS=20 >> $E.new
+		cat $E.new > $E && rm -f $E.new
 		echo '$E now:'; cat $E"
 }
 env_undo() {
@@ -47,7 +49,7 @@ case "${1:-}" in
 	;;
 "")
 	[ -s "$BUNDLE/SweetMetal2.bundle/SweetMetal2" ] || { echo "no $BUNDLE: METAL2_VARIANT=next tools/build-metal2-linux.sh" >&2; exit 1; }
-	step "mtl2-env: SWEET_DEADFILL and M2V_SHADOW_CACHE lines out" env_off
+	step "mtl2-env: SWEET_DEADFILL and M2V_SHADOW_CACHE lines out, TU_FETCH_GMEM_MIN_DRAWS=20 in" env_off
 	step "bundle $BUNDLE" bundle_on
 	step "Control Center backdrop" tools/sunfish-install-ccscale.sh
 	step "luma boost off" tools/sunfish-install-caenv.sh CA_DISABLE_LUMA_BOOST=1

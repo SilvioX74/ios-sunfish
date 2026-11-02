@@ -34,6 +34,10 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | cs4d | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 11 k | 0 | 0 | 0 | 2 |
+| 2026-11-02 | cs4c | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 17 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | cs4b | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 17 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | cs4a | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 17 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | mo3 (by hand) | 154, everyday args, webcam check; G4 at 210.020 s (`fence 2955, done 2948, smmu fsr 40000002 far 119e04470`), recover2 45.5 ms, backboardd killed after recovery | 1 | about 3 k (fence 2955) | 0 | 0 | 1 | 1 |
 | 2026-11-02 | va4 | ahead=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncahead=4000 | 1 | 22 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | vg4 | grid=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncgrid=1 | 1 | 19 k | 0 | 0 | 0 | 0 |

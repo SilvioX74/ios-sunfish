@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 07:35 cs4: TU_FETCH_GMEM_MIN_DRAWS=20 on Control Center: +1.1 swaps/s over 5 boots, default now
+- `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh cs4a..cs4d 1 --screens cc,home`, kernel154 everyday args, metal2-next, empty env except the threshold. 4453-4455 mV, 0 G1/G2/G4 in 62 k submits.
+- Control Center swaps/s (p95 ms): base 39.2 (49.1), 39.0 (47.0), 39.1 (45.3), 39.1 (45.9): mean 39.10, p95 46.8. d5 39.9 (43.1), 40.5 (46.6), 39.8 (44.7), one void (lock screen, bench setup): mean 40.07, p95 44.8. d20 40.2 (44.3), 40.8 (46.8), 40.3 (40.6), 39.8 (44.5): mean 40.28, p95 44.1. With cs/csr: d20 5 boots mean 40.5 against base 8 boots mean 39.4; d20 above base in every boot pair.
+- Home unchanged (base 53.3, d5 52.9, d20 53.6; p95 32.5-32.7). Control Center screenshots base/d5/d20 (cs4a) look the same: blur, colours, no black tiles.
+- Default: `TU_FETCH_GMEM_MIN_DRAWS=20` in /var/local/mtl2-env via tools/sunfish-install-speed.sh (off: delete the line). Not yet benched on Settings or apps: next Settings run carries a d20 side. Still far from the 45 target.
+
 ### 2026-11-02 07:00 ll: low against good Settings launches from the app's side (read-only): nothing logged tells them apart
 - 12 low launches (under 50.5 swaps/s) against 46 good (56+), rl1-4 (kernel154), vg1-4 and va1-4 (kernel155), boot logs 20261102-040919 to -055936. Notes: research/notes/low-launch-2026-11-02.md.
 - Observed: the live log has no runningboard, jetsam, assertion, frame-rate, display-link or app oslog lines. Preferences main-thread CPU is the same in low and good launches (rl4 L4 1072-1120 ms per 5 s, good 964-1155); in low ones backboardd's render thread works less (2443 against 3584 ms per 5 s) and cpu6 is less busy (54-69 % against 75-82 %).
