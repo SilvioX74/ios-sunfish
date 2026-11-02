@@ -1,5 +1,5 @@
 # Smoothness
-**State:** 🟡 Safari 60, Settings 57 (p95 20 ms), Home about 52, Control Center 36 swaps/s at full canvas (internal nits 32+; slower at 5), with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1 and the quarter-size Control Center backdrop (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
+**State:** 🟡 Safari 60, Settings 57 (p95 20 ms), Home about 52, Control Center 36 swaps/s at full canvas (internal 5 nits fixed by luma boost off, Settings 56.5, Home 53, 2026-11-01), with env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1 and the quarter-size Control Center backdrop (2026-11-01; not default yet); 60 not reached. **Updated:** 2026-10-31.
 
 ## How to use
 - Bench: `tools/sunfish-fpsbench.sh TAG SECONDS` (BENCH_TIGHT=1); config matrix `tools/sunfish-cfgbench.sh`; timeline `sweettrace=1` + `tools/sunfish-timeline.py`. Details in [methods.md](../methods.md).
@@ -94,6 +94,13 @@ Kernels:
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-01 23:19 lb0-lb3: luma boost is it: CA_DISABLE_LUMA_BOOST=1 now the default
+- `SWIPE_MS=3000 SETTLE=60 tools/sunfish-perfab.sh`, 2 boots per side, settings,home, 15 s, kernel150 base args, metal2-cpu, mode 3, cache, knobs on, all 8 boots at `SWEET BL: nits 5`, 0 hangs, 0 void, 22:51-23:18. Boots 20261101-225145 to -231505.
+- Settings / Home swaps/s and p95, GPU busy on Settings: none 52.4, 29.4 ms / 47.8, 40.0 ms, 83 %. `CA_DISABLE_LUMA_BOOST=1` 51.5 (56.4, 46.7), 27.4 ms / 53.4, 33.0 ms, 52 %. `CA_DISPLAY_COLOR_ACCURACY_FIX_NITS=1` 52.5, 30.3 ms / 48.5, 39.6 ms, 84 %: nothing. Both 56.5, 23.9 ms / 53.2, 33.1 ms, 58 %. lb1b's 46.7 is the known low Settings run (47 % busy, CPU-bound).
+- GPU busy per submit, busiest window: about 5.6 -> 3.5 ms, backboardd per submit about 5 -> 3 ms; first Home submit 17.2 -> 14.3 ms. So about 2-3 ms per frame, less than the 7 ms traced. Settings with it matches the 32-nit numbers (57.0, 20.2 ms). All 4 Settings screenshots normal; whether minimum brightness looks different is not checked (user task).
+- Heat: hottest CPU 81-88 C on all sides, start temperatures 81-86 C, no difference shown in 15 s windows. A soak is the fair test.
+- 2 boots per side, but the gain is over 1 ms and GPU busy moves 30 points, well outside the noise: shipped with an off switch. In tools/sunfish-install-speed.sh; `tools/sunfish-install-caenv.sh --undo` turns it off.
 
 ### 2026-11-01 22:41 CoreAnimation's internal nits explain the n4/n5 gap (read-only); luma boost test next
 - n4 (kernel144, internal nits 133) against n5 (kernel149, nits 5), first 10 app opens, same order, 650 MHz, no caps, panel DCS 43 in both. Mean over 5 s windows, n4 / n5: backboardd ms per present Settings 8.5 / 14.9, Safari 11.7 / 13.3, Notes 8.7 / 11.7, Calendar 15.5 / 21.8, Photos 9.0 / 12.0; all apps busy 58 / 72 %, GPU sensor mean 63.1 / 69.4 C (n5 started 8 C hotter, so at most about 6 C is the pass).

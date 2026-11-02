@@ -1,7 +1,7 @@
 #!/bin/bash
 # Speed defaults, the on-phone parts (docs/setup.md step 6): a bundle whose defaults are SWEET_DEADFILL 3 and
-# M2V_SHADOW_CACHE 1, so /var/local/mtl2-env drops those two lines; Control Center's backdrop scale; the PowerLog, CoreDuet
-# and Biome data moved aside. The A55 default (xnu 0260) comes with the kernel, not from here.
+# M2V_SHADOW_CACHE 1, so /var/local/mtl2-env drops those two lines; Control Center's backdrop scale; luma boost off in
+# backboardd (lb0-lb3, smoothness.md); the PowerLog, CoreDuet and Biome data moved aside. The A55 default (xnu 0260) comes with the kernel, not from here.
 #   tools/sunfish-install-speed.sh           needs work/metal2-next (METAL2_VARIANT=next tools/build-metal2-linux.sh)
 #   tools/sunfish-install-speed.sh --undo    bundle, mtl2-env and backdrop back; the moved data stays moved
 # Safe to run twice: the first run's backup and the bundle's one level of undo stay. Reboot to apply; doesn't reboot.
@@ -41,6 +41,7 @@ case "${1:-}" in
 	step "bundle back" bundle_undo
 	step "mtl2-env back" env_undo
 	step "Control Center backdrop back" tools/sunfish-install-ccscale.sh --undo
+	step "luma boost back" tools/sunfish-install-caenv.sh --undo
 	# The moved data stays moved: it burned a core each at idle. `tools/sunfish-idlefix-db.sh [--biome] --undo` brings it back.
 	echo "PowerLog, CoreDuet and Biome data left moved aside (idle heat fix)"
 	;;
@@ -49,6 +50,7 @@ case "${1:-}" in
 	step "mtl2-env: SWEET_DEADFILL and M2V_SHADOW_CACHE lines out" env_off
 	step "bundle $BUNDLE" bundle_on
 	step "Control Center backdrop" tools/sunfish-install-ccscale.sh
+	step "luma boost off" tools/sunfish-install-caenv.sh CA_DISABLE_LUMA_BOOST=1
 	step "PowerLog and CoreDuet moved" db_on powerlog
 	step "Biome moved" db_on biome --biome
 	;;

@@ -121,3 +121,4 @@ output in /var/local.
 
 2026-11-01 12:15: everyday candidate: bundle work/metal2-cpu (`METAL2_VARIANT=cpu tools/build-metal2-linux.sh`), /var/local/mtl2-env adds SWEET_U0011=1 .. SWEET_U0014=1. Remove the lines to turn off.
 2026-11-01 22:52: backboardd env for the low-nits A/B (lb0-lb3): tools/sunfish-install-caenv.sh; ends with --undo. Unfinished feature; script is the reproduction.
+2026-11-01 23:19: backboardd env CA_DISABLE_LUMA_BOOST=1, kept on as a default: `tools/sunfish-install-caenv.sh CA_DISABLE_LUMA_BOOST=1`, in tools/sunfish-install-speed.sh; off: --undo.
