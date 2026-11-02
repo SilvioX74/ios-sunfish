@@ -23,7 +23,12 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
-### 2026-11-01 23:27 Correction: kernel150 and kernel151 lack their newest patch
+### 2026-11-01 23:50 tm: sweetsmmutcr=3 applied, no speed cost; soak n7 next
+- `SWIPE_MS=3000 SETTLE=60 tools/sunfish-perfab.sh`, kernel152, 3 boots a side, settings,home, luma boost off, 5 nits, 0 hangs, 0 void. Settings swaps/s, p95 tcr 57.0, 19.5 / 56.4, 20.3 / 43.8, 34.0 (42 % busy, the known low run); off 56.4, 20.4 / 52.8, 32.9 / 55.1, 30.1. Home tcr 54.3, 54.4, 54.8 (32 ms); off 52.7, 53.0, 52.4 (33 ms). Max C about 84 on both.
+- Applied: `smmu: tcr 802019 actlr 70000000 (sweetsmmutcr 3)` in boots 20261101-233634 and -233735. The GMU bank's line (802020) wasn't seen: before USB logging starts, not proven. Early GPU lines are in the live log on only some boots: USB starts about 22 s, bring-up 22-27 s. An earlier reading of `tcr 803519` was from an older boot (lb2b).
+- G1 prevention untested: 6 boots say nothing. Soak n7: kernel152 sweethwcg=1 sweetcxcycle=1 sweetwdtcrumb=1 sweetsmmutcr=3, luma boost off.
+
+### 2026-11-01 23:25 Correction: kernel150 and kernel151 lack their newest patch
 - tools/vm-build-xnu.sh builds from xnu/patches, not work/src/xnu, and both were built before their patch was exported. By string count: kernel150 has no `sweetwdtcrumb`; kernel151 has it but no `sweetsmmutcr`. So sm3a's `sweetsmmutcr=3` tested nothing (0 `smmu: tcr` lines). lb0-lb3 on kernel150 stand: they need neither. Kernel152 has both. Export first, then build.
 
 ### 2026-11-01 23:01 CX refusal, read-only: no reference forces it down; stock SMMU attributes to test

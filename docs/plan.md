@@ -36,7 +36,7 @@ G1 (no-fault hang, no recovery) voids benches today, 4 of about 40 boots: it qua
 Claude's. `work/night` set. Last everyday setup: kernel144 sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetrowa55=6 sweetgpufreq=6 sweethwcg=1, no flamereboot; env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1; bundle work/metal2-cpu. Bundle for after a clean soak: work/metal2-next (mode 3, cache, knobs on by default), not installed.
 
 ## Next (in this order)
-1. ▶ `sweetsmmutcr=3` (kernel151, xnu 0270): stock SMMU walk attributes and ACTLR, may prevent G1 (guess about 20 %): A/B for TLB miss cost, then soak n7 with luma boost off (read max C against n6's 93.8).
+1. ▶ Soak n7 (`tools/sunfish-nightsoak.sh n7`, log work/nightsoak-n7.log): kernel152 sweethwcg=1 sweetcxcycle=1 sweetwdtcrumb=1 sweetsmmutcr=3, luma boost off. sweetsmmutcr applied, no speed cost (tm, gpu.md): does it prevent G1 (about 3 expected in 47 min at the old rate)? Read max C against n6's 93.8, and the pet crumb if it resets.
 2. Real G1 under CX cycle (n6): the CX GDSC refused to collapse after 500 ms (16 us on an injected hang), recovery fails cleanly. Read-only research running: what lets it go, or what prevents G1 (gpu.md 22:50). Next soak uses kernel150 with the pet crumb.
 3. Clean (no silent reset, no failed recovery): defaults with tools/sunfish-install-speed.sh, sweetgpufreq, sweethwcg and sweetcxcycle=1 default on, webcam motion check of mode 3 (st3 correction). One G1 can't blame clock gating (1 in 31 k against 1 per about 100 k); if n5 also hangs early, count G1 per submits without `sweethwcg`.
 4. fg1 again in full, kernel146, read `SWEET SCHED: fg` per window: do low Settings runs show more A55 time? (smoothness.md 20:10.)
