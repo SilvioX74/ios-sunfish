@@ -139,3 +139,4 @@ output in /var/local.
 2026-11-02 17:40: bundle work/metal2-next with drawlog options (972ef6a, SweetMetal2 4C4C4457) installed; /var/local/mtl2-env gets SWEET_DRAWLOG* lines for one boot (dl1), restored from /var/local/mtl2-env.pre-drawlog after.
 2026-11-02 18:45: bundle work/metal2-next with SWEET_CULL=3 (6826fcb, SweetMetal2 4C4C44A6-...-74DA6D3A8684) installed with --no-restart; cull 3 is off unless SWEET_CULL=3 is in mtl2-env (A/B cva/cvb only).
 2026-11-02 19:10: /var/local/mtl2-env gets SWEET_CULL=3 (cover cull, cv runs): tools/sunfish-install-speed.sh; off: delete the line.
+2026-11-02 19:30: SWEET_CULL=3 applied to /var/local/mtl2-env with tools/sunfish-install-speed.sh (phone, ev3 boot); drawlog env lines added for one boot (dl3) and removed after.
