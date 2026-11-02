@@ -19,7 +19,7 @@ tl = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tl)
 
 COLS = ('tag config boot screen status reason swaps_s p50 p95 le17 gaps100 busy_pct first_submit copies_per_swap '
-        'tl_swaps fb_swaps opens batt_mv bootlog kernel start_c max_c caps a76_real_min').split()
+        'tl_swaps fb_swaps opens batt_mv bootlog kernel start_c max_c caps a76_real_min skip2').split()
 FB = re.compile(r'SWEET FB: 5s: (\d+) swaps .*?, (\d+) panel copies')
 GPU = re.compile(r'SWEET GPU: 5s: (\d+) submits .*?GPU busy (\d+) ms \((\d+)%\)')
 HANG = re.compile(r'GPU hang or fault|fence wait|device refused')
@@ -48,14 +48,14 @@ def hottest(m):
     return max(v) if v else None
 
 def timeline_stats(recs):
-    """swaps/s, p50, p95, share <= 17 ms, gaps > 100 ms: same definitions as sunfish-timeline.py main()."""
+    """swaps/s, p50, p95, share <= 17 ms, gaps > 100 ms: same definitions as sunfish-timeline.py main(); then share of swaps a tick late (25-42 ms)."""
     sw = sorted(r[1] for r in recs if r[0] == 1)
     if len(sw) < 2:
-        return len(sw), None, None, None, None, None
+        return len(sw), None, None, None, None, None, None
     iv = sorted((y - x) * 1000.0 / tl.MACH_HZ for x, y in zip(sw, sw[1:]))
     secs = (sw[-1] - sw[0]) / tl.MACH_HZ
     return (len(sw), len(sw) / secs, tl.pct(iv, .5), tl.pct(iv, .95), 100.0 * sum(1 for x in iv if x <= 17.5) / len(iv),
-            sum(1 for x in iv if x > 100))
+            sum(1 for x in iv if x > 100), 100.0 * sum(1 for x in iv if 25 <= x < 42) / len(iv))
 
 def first_submit(recs):
     """GPU ms of each frame's first submit by the busiest client (backboardd), p50."""
@@ -101,7 +101,7 @@ def screen(a):
         recs, _ = tl.load(slice_path, start[4:], end[4:])
     finally:
         os.unlink(slice_path)
-    swaps_tl, rate, p50, p95, le17, gaps = timeline_stats(recs)
+    swaps_tl, rate, p50, p95, le17, gaps, skip2 = timeline_stats(recs)
     # 5 s stats lines inside the window; hang and restart lines from the lead-in on, to the end of what has arrived
     on = False
     fb, gpu, hang, failed = [], [], None, False
@@ -161,7 +161,7 @@ def screen(a):
     elif (gpu or a.secs >= 6) and not any(x[0] for x in gpu):
         reason = 'GPU busy 0 ms (CPU drawing)'  # the kernel drops the line altogether when nothing was submitted
     row.update(status='VOID' if reason else 'OK', reason=reason or '', swaps_s=num(rate), p50=num(p50), p95=num(p95),
-               le17=num(le17, '%.1f'), gaps100='' if gaps is None else gaps, busy_pct=num(busy, '%.0f'),
+               le17=num(le17, '%.1f'), skip2=num(skip2, '%.1f'), gaps100='' if gaps is None else gaps, busy_pct=num(busy, '%.0f'),
                first_submit=num(first_submit(recs)), copies_per_swap=num(ratio), tl_swaps=swaps_tl, fb_swaps=swaps_fb,
                start_c=num(temps[0] if temps else None, '%.1f'), max_c=num(max(temps) if temps else None, '%.1f'), caps=caps,
                a76_real_min=min(reals) if reals else '')
@@ -191,7 +191,7 @@ def table(a):
         if r['config'] not in configs:
             configs.append(r['config'])
     w = max(8, *(len(c) for c in configs))
-    head = f'{"config":{w}s} {"ok/void":7s} {"swaps/s (min-max)":19s} {"frame":>6s} {"p50":>6s} {"p95":>6s} {"<=17%":>6s} {">100/run":>8s} {"GPU%":>5s} {"1st":>6s} {"startC":>6s} {"maxC":>5s} {"a76min":>6s}'
+    head = f'{"config":{w}s} {"ok/void":7s} {"swaps/s (min-max)":19s} {"frame":>6s} {"p50":>6s} {"p95":>6s} {"<=17%":>6s} {"late%":>6s} {"median":>6s} {">100/run":>8s} {"GPU%":>5s} {"1st":>6s} {"startC":>6s} {"maxC":>5s} {"a76min":>6s}'
     f2 = lambda x: '-' if x is None else f'{x:.1f}'
     for s in screens:
         print(f'\n{s} (ms)')
@@ -200,18 +200,19 @@ def table(a):
         for c in configs:
             rr = [r for r in rows if r['screen'] == s and r['config'] == c]
             ok = [r for r in rr if r['status'] == 'OK']
-            m = {k: mean(ok, k) for k in ('swaps_s', 'p50', 'p95', 'le17', 'gaps100', 'busy_pct', 'first_submit', 'start_c', 'max_c', 'a76_real_min')}
+            m = {k: mean(ok, k) for k in ('swaps_s', 'p50', 'p95', 'le17', 'skip2', 'gaps100', 'busy_pct', 'first_submit', 'start_c', 'max_c', 'a76_real_min')}
             m['frame'] = 1000.0 / m['swaps_s'] if m['swaps_s'] else None
             vals[c] = m
             sv = [float(r['swaps_s']) for r in ok if r['swaps_s']]
             rng = f'{m["swaps_s"]:.1f} ({min(sv):.1f}-{max(sv):.1f})' if sv else '-'
+            m['median'] = sorted(sv)[len(sv) // 2] if sv else None
             print(f'{c:{w}s} {f"{len(ok)}/{len(rr) - len(ok)}":7s} {rng:19s} {f2(m["frame"]):>6s} {f2(m["p50"]):>6s} {f2(m["p95"]):>6s} '
-                  f'{f2(m["le17"]):>6s} {f2(m["gaps100"]):>8s} {f2(m["busy_pct"]):>5s} {f2(m["first_submit"]):>6s} {f2(m["start_c"]):>6s} {f2(m["max_c"]):>5s} {f2(m["a76_real_min"]):>6s}')
+                  f'{f2(m["le17"]):>6s} {f2(m["skip2"]):>6s} {f2(m["median"]):>6s} {f2(m["gaps100"]):>8s} {f2(m["busy_pct"]):>5s} {f2(m["first_submit"]):>6s} {f2(m["start_c"]):>6s} {f2(m["max_c"]):>5s} {f2(m["a76_real_min"]):>6s}')
         if len(configs) == 2:
             A, B = vals[configs[0]], vals[configs[1]]
             def d(k):
                 return '-' if A[k] is None or B[k] is None else f'{B[k] - A[k]:+.1f}'
-            print(f'{"B-A":{w}s} {"":7s} {d("swaps_s"):19s} {d("frame"):>6s} {d("p50"):>6s} {d("p95"):>6s} {d("le17"):>6s} {d("gaps100"):>8s} '
+            print(f'{"B-A":{w}s} {"":7s} {d("swaps_s"):19s} {d("frame"):>6s} {d("p50"):>6s} {d("p95"):>6s} {d("le17"):>6s} {d("skip2"):>6s} {d("median"):>6s} {d("gaps100"):>8s} '
                   f'{d("busy_pct"):>5s} {d("first_submit"):>6s} {d("start_c"):>6s} {d("max_c"):>5s} {d("a76_real_min"):>6s}')
         opens = {}
         for r in rows:

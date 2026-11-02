@@ -4,7 +4,7 @@
 # CONFIG is NAME=KERNEL[,bootarg...][,+ENVKEY=VAL...][,@BUNDLEDIR], e.g. base=135,sweetswapbig=6 noalloc=135,sweetswapbig=6,+M2V_FAST_ALLOC=0
 # KERNEL: NN (work/kernelNN/kernel.development.sweet) or a path. flamereboot=1800 sweettrace=1 are always added. A config
 # without + lines runs with an empty /var/local/mtl2-env; one without @ with the bundle that was on the phone at the start.
-# Results: work/perfab/TAG/results.tsv (a row per screen run, kept if the run is killed), one screenshot per boot (Settings), one per screen on boot 1.
+# Results: work/perfab/TAG/results.tsv (a row per screen run, kept if the run is killed), one screenshot per boot (Settings, Home), one per screen on boot 1.
 # Env SETTLE: seconds between SSH up and the first screen (default 30). Exit: 0 done, 2 usage, 3 stopped early.
 # Env MAXSTART: each screen waits up to 3 min for the hottest CPU to read below this (default 75 C), then goes on and notes the temperature.
 # A window stops and is void at 95 C.
@@ -296,17 +296,18 @@ motion() {	# screen, until SECONDS
 # One screen: leaves the parser's verdict in VERDICT.
 run_screen() {	# config index, boot number, screen
 	local name=${NAMES[$1]} b=$2 s=$3 pid0 pid1 flags=()
-	SSH_LOST= OPEN_FAILED= OPENS= INWIN=0 TOO_HOT=
+	SSH_LOST= OPEN_FAILED= OPENS= INWIN=0 TOO_HOT= UP=0
 	pid0=$(bb_pid) || SSH_LOST=1
 	if [ -z "$SSH_LOST" ]; then
 		lead_in "$s"
 		motion "$s" $((SECONDS + 5))
+		[ "$s" = home ] && go_home	# a swipe missed in the lead-in leaves the pair going between the icons and the widgets page (26 swaps/s)
 		mark "$name b$b $s start"
 		INWIN=1
 		motion "$s" $((SECONDS + SECS))
 		mark "$name b$b $s end"
 		[ "$s" = cc ] && [ "$b" = 1 ] && { C swipe 1000 5 1000 900 300; sleep 1.5; }	# the last up swipe closes it: reopen for the picture
-		{ [ "$s" = settings ] || [ "$b" = 1 ]; } && timeout 30 tools/flame-shot "$OUT/$name-b$b-$s.png" >/dev/null 2>&1
+		{ [ "$s" = settings ] || [ "$s" = home ] || [ "$b" = 1 ]; } && timeout 30 tools/flame-shot "$OUT/$name-b$b-$s.png" >/dev/null 2>&1
 		go_home
 		pid1=$(bb_pid) || SSH_LOST=1
 		[ -z "$SSH_LOST" ] && [ "$pid0" != "$pid1" ] && flags+=(--restart)
