@@ -36,7 +36,7 @@ G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `
 Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted ev4 (kernel158 everyday setup).
 
 ## Next (in this order)
-1. Control Center steady-frame analysis (dl4) -> the best cut, A/B.
+1. Render area = union of draw scissors (bridge 0124, SWEET_M2V_RENDER_AREA): 5-boot A/B on home, cc, settings running (raa/rab). Control Center itself still not captured in a drawlog (dl4/dl5 were Home).
 2. Tonight's soak (n8) at 21:30: `tools/sunfish-nightsoak.sh n8` (kernel158 everyday + `sweetwdtcrumb=1`; mtl2-env now has SWEET_SURF_FLUSH=1 and SWEET_CULL=3: watch G1).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
