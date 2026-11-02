@@ -34,6 +34,16 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | rab5 | ra=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3,+SWEET_M2V_RENDER_AREA=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | raa5 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | rab4 | ra=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3,+SWEET_M2V_RENDER_AREA=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | raa4 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | rab3 | ra=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3,+SWEET_M2V_RENDER_AREA=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | raa3 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | rab2 | ra=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3,+SWEET_M2V_RENDER_AREA=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | raa2 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | rab1 | ra=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3,+SWEET_M2V_RENDER_AREA=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | raa1 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 10 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | mkb2 | m0=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3,+SWEET_CULL_MASK0=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | mka2 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3 | 1 | 10 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | mkb1 | m0=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+SWEET_CULL=3,+SWEET_CULL_MASK0=1 | 1 | 10 k | 0 | 0 | 0 | 0 |

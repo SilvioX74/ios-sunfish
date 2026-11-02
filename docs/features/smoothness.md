@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 18:40 ra: render area = union of draw scissors (bridge 0124): no gain; stays off
+- Bundle 9314dc0 (SweetMetal2 4C4C4422), kernel158 everyday + TU_FETCH_GMEM_MIN_DRAWS=20 + SWEET_SURF_FLUSH=1 + SWEET_CULL=3, 5 boots a side alternating (raa def, rab +SWEET_M2V_RENDER_AREA=1), home,cc,settings, 4453-4455 mV, 0 G1/G2/G4, 0 void.
+- Means def / ra: home 52.70 / 52.82, cc 43.49 / 43.36, settings 56.34 / 56.35; p95 the same. Pairs won by ra: home 3, cc 2, settings 1 of 5. `RA shrunk 3059 passes of 28672, 3929.5 Mpx, 21.4 Mpx/s` (rab1): only ~11 % of passes shrink, so too little load/store is saved to show.
+- Screenshots and webcam with ra on: clean. raa1's Home (def) had a garbled Music dock icon: the known B44 bug, not this change. Off by default; bridge 0124 stays in the bundle.
+
 ### 2026-11-02 17:25 dl5b: correction to dl4/dl5: those passes were Home, not Control Center (read-only)
 - research/notes/cc-draws-dl5-2026-11-02.md. The 83-draw and 14-draw passes are two halves of one Home frame, split where the dock's blurred backdrop is re-captured: the 14 draws are the Search pill (269x107 blurred backdrop, 9-slice), magnifier and text, the dock platter (269x107 blur), dock icons, a badge and the status bar; the 97-draw pass is both halves merged. No scaling (icon width 180.000 in every pass), so dl4's "Home offscreen for Control Center's blur" was wrong: the bench window hadn't reached Control Center (SKIP counts passes since backboardd started).
 - Home frames: passes 29-39 have scissor 0,192 1120x1472 (only the Clock icon's hands move; grid icons drift 0.001-0.01 px with a 3D transform), yet the render area is the full 1125x2436 with c0 load+store: ~8.7 MB/frame of GMEM load/store more than the draws need. Change being written: render area = union of draw scissors (SWEET_M2V_RENDER_AREA). The 14-draw pass runs in sysmem already (TU_FETCH_GMEM_MIN_DRAWS=20).
