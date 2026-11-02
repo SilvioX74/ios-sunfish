@@ -530,6 +530,8 @@ static std::string quartzCoreCallers();
 @property(nonatomic) BOOL dfA2C;
 @property(nonatomic) BOOL dfNoDest;   // sweet cull 2: its fragment function's constants say it reads no destination (only set under SWEET_CULL=2)
 @property(nonatomic) BOOL m0;   // sweet mask0: writes no colour attachment, rasterizes, and is one of CA's known shader pairs (only set under SWEET_CULL_MASK0=1)
+@property(nonatomic) unsigned daRead;   // sweet deadatt: colour attachments a draw with it may read (0xff unless set under SWEET_CULL_DEADATT)
+@property(nonatomic) BOOL daKnown;      // sweet deadatt: CA's label and a known shader pair, may be dropped
 @end
 @implementation NBRenderPipeline
 - (void)dealloc {nmb_render_pipeline_release(_handle);}
@@ -857,6 +859,12 @@ static bool cull2On() {static const bool on=[]{const char *p=getenv("SWEET_CULL"
 // the destination and write a target the cover leaves (reads are per pixel: what they read of it is overwritten too). 2's own fill loop stays off. Telemetry: "DF3" row.
 static bool cull3On() {static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&atoi(p)==3&&deadfillMode()==3;}();return on;}
 static std::atomic<uint64_t> gC3Draws,gC3Px;   // sweet cull 3: draws dropped under a cover, and their boxes' pixels
+// sweet deadatt (SWEET_CULL_DEADATT=1, only with cull 3; off: unset or 0): after cull 3, walking back, a surviving draw goes when every target it writes is
+// dead (colour 1..7, no resolve, memoryless or store DontCare) and no later surviving draw may read it (CA's c1 writers whose IsrcM1 readers went under
+// the cover, gt1). May read: blending or a partial write mask on it; any destination read or memoryless input (label "M<digit>", fc_memoryless_index* set)
+// counts as reading every target of its pipeline. Only CA's known shader pairs go (they store nothing); others read all. Telemetry: "deadatt" in the DF3 row.
+static bool deadattOn() {static const bool on=[]{const char *p=getenv("SWEET_CULL_DEADATT");return p&&atoi(p)!=0;}();return on;}
+static std::atomic<uint64_t> gDeadAtt;
 // sweet mask0 (SWEET_CULL_MASK0=1; off: unset or 0): a draw that writes nothing is never recorded: its pipeline has write mask 0 on every colour attachment
 // and rasterization on, the pass has no depth, stencil or visibility buffer, and the pipeline is Core Animation's (label) with a vertex/fragment pair known
 // to store nothing to memory (the bridge has no reflection of shader stores, so other shaders are kept). CA's S1 (stencil) draws in its no-stencil passes,
@@ -906,6 +914,7 @@ static void dfRectProbe(float x0,float y0,float x1,float y1,unsigned long tw,uns
 struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4]={},rx0=0,ry0=0,rx1=0,ry1=0,rz=0;uint64_t bind=0;__unsafe_unretained NBRenderPipeline *fpipe=nil;   // sweet deadfill: r*: mode 3, the fill's vertex bbox and z; rok: finite, one z
  bool prok=false,reads=true;long px0=0,py0=0,px1=0,py1=0;   // sweet cull 2: p*: the pixels a fill may touch, known if prok; reads: the draw may read the destination
  bool hok=false;long hx0=0,hy0=0,hx1=0,hy1=0;   // sweet cull 3: h*: the pixels any draw may touch, known if hok
+ unsigned dar=0xff;bool dok=false;   // sweet deadatt: targets the draw may read; dok: it may be dropped
  void (^blk)(void)=nil;bool draw=false,covering=false;unsigned writes=0xff,over=0;long cx0=0,cy0=0,cx1=0,cy1=0;NSString *label=nil;};   // c*: the draw's clip (scissor within the target)   // writes: targets the draw may change; over: targets a covering draw overwrites
 @interface NBRenderEncoder : NBEncoder
 - (void)drawLogStart:(MTLRenderPassDescriptor *)d;
@@ -926,6 +935,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  BOOL _cvRect;long _cvr[4];   // sweet cull 2: from coversPrim to recDraw: the pixels surely covered
  BOOL _dfOn,_dfDss,_dfPending,_cullPass;NBBuffer *_dfVb[8];NSUInteger _dfVbOff[8];std::vector<uint8_t> _dfVbytes[8];
  NmbRenderPassDescriptor _dfPass;unsigned _dfAttached;
+ unsigned _daDead;   // sweet deadatt: colours 1..7 whose contents end with the pass (no resolve, memoryless or store DontCare)
  BOOL _m0Pass;NBRenderPipeline *_m0Pipe;   // sweet mask0: the pass has no depth/stencil/visibility; the pipeline set last
 }
 - (bool)m0Skip {if(!_m0Pass||!_m0Pipe.m0)return false;gM0Skipped++;return true;}   // sweet mask0
@@ -939,7 +949,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  if(c&&_cvRect){e.cx0=_cvr[0];e.cy0=_cvr[1];e.cx1=_cvr[2];e.cy1=_cvr[3];}   // sweet cull 2: the clip within the vertex bbox
  e.reads=!_pipe||!_pipe.dfNoDest;   // sweet cull 2
  e.label=_pipe.label;
- if(_pipe){e.writes=_pipe.writtenMask&_attMask;e.over=_pipe.opaqueMask&_attMask;}_ops.push_back(e);}
+ if(_pipe){e.writes=_pipe.writtenMask&_attMask;e.over=_pipe.opaqueMask&_attMask;e.dar=_pipe.daRead;e.dok=_pipe.daKnown;}_ops.push_back(e);}   // sweet deadatt: dar, dok
 // sweet cull: is this draw an opaque, exactly-rectangular, full-target draw of a whitelisted pipeline?
 - (bool)coversPrim:(unsigned long)prim start:(NSUInteger)s count:(NSUInteger)n inst:(NSUInteger)inst indexed:(bool)indexed indexType:(MTLIndexType)ik
          indexBuffer:(NBBuffer *)ib indexOffset:(NSUInteger)io baseVertex:(NSInteger)bv {
@@ -1181,6 +1191,13 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
     if(safe){dead[e]=1;gC3Draws++;gC3Px+=(uint64_t)((f.hx1-f.hx0)*(f.hy1-f.hy0));}
    }
   }
+  if(deadattOn()&&cull3On()&&_cullPass&&_daDead){unsigned rd=0;   // sweet deadatt: after cull 3, back to front; rd: targets a later survivor may read
+   for(long e=(long)ops.size()-1;e>=0;e--) {
+    const CullEntry &f=ops[e];if(!f.draw||dead[e])continue;
+    if(f.dok&&f.writes&&!(f.writes&~(_daDead&~rd))){dead[e]=1;gDeadAtt++;continue;}
+    rd|=f.dar;
+   }
+  }
   if(cull2On()&&!cull3On()&&_cullPass)for(long e=0;e<(long)ops.size();e++) {   // sweet cull 2: after the clear, which costs less than a load under the same fill
    if(!ops[e].draw||dead[e]||!ops[e].fill)continue;
    int why=-1;
@@ -1277,6 +1294,8 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
      !d.visibilityResultBuffer&&d.colorAttachments[0].level==0&&d.colorAttachments[0].slice==0) {
    _dfOn=YES;_defer=YES;_tw=t.width;_th=t.height;_dfAttached=0;
    for(unsigned i=1;i<8;i++)if(id<MTLTexture> c=d.colorAttachments[i].texture)if(c.storageMode!=MTLStorageModeMemoryless)_dfAttached|=1u<<i;
+   _daDead=0;if(deadattOn()&&cull3On())for(unsigned i=1;i<8;i++){MTLRenderPassColorAttachmentDescriptor *a=d.colorAttachments[i];   // sweet deadatt (Unknown store: kept)
+    if(a.texture&&!a.resolveTexture&&(a.texture.storageMode==MTLStorageModeMemoryless||a.storeAction==MTLStoreActionDontCare))_daDead|=1u<<i;}
    if(cull2On()) {   // sweet cull 2: as sweet cull's setup below: all colour targets match target 0's size
     bool single=true;_attMask=0;
     for(unsigned i=0;i<8;i++){id<MTLTexture> x=d.colorAttachments[i].texture;if(!x)continue;_attMask|=1u<<i;if(x.width!=t.width||x.height!=t.height)single=false;}
@@ -2379,6 +2398,24 @@ static void planarFill(NBTexture *t) {
    const std::string &v=state.vertexName,&f=state.fragmentName;
    state.m0=(v=="fixed_vert_lph_spc"&&f=="fixed_frag_lph_cph")||(v=="path_blit_vert_lph"&&f=="attachment_clear_frag_lph");
   }
+  state.daRead=0xff;
+  if(deadattOn()) {   // sweet deadatt: what a draw may read, and may it go
+   unsigned all=0,rd=0;
+   for(unsigned i=0;i<8;i++){MTLRenderPipelineColorAttachmentDescriptor *a=d.colorAttachments[i];if(a.pixelFormat==MTLPixelFormatInvalid)continue;all|=1u<<i;
+    if(a.blendingEnabled||(a.writeMask!=MTLColorWriteMaskAll&&a.writeMask!=MTLColorWriteMaskNone))rd|=1u<<i;}   // blending, a partial mask: conservative
+   const std::string &v=state.vertexName,&f=state.fragmentName;
+   const bool ca=[d.label hasPrefix:@"com.apple.coreanimation.draw."]&&d.rasterizationEnabled&&[(id)d.fragmentFunction isKindOfClass:[NBFunction class]];
+   const bool clr=ca&&v=="path_blit_vert_lph"&&f=="attachment_clear_frag_lph",fix=ca&&v=="fixed_vert_lph_spc"&&f=="fixed_frag_lph_cph";
+   bool mem=false;   // a memoryless input: "M<digit>" in the label (IsrcM1 reads c1), or a memoryless index set
+   if(ca)for(const char *l=d.label.UTF8String+29;*l;l++)if(l[0]=='M'&&l[1]>='0'&&l[1]<='9')mem=true;   // 29: past "com.apple.coreanimation.draw."
+   if(clr||fix){const std::string fc=((NBFunction *)d.fragmentFunction).constantsText;
+    for(const char *k:{"fc_memoryless_index0","fc_memoryless_index1"}){const std::string x=dlConst(fc,k);if(!x.empty()&&x.find_first_not_of('0')!=std::string::npos)mem=true;}
+    const bool nodest=clr||(dfConstIs(fc,"fc_dest_count:49:00")&&dfConstIs(fc,"fc_destination_function:49:00")&&dfConstIs(fc,"fc_blend_function:49:36")&&
+     dfConstIs(fc,"fc_framebuffer_sample:53:00")&&![d.label containsString:@"Bvcm"]&&![d.label containsString:@"Bdso"]);
+    if(nodest&&!mem){state.daRead=rd;state.daKnown=YES;}
+    else state.daRead=all;   // a destination read or memoryless input: not pinned to a target
+   }
+  }
   if(drawLogPath()) {   // sweet drawlog: blend factors (rgb src:dst:op/alpha src:dst:op) and the destination-read constants (see sweet cull 2 below)
    MTLRenderPipelineColorAttachmentDescriptor *a=d.colorAttachments[0];char t[96];
    snprintf(t,sizeof t," bf=%lu:%lu:%lu/%lu:%lu:%lu",(unsigned long)a.sourceRGBBlendFactor,(unsigned long)a.destinationRGBBlendFactor,(unsigned long)a.rgbBlendOperation,
@@ -2633,8 +2670,10 @@ extern "C" size_t native_bridge_metal_telemetry(char *out,size_t size) {
   lastUs=now;lastDrop=dr;lastClear=cl;}
  if(cull3On()){static uint64_t lastUs,lastD,lastP;const uint64_t now=nowUs(),cd=gC3Draws.load(),cp=gC3Px.load();   // sweet cull 3
   const double sec=lastUs&&now>lastUs?(now-lastUs)/1e6:0;
-  row("DF3 covered %llu %lluMpx | /s %.1f draws %.2f Mpx",(unsigned long long)cd,(unsigned long long)(cp>>20),sec>0?(cd-lastD)/sec:0.,sec>0?(cp-lastP)/sec/1048576.:0.);
-  lastUs=now;lastD=cd;lastP=cp;}
+  static uint64_t lastA;const uint64_t da=gDeadAtt.load();   // sweet deadatt
+  row("DF3 covered %llu %lluMpx deadatt %llu | /s %.1f draws %.2f Mpx deadatt %.1f",(unsigned long long)cd,(unsigned long long)(cp>>20),(unsigned long long)da,
+   sec>0?(cd-lastD)/sec:0.,sec>0?(cp-lastP)/sec/1048576.:0.,sec>0?(da-lastA)/sec:0.);
+  lastUs=now;lastD=cd;lastP=cp;lastA=da;}
  if(mask0On()){static uint64_t lastUs,lastN;const uint64_t now=nowUs(),k=gM0Skipped.load();   // sweet mask0
   const double sec=lastUs&&now>lastUs?(now-lastUs)/1e6:0;
   row("M0 skipped %llu | /s %.1f",(unsigned long long)k,sec>0?(k-lastN)/sec:0.);
