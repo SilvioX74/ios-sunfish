@@ -23,6 +23,11 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 22:50 n6: first real G1 under CX cycle: the CX GDSC won't collapse
+- Soak n6, kernel149 base args + `sweetcxcycle=1` (boot 20261101-223608), 22:37-22:49, 76.5 k submits. G4 at 461 s, `recover2: done after 36911 us`, `exec backboardd` 86 ms later. G1 at 897.349 s: `fsr 0`, `gbif halt ack 1 TIMEOUT`, soft reset + CP init -1, GBIF halt path -1, then CX cycle: stage `cp stop + gbif halt + reset -> -1` (carries on), `gx off -> 0`, `gmu reset + rsc sleep -> 0`, `gdsc collapse, gdscr f8222000`, `gdsc won't collapse, TIMEOUT after 500005 us, gdscr f8222001 hw ctrl 88809fe0`, `cx cycle: done rc -1 after 641794 us`, `recover2: FAILED after 1350076 us`.
+- On the injected hang (cx3b, `ack 3`) the same collapse took 16 us. So the stuck memory path also holds CX up, which fits G1 being stuck below the GPU. Recovery failed cleanly: no reset, 0 hangs after, CPU drawing.
+- Next: what lets the GDSC go with a transaction outstanding (read-only: GCC/GPUCC block resets, what stock KGSL does).
+
 ### 2026-11-01 22:46 n5 reset, read-only: probably not the churn, and not instant; correction to the entry below
 - Correction: "at the GPU pool limit" was wrong. Pool was 611 of 940 MB (448 + 492); the refusals come from the 256 MB per-client cap. First fit returns -1 when full; boot 20261031-210239 reached 936-937 MB and ran on.
 - 633 boots: `texture refused: OutOfMemory` on 34 (first 20261029-093657), 33 lived on after it; 43/54 MB allocations 7,589 on 21 boots; n5's burst 142, longest 183 (n6, alive). Old pattern, n5 no outlier.

@@ -78,6 +78,7 @@ Newest first. Earlier soaks were shorter or used other loads, so compare rates, 
 
 | Date | Kernel, bundle | Length | Submits | G1 | G2 | G4 | Other |
 |---|---|---|---|---|---|---|---|
+| 2026-11-01 n6 | kernel149, as n5 | 12.6 min of 60; G4 at 461 s recovered in 36.9 ms; real G1 at 897 s, `ack 1`, CX cycle ran: `gdsc won't collapse` after 500 ms, recovery failed | 76.5 k | 1 | 0 | 1 | backboardd restart 1, max 93.8 C, 0 caps, nits 5; no silent reset |
 | 2026-11-01 n5 | kernel149 sweethwcg=1 sweetcxcycle=1, metal2-cpu, mode 3, shadow cache, knobs on, A55 1497 MHz, GPU 650 MHz | 11 min of 60; silent reset at uptime 695 s in Maps, just after `texture refused: OutOfMemory(Device)` (pool peak 620 MB) | 61 k | 0 | 0 | 0 | Reset to fastboot, no panic line, no CX cycle ran; 0 restarts, max 88.3 C (at 217 s; 79 C at the end), nits 5 |
 | 2026-11-01 n4 | kernel144 sweethwcg=1, metal2-cpu, mode 3, shadow cache, knobs on, A55 1497 MHz, GPU 650 MHz | 5.2 min valid of 60; G1, failed recovery (uptime 3873 s, recover2 FAILED after 2.47 s) | 31.5 k | 1 | 0 | 0 | 0 backboardd restarts, no silent reset, max 80.3 C, 0 caps. One G1 can't tell if clock gating raises the rate (baseline about 1 per 100 k: 1 in 31 k is about 27 %) |
 | 2026-11-01 n2 | kernel139, shadow cache, mode 2, A55 1497 MHz | 14.5 min valid of 60; G1, failed recovery | about 86 k total | 1 | 0 | 0 | CPU drawing for the rest; no silent reset |

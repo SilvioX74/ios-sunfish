@@ -120,3 +120,4 @@ output in /var/local.
 2026-11-01 11:30: speed defaults (written, not installed yet): `tools/sunfish-install-speed.sh` (`--undo`): /var/local/mtl2-env loses its SWEET_DEADFILL and M2V_SHADOW_CACHE lines (backup /var/local/mtl2-env.pre-speed), bundle from `METAL2_VARIANT=next tools/build-metal2-linux.sh` (bundle undo marker /var/local/speed-bundle-installed), `tools/sunfish-install-ccscale.sh`, `tools/sunfish-idlefix-db.sh` and its `--biome` form if not already moved. Setup step 6.
 
 2026-11-01 12:15: everyday candidate: bundle work/metal2-cpu (`METAL2_VARIANT=cpu tools/build-metal2-linux.sh`), /var/local/mtl2-env adds SWEET_U0011=1 .. SWEET_U0014=1. Remove the lines to turn off.
+2026-11-01 22:52: backboardd env for the low-nits A/B (lb0-lb3): tools/sunfish-install-caenv.sh; ends with --undo. Unfinished feature; script is the reproduction.
