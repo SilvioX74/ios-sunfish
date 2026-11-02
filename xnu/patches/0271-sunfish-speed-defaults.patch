@@ -1,0 +1,26 @@
+From 8f3c68ba31d6834942a2d396a22a3275f5ca28fe Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Mon, 2 Nov 2026 00:52:05 -0500
+Subject: [PATCH] sunfish: defaults sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3
+ after soak n7
+
+---
+ pexpert/gen/bootargs.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/pexpert/gen/bootargs.c b/pexpert/gen/bootargs.c
+index bf9161f..a80b5c2 100644
+--- a/pexpert/gen/bootargs.c
++++ b/pexpert/gen/bootargs.c
+@@ -197,7 +197,7 @@ gotit:
+  */
+ static char sweet_default_bootargs[] =
+     "sweetfb_noconsole=1 sweetfb_hz=60 ufslogsecs=2 sweetuiwdt=30 "
+-    "flametouch=0 sweettouch=2 sweetkeys=1 sweetusb=2 sweetgpu=1 sweetgpufreq=5 sweetfb_thread=0 sweetmtl=2 "
++    "flametouch=0 sweettouch=2 sweetkeys=1 sweetusb=2 sweetgpu=1 sweetgpufreq=6 sweethwcg=1 sweetsmmutcr=3 sweetfb_thread=0 sweetmtl=2 "
+     "sweetddr=0 sweetgpurecover=2 sweetgpukill=1 sweetbattery=1 sweetwifiev=1 sweetpanelsleep=1 "
+     "sweetpresentwait=1 sweetbl=2 sweettorch=1 btbridge=1 sweetmotion=0x3f";
+ 
+-- 
+2.56.0
+
