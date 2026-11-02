@@ -23,6 +23,12 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 22:30 cx3: CX-cycle recovery works on an injected hang; kernel149 (xnu 0268)
+- cx3a: kernel149 base args + `sweetcxcycle=1` (boot 20261101-221835, 4456 mV): snapshot of sCR0 only at 27.362 s, CPUs at about 100 % as on a healthy boot, SpringBoard and backboardd up, no panic. First `sweetcxcycle` boot past the snapshot, so a read in the wider snapshot is the likely cause of cx1 and cx2a (which register not known).
+- cx3b: `sweetcxcycle=2 sweethangtest=0xC0000040` (boot 20261101-222025, 4456 mV): stall injected 74.683 s, `GPU hang or fault` 76.702 s, `gbif halt ack 3`, all stages 0, `gdsc off after 16 us`, `smmu after cx on: 0 regs differ from boot` (sCR0 only), `smmu ok, tlbstatus 0`, `cx cycle: done rc 0 after 87456 us`, `recover2: done after 93087 us`. Warnings: `gcc gpu_memnoc_gfx still running, 220 TIMEOUT`, `gcc ddrss_gpu_axi still running, 0 TIMEOUT`.
+- After it: backboardd 60 -> 312 and SpringBoard 26 -> 314, `exec backboardd` 130 ms after the reset; cause not looked up. Settings opened and scrolled, 0 missed submits, 649 MHz, 0 `device refused`: the GPU draws.
+- Not shown yet: a real G1 (`ack 1`, stuck SMMU), which is the point: this hang had `ack 3`, the case recover2 already handled. Soak n5 runs `sweetcxcycle=1` to meet one. Steps 3-5 of cx1 folded into that.
+
 ### 2026-11-01 22:20 cx2a: silent reset at 45 s with sweetcxcycle=1, kernel147; CPU0 stuck both times
 - kernel147, base args + `sweetcxcycle=1` (boot 20261101-220633, 4457 mV): `cx cycle: boot snapshot` and `... done` both at 25.353 s, `GPU ready in 287 ms`, then the log runs on until 45.166 s (THERM, USB, ARP from interrupts and timers), then fastboot: no panic line, rescue ../logs/cx2a-rescue.txt ends at the same line. 4456 mV after.
 - Observed: `SWEET THERM: busy` 97 2 1 1 1 1 at 30 s, then 100 0 1 0 1 1 until the end: CPU0 alone at 100 %, the rest idle, and no userland line after launchd's map lines. Healthy boots (20261101-205241, -204358, -200324) have all 8 CPUs at about 100 % in this window. Same kernel with `sweetcxcycle=0` (rescue boot, 20261101-221204) boots normally.

@@ -30,14 +30,14 @@ After these: GPU governor (full and idle levels at most), once the hangs in gpu-
 Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-loaded). Fix one now only if it voids benches, stops phone testing, or doubles in rate after a change (then turn that change off first). The rest wait until the speed targets are met.
 
 ## GPU bug now due
-G1 (no-fault hang, no recovery) voids benches today, 4 of about 40 boots: it qualifies for a fix. Stuck memory path, not our lock: GBIF never acks (24 of 24 failed, ack 3: 8 of 8 recovered). Flush hammer (hm1): flushes aren't the trigger; both SMMU syncs stuck, no fault. Next: CX-cycle recovery `sweetcxcycle`, what Linux does and we don't: first boot panicked before any hang (cx1), smaller step kernel147 after the soak (gpu.md).
+G1 (no-fault hang, no recovery) voids benches today, 4 of about 40 boots: it qualifies for a fix. Stuck memory path, not our lock: GBIF never acks (24 of 24 failed, ack 3: 8 of 8 recovered). Flush hammer (hm1): flushes aren't the trigger; both SMMU syncs stuck, no fault. CX-cycle recovery `sweetcxcycle` (what Linux does and we don't): works on an injected hang, kernel149 (cx3); a real G1 not met yet (gpu.md).
 
 ## Phone
 Claude's. `work/night` set. Last everyday setup: kernel144 sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetrowa55=6 sweetgpufreq=6 sweethwcg=1, no flamereboot; env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1; bundle work/metal2-cpu. Bundle for after a clean soak: work/metal2-next (mode 3, cache, knobs on by default), not installed.
 
 ## Next (in this order)
-1. ▶ CX-cycle recovery: soak n4 died at 5.2 min on G1 with failed recovery, so a soak can't finish without it. kernel147 `sweetcxcycle=1` boot only, then `sweetcxcycle=2 sweethangtest=0xC0000040`, then the rest of cx1's steps (gpu.md).
-2. Soak again once recovery holds. Clean (no silent reset, no failed recovery): defaults with tools/sunfish-install-speed.sh, sweetgpufreq and sweethwcg default on, webcam motion check of mode 3 (st3 correction). One G1 can't blame clock gating (1 in 31 k against 1 per about 100 k); if the next soak also hangs early, soak without `sweethwcg`.
+1. ▶ Soak n5 (22:30, `tools/sunfish-nightsoak.sh`, kernel149 sweethwcg=1 sweetcxcycle=1, log work/nightsoak-n5.log): does a real G1 recover by CX cycle? Injected hang did: rc 0, 93 ms, UI restarts once (cx3, gpu.md). While it runs: read-only work and builds only.
+2. Clean (no silent reset, no failed recovery): defaults with tools/sunfish-install-speed.sh, sweetgpufreq, sweethwcg and sweetcxcycle=1 default on, webcam motion check of mode 3 (st3 correction). One G1 can't blame clock gating (1 in 31 k against 1 per about 100 k); if n5 also hangs early, count G1 per submits without `sweethwcg`.
 3. fg1 again in full, kernel146, read `SWEET SCHED: fg` per window: do low Settings runs show more A55 time? (smoothness.md 20:10.)
 4. Fence poll: kernel with xnu fence-poll patch, `sweetfencepoll=200`, Turnip 100 ms slice: 5-boot A/B, waiter tid's ms, A55 temperature, p95 (read-only: about 2 ms/frame of A55 polling, a heat item, guess under 0.5 C; backlog O11). Bridge QoS `SWEET_BRIDGE_QOS=1`, 5-boot A/B (guess 0-0.5 ms; backlog U7).
 
