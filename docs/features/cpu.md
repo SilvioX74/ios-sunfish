@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 09:30 hs1: which app runs hottest: Photos (15-min UI soak, kernel157)
+- Everyday setup kernel157 (sweetvsyncphase=5000) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, mtl2-env SWEET_U0011..14=1 + TU_FETCH_GMEM_MIN_DRAWS=20, boot 20261102-091254, on charge 4437-4438 mV. `tools/sunfish-uisoak.sh hs1a 450` then `hs1b 450`: 50.9 k + 50.4 k submits, 0 G1/G2/G4, 0 backboardd restarts, 0 caps. Max 95.7 C (hs1a), 93.2 (hs1b); 13 of 180 readings at 90+ (7.2 %).
+- Per app (hottest of a55/cpu6/cpu7 per reading; max / mean C, readings at 90+): Photos 95.7 / 87.9, 9 of 22; Safari 92.2 / 83.9, 4 of 34; Settings 89.9 / 84.2, 0 of 35; Maps 86.7 / 82.1, 0; Calendar 85.4 / 78.9, 0; Notes 82.8 / 74.8, 0.
+- So the 90+ C peaks are Photos (and some Safari). Next: what Photos burns (per-thread CPU and GPU per frame in a Photos window), then the A76 cap only for that load if it's CPU.
+- Gotcha: the per-app markers `=== uisoak TAG app` land in logs/usb-live.log, not in the per-boot file.
+
 ### 2026-11-02 02:04 fa: fence poll and 100 ms slice: 1.3 ms/frame off the A55s, no speed change; default
 - `SWIPE_MS=3000 SETTLE=90 MAXSTART=75 tools/sunfish-perfab.sh`, kernel153, 5 boots a side, settings,home, off = work/metal2-next, fence = work/metal2-fence + `sweetfencepoll=200` (xnu 0267, Turnip 0110), 0 hangs, 0 restarts, 0 void.
 - Backboardd's waiter thread (inferred from its place among the tids, tracks GPU busy, not named): 515-578 -> 141-205 ms per 5 s, about 1.3 ms per frame, nearly all A55, all 5 boots. A55 busy on Settings 36.8 -> 34.2 %. The A76 render thread (about 3.7 s per 5 s) and the other A55 thread (about 700 ms) don't move.

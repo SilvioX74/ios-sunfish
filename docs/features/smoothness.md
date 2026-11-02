@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 09:30 k157: kernel157 everyday check
+- `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh k157 1 --screens settings,home,cc`, kernel157 (sweetvsyncphase=5000 built in), everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, 0 void, 0 G1/G2/G4 in 10 k submits. Settings 56.4 (p95 20.9), Home 52.8 (31.8), Control Center 40.3 (39.2); max 83.5-86.7 C. One launch per screen, so the Settings number is one sample. Webcam after the hs1 boot: lock screen normal.
+
 ### 2026-11-02 09:30 lat: Settings commits wait for touches, not the display link; the hold to tick+9.6 costs about 0 ms (read-only, parked)
 - vpa1-5 traces (phase 5000), 24 981 frames, p50 ms after our tick: display link scheduled 4.13, fires 4.27; touch timestamp 5.63 (p10 1.1, p90 10.0); start_frame 0x31ca00d1 (CA::Transaction::start_frame 0x1882e1f40) 9.79; finish_frame 11.42; commit 11.55-12.40; next render 16.98. backboardd's render_for_time runs tick+0.05 to tick+13.43 (13.2 ms). Notes research/notes/latency-2026-11-02.md.
 - During a drag a touch starts each frame (start_frame reason 0x20 from __processEventQueue 0x188eb2388: UIKit's update cycle is off, _UIUpdateCycleEnabled 0x189192744), not the display link. Touches stamped tick+1..8 start their frame no earlier than tick+9.6; tick+9..17 start at once (+1.4-2.5 ms). SpringBoard shows the same floor (start_frame at 9.83). The floor follows backboardd's finish_update in the same tick (r 0.40), not the display link. Bench touches come from the kernel's ud_touch_cmd, about 93 Hz.
