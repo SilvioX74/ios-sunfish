@@ -19,7 +19,7 @@ Targets (Claude's numbers, the user can change them):
 ## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each)
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
 1. ▶ **Heat**: A76 at 1939 MHz now default (xnu 0276, kernel158): soak peaks 93.7 -> 87.5 C, 90+ readings 5 -> 0 of 90, swaps/s within noise (hA/hB). Photos' CPU is its own work (pax). Next: idle heat (53-59 C) and tonight's soak on kernel158. (cpu.md)
-2. **Control Center** 40.3 swaps/s (target 45): next, per-overlap flush only for framebuffer readers (redfin Turnip 0107 port, SWEET_TU_ORDER_FETCHERS_ONLY; ccp); upper bound po0 first. Then Turnip env sweep (GMEM_MIN_DRAWS=100, AUTOTUNE profiled). (smoothness.md)
+2. **Control Center** 40.3 swaps/s (target 45): per-overlap flush is no lever (po0: flush off 1.5 slower); Turnip env sweep running (TU_FETCH_GMEM_MIN_DRAWS=100, TU_AUTOTUNE_ALGO=profiled); then SWEET_DRAWLOG_MIN to see the 134 main-pass draws. (smoothness.md)
 3. **Real-use hitches**: bench gaps are the swipe reversal (gp), not stalls; next: time app opens and the keyboard by hand-like taps; recheck the Oct 30 >100 ms gaps in a real-use soak. (smoothness.md, cpu.md)
 4. **Render CPU**: backboardd's render_for_time takes 13.2 ms of each 16.7 ms tick on Settings (catrace lat); what it spends that on (profile tick+0..13 with tools/sunfish-pc-hist.py). (smoothness.md)
 5. **Upstream takeaways**: trace filter env (U6: works, still distorts, parked); UBWC census (U9), spare image blocks timing (U10). QoS (U7) no gain, off.

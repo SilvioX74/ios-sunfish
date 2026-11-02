@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 16:20 po0: per-overlap flush off gives nothing on Control Center: Turnip 0111 dropped
+- Bundle metal2-next with Turnip 0111 (4bba3bf, off by default), kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20 + SWEET_SURF_FLUSH=1, 2 boots a side (po0a, po0b), cc,home, 4441-4455 mV, 0 G1/G2/G4, 0 void.
+- def: cc 40.4, 40.3 (p95 39.7, 37.2), home 52.4, 53.4. TU_SWEET_PRIM_ORDER=0 (flush fully off, picture broken: cyan background, no blur, garbage at slider edges): cc 39.0, 38.7 (p95 35.0, 37.3), home 53.9, 52.0. cc median frame 24.7 -> 25.8 ms, GPU busy 88 -> 86-87 %.
+- So the upper bound of 0111 on Control Center is about zero (slower, if anything); 0111 stays in the bundle off and isn't tested further here. The new bundle on defaults: Control Center and Home screenshots normal. Next: Turnip env sweep (ts).
+
 ### 2026-11-02 15:40 ccp: Control Center plan: per-overlap flush only for framebuffer readers is the best lead (read-only)
 - research/notes/cc-plan-2026-11-02.md; cc3 trace re-read (kernel139, older than today's defaults; traced times ~2.4x real). Drag frame, real ms (estimates): main pass 134 draws ~11 (spread evenly over all bins: the draws, not one area), one-draw composite ~3.6, module tiles 79 draws ~3.2, overlay ~2.
 - metal2vulkan marks every pipeline of a pass with any framebuffer-fetch draw for rasterization order (pipeline/graphics.rs:811-824, render_target.rs:1209-1212), so Turnip flushes per overlap on all of them (tu_pipeline.cc:3790-3797, :4424-4438). ios-redfin's Turnip 0107 (SWEET_TU_ORDER_FETCHERS_ONLY=1) keeps it only for shaders that read an input attachment. On Settings, TU_SWEET_PRIM_ORDER=0 once gave -1.9 ms/frame (k1). Being ported; upper bound run (po0, TU_SWEET_PRIM_ORDER=0, picture broken) queued.
