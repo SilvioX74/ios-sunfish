@@ -36,7 +36,7 @@ G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `
 Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel154 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200 compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off; /var/local/mtl2-env = SWEET_U0011..14=1. kernel155 = 154 + `sweetvsyncgrid` (off; no gain). Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted mo3 (everyday setup).
 
 ## Next (in this order)
-1. Low Settings launches: read-only comparison of a low and a good launch (Priority 1, investigator running); logs vg*/va*/rl* in work/perfab, per-boot logs 20261102-04* and -05*.
+1. Low Settings launches: nothing logged on the app's side tells them apart (ll); implementer writing `catrace` (kdebug reader for CA's commit and render codes), then 2 boots RELAUNCH=5 with it, plus a 10 s settle-after-kill side check.
 2. Control Center `TU_FETCH_GMEM_MIN_DRAWS` A/B, 4 boots each of base, d5, d20 (cs4a-d, running; Priority 3).
 3. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel154 + `sweetwdtcrumb=1`).
 

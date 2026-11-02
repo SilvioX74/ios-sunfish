@@ -95,6 +95,14 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 07:00 ll: low against good Settings launches from the app's side (read-only): nothing logged tells them apart
+- 12 low launches (under 50.5 swaps/s) against 46 good (56+), rl1-4 (kernel154), vg1-4 and va1-4 (kernel155), boot logs 20261102-040919 to -055936. Notes: research/notes/low-launch-2026-11-02.md.
+- Observed: the live log has no runningboard, jetsam, assertion, frame-rate, display-link or app oslog lines. Preferences main-thread CPU is the same in low and good launches (rl4 L4 1072-1120 ms per 5 s, good 964-1155); in low ones backboardd's render thread works less (2443 against 3584 ms per 5 s) and cpu6 is less busy (54-69 % against 75-82 %).
+- Launch 2 differs from launch 1: a fresh start (launch 1 is the process started at boot), it follows the launch-1 screenshot, and the one remotemanagementd burst per boot (158-168 s uptime) lands next to it in all 12 boots. These lead-in lines are also there before the 4 good launch 2s, so they don't explain it alone.
+- Found in QuartzCore (research/re/QuartzCore.s): kdebug codes, not gated: 0x31ca0215/0216 client commit, 0x31ca0009 server receives a commit (context id), 0x31ca0005 Transaction::commit with frame-begin time, 0x31ca000d each render, 0x31ca00c9/00ca the app's display link. No env var logs commits (CA_LOG_* knobs are only image queue and class descriptions). The mtl2 K lines and SWEET_CTL never see commits.
+- Guess (about 30 %): the app's frame clock picks up a phase against our tick at process start and keeps it; a start in a busy moment anchors it late and the commits sit at the render gate's edge, so about 1 tick in 3 merges two commits.
+- Next: `catrace` (userland kdebug reader, implementer writing it) over 2 boots with RELAUNCH=5, commit-to-render offsets per launch. Cheaper side check: a 10 s settle between the kill and the reopen; if launch 2 stops being low, start-up timing is involved.
+
 ### 2026-11-02 06:45 mo3: mode 3 webcam motion check: no stale strip in 900 frames; doubling is the camera
 - kernel154 everyday setup (sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1), bundle metal2-next (mode 3), boot 20261102-062911, 4455 mV. Iriun webcam 3840x2160 at 30 fps; a page swipe lasts about 16 frames, so mid-motion is caught.
 - A: 6 Home page swipes, 420 frames (research/mo3/home/). B2: open Settings, 2 scrolls, Control Center open and close, 480 frames (research/mo3/apps/). B1 void: G4 hang at 210.020 s (fsr 40000002), recover2 done in 45.5 ms, then backboardd killed after recovery (by design), back on the Lock screen.
