@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 03:22 Low Settings runs: not idle (correction to fg1's lead); fixed per launch, render thread waits (read-only)
+- 43 OK Settings runs tonight (kernels 146-154), low under 54 swaps/s: waits were 5-10 s when they happened (wait from `SWEET CMD` timestamps; COOLED only goes to perfab's stdout, line 389); 10 runs waited: 2 low, 8 good; 33 didn't: 14 low, 19 good. The worst runs had no wait (fg1e 42.6, tm3c 43.8, fg0d 45.6, df2 46.0). Idle gap to the window 0 s in all; uptime 108-143 s both. So the start temperature lead was wrong: cpu6 was less busy in low lead-ins, so cooler (guess).
+- Fixed for the launch: per-5 s swaps stay low in all three blocks (fg1e 214/217/201) and in the 5 s before; Home right after a low Settings run is normal (lb1b 54.1, tm3c 54.8). Clocks the same (A55 1497, A76 2208, lmh 0). Render thread 12.4-13.4 ms per swap in both, GPU per submit the same.
+- backboardd's GPU end -> swap p50 11.6, p95 27 ms in low runs against 9.3, 13.7 in good (fg1e, tm3c vs fg1f, tm3a); submit -> GPU start 2.7 vs 3.9 ms. The render thread waits; cpu6 60-70 % busy (good 76-82 %). Guess (low confidence): a launch locks into a bad phase between the app's commits and backboardd's deadline; app about 4 + render 13 + GPU about 8 ms in a row is longer than 16.7 ms.
+- Next: per launch or per boot: 3 boots, Settings 4-5 times each with Preferences killed and reopened (perfab change); `SWEET_CTL` in the same boots for `tools/sunfish-timeline.py --ctl`, to split GPU end -> swap into stages.
+
 ### 2026-11-02 03:16 fg1: sweetfgbig doesn't remove the low Settings runs; the low runs may follow an idle wait
 - `SWIPE_MS=3000 SETTLE=90 MAXSTART=75 tools/sunfish-perfab.sh`, kernel154, metal2-next (md5 080f97ab, Turnip 0110, bridge 0123), no env, settings only, 6 boots a side, `sweetcpusample=1`. One void (fg0b, G2 `submit failed`, 21.5 swaps/s), redone.
 - off 57.4, 54.3, 56.5, 45.6, 50.6, 56.7 (mean 53.5, median 55.4, 2 low); `sweetfgbig=1` 57.0, 56.6, 48.8, 56.8, 42.6, 56.8 (53.1, 56.7, 2 low). The patch was active (29-38 `SWEET SCHED: fgbig` lines per boot), yet Preferences' main thread stayed 80-88 % on A55 in good runs; low runs had a lower A55 share (68-81 %), so A55 time isn't the cause. Good runs p95 19-21 ms: the target on good boots.
