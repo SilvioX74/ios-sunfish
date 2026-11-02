@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 18:09 gt1b: Control Center is fill-bound; the spring tail after each open dominates; two cuts queued (read-only)
+- gt1 trace by frame (research/notes/cc-draws-dl6-2026-11-02.md; trace ns ~22.3 s behind uptime; traced times): "blur live" frames (3-6 per open, 7-9 per close) 32-40 ms GPU: Home full screen GMEM 15.8, blur 284x611 sysmem 1.6 (+0.5), one-draw cover full screen sysmem 2.8-4.3, sliders GMEM 1.0 + 0.6, modules full screen GMEM 6.4, E full screen GMEM 4.1-4.4. "Settled" frames (spring tail, 24-26 per open) 28.6-31.3 ms: A (11 draws after cull) GMEM 12.5, modules GMEM 7.1, E GMEM 4.4, small 2.5.
+- A full-screen GMEM pass has ~3.6 ms fixed cost here (identical 7-draw pass: 3.55-3.73 GMEM vs 1.08 sysmem; per-bin tracepoints may inflate it). A's remaining ~9 ms fits ~5.5 Mpx: one fill, the 2.05 Mpx cover, and c1-only draws 8, 9-12, 27 (~3.3 Mpx) that cull 3 keeps because the cover doesn't write c1, though c1 is memoryless and its readers (13, 33) are culled.
+- Queued: TU_FETCH_GMEM_MIN_DRAWS=25 (puts E in sysmem; A/B gma/gmb running) and a cull extension for dead memoryless-only writes (being written). Skip: blur size, pass merging, load/store, sliders.
+
 ### 2026-11-02 18:06 gt1: GPU trace of Control Center open/close: load+store only ~0.47 ms per full-screen GMEM pass
 - kernel158 everyday + SWEET_CULL=3, MESA_GPU_TRACES=print with TU_GPU_TRACEPOINT=-draw_ib_gmem -draw_ib_sysmem -sysmem_clear -gmem_clear -sysmem_clear_all (one boot, gt1, boot 20261102-180209; 3 cycles: open 114.876/120.957/127.626, close 117.911/124.582/130.662 s). work/cc/gt1-trace.log (12.5 MB), gt1-sum.txt.
 - render_pass n=3543 mean 2.16 ms; 1125x2436 n=1377 mean 5.10 ms GPU (44 bins; load 0.18, store 0.29, binning 0.07 ms per pass); 207x460 (sliders) 0.79 ms, 284x611 (blur) 0.83 ms; small passes 0.1-0.4 ms. So load/store is a small share of a full-screen pass, which is why the render-area shrink (ra) gave nothing; the time is in the draws. Per-frame split by open/close and GMEM/sysmem: analysis running.
