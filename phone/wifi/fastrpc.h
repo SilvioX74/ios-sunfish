@@ -28,8 +28,5 @@ void fastrpc_rx(const void *p, size_t n);
 void fastrpc_status(char *buf, size_t n);
 /* Calls per method, files opened, errors. */
 void fastrpc_summary(void);
-/* idle2: invokes sent so far (it moves with every call served) and 1 while a session is still attaching. */
-uint32_t fastrpc_invokes(void);
-int fastrpc_settling(void);
 
 #endif

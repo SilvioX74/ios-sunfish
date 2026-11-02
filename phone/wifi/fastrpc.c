@@ -998,16 +998,6 @@ void fastrpc_status(char *buf, size_t n)
 		 (unsigned long long)s_sns.cur_ctx, seq);
 }
 
-uint32_t fastrpc_invokes(void)
-{
-	return seq;
-}
-
-int fastrpc_settling(void)
-{
-	return (s_root.state > 0 && s_root.state < 5) || (s_sns.state > 0 && s_sns.state < 5);
-}
-
 void fastrpc_summary(void)
 {
 	static const char *st[] = { "off", "attach", "remotectl_open", "register", "init2", "serving", "stopped" };
