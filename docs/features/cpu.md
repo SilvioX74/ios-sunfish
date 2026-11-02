@@ -15,6 +15,13 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 10:20 phs: Photos' CPU is software colour conversion and scaling (no M2 scaler driver), read-only
+- 200 pstack samples each (work/heat/), MobileSlideShow over 4.3 s at the start of a grid scroll, mediaserverd 3.0 s two minutes later; symbolized (research/notes/photos-cpu-2026-11-02.md).
+- MobileSlideShow, 368 running samples of 8032 (1.84 threads busy per sample, in bursts): VideoToolbox software transfer 57.1 % (vVertical_Shear_ARGB_8888 27.2, vConvert_420Yp8_CbCr8ToARGB8888 15.8, vHorizontal_Shear 6.2: VTPixelTransferSessionTransferImage -> vImageScale, spread with dispatch_apply), main thread UI 19.6, allocation/CF/objc 17.7, CGImageSourceCreateThumbnailAtIndex resample 4.9, HEIF parsing 0.8. No retries or failure paths.
+- On the iPhone X that transfer runs on AppleM2ScalerCSCDriver (the "scaler" node in the device tree); we have no such driver, so VideoToolbox does it in vImage. HEVC tile decode goes over XPC to mediaserverd (VTDecompressionSessionRemote_DecodeTile).
+- mediaserverd's sample had 0 running threads (taken outside a decode burst): its 17 CPU s/min is unexplained; guess (70 %) software HEVC (VCPHEVC; no AVD).
+- Fix candidates (guesses): a cheaper software scaling setting in VideoToolbox/CMPhoto (AllowLowQualityScaling, HardwareAndSoftwareConversion, AccelerationMode; -10 to -15 CPU s/min, 40 %); thumbnail size A/B; a GPU-backed stand-in for the M2 scaler (days; ~25 CPU s/min); HEVC on GPU/DSP (too big). Next: read whether those names are preference keys (investigator); confirm mediaserverd with samples during a scroll.
+
 ### 2026-11-02 10:00 ph2: Photos' heat is CPU: the app +31 CPU s and mediaserverd +17 per minute against Settings
 - Running boot hs1 (kernel157 everyday), 60 s of grid scrolling each (`flame-cmd --wait 0`, a swipe about every 1 s; the first try ph1/se1 was void: flame-cmd's default 3 s wait left 2 s of 3 idle). Start under 70 C both.
 - Photos / Settings: swaps/s 40.8 / 55.5; GPU submits 8722 / 9444, GPU busy 46.7 / 53.5 %; A55 busy cpu0-5 39-24 / 21-10 % (+14-18 on every A55), cpu6 69.6 / 73.7, cpu7 31.6 / 22.0. Clocks fixed (A55 1497, A76 2208), no caps. Max: cpu6 85.8 / 83.2, cpu7 84.8 / 78.7, a55 83.2 / 79.9; GPU, DDR and the rest equal.
