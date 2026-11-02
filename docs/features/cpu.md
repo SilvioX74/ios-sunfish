@@ -15,6 +15,10 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-01 20:45 hw3: clock gating is 3.4 C cooler at idle
+- kernel145, base args, 4 interleaved boots, same method as ddi1 (5 min with no touches, lit lock screen, minutes 2-5), 0 hangs, 4442-4455 mV. a55 / gpu / ddr C: `sweethwcg=1` 56.9 / 57.1 / 56.1 and 56.1 / 56.2 / 55.0; off 58.8 / 60.3 / 58.2 and 58.2 / 59.9 / 57.9. Means: on 56.5 / 56.7 / 55.6, off 58.5 / 60.1 / 58.1: 2.0, 3.4, 2.5 C cooler, about what the lowest GPU clock gave in ddi1 and with no loss of clock. Runs swing about 3 C inside themselves; ambient not read. The difference also shows gating is on at boot, which the log can't: no `hwcg on` line before the log starts.
+- With hw2's 5 boots and hw1's 3: no speed gain or loss shown (Settings low boots hit all sides), G1 0 in 8 boots on this side, 0-2 C at peak. Goes into the next soak, not tonight's (already set up on kernel139). Default if that's clean, with `sweethwcg=0` as the off switch.
+
 ### 2026-11-01 18:45 hw1: clock gating runs clean; Settings 56.9 and steady, heat not shown yet
 - kernel144 (xnu 0262, 0263), `sweethwcg=1`, base args, everyday env. Injected hang (`sweethangtest=0xC0000040`, boot 20261101-181401): `recover2 done` after 35.8 ms, `gbif halt ack 3 ok`, `hwcg on clock_cntl 8aa8aa82 (was 0)`, UI back. Boot-time line is in no log, since the live log starts at 21.5 s, before GPU init: on at boot is inferred from the call in `gpu_cp_init`, not seen. `core` still reads 648-650 MHz with gating on.
 - `SWIPE_MS=3000 tools/sunfish-perfab.sh hw1, hw1c, hw1d`, off 4 boots, on 3 (first call cut off by a timeout, so not 3 and 3), about 69 k submits, G1 0, G2 0, G4 0, 0 void. Off / on: Home 52.3 (50.2-53.4) / 53.0 (51.4-54.2), max 81-88 / 82-89 C; Control Center 38.7 / 38.4, max 86-93 / 89-92 C; Settings 50.0 (43.5-55.0) / 56.9 (56.5-57.4), p95 32.4 / 20.0, max 83-90 / 83-86 C. The off side is noisy and cp1 got 57.0 without gating, so this isn't shown to be gating: 5-boot A/B next.

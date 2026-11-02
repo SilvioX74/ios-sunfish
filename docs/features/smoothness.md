@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 20:45 ph1: pass hash: nothing repeats, so pass reuse is parked
+- kernel139, bundle work/metal2-passhash (bridge 0121, 0122), `SWEET_PASSHASH=1`, 1 boot, `SWIPE_MS=3000`, 0 void: Control Center 38.1, Home 53.0, Settings 54.5 swaps/s with hashing on. research/notes/ph1-passhash.txt; screens split by line order and pass rate, so an estimate: only 3 windows for Control Center.
+- 1125x2436: Control Center 32-99 draws: 229 passes, same-as-prev 0, same-last8 0, same-content-last8 0, same-without-buffers 6; loads 221; first-diff pso 94, state 108, buffer contents 23, counts 4; hash 237 us, 29 KB. No 100+ class there, though cc3's trace counts 133-144 draws: the two count differently, not understood. Home 32-99: 1055 passes, same-as-prev 0, same-content-last8 2. Settings 100+: 1230 passes, same-as-prev 0, same-content-last8 4.
+- Limits: there's no frame signal, so "previous" means the previous pass of that size and draw class, and first-diff compares different passes in a frame (hence pso and state); same-last8 covers that and is still 0. Ring-buffer ranges could cause false misses. So the 10-15 ms guess in cc3 has no support; a full-pass reuse is parked. Only a per-draw prefix compare could say more, and it's not worth doing while Control Center's frames can't be matched to a pass.
+
 ### 2026-11-01 20:10 Low Settings runs are real: the app misses ticks (read-only)
 - 48 windows at `SWIPE_MS=3000` in hw2, hw1, hw1c, gd2, cp1, mf4: 8 below 50 swaps/s, 5 at 50-54, 35 at 54+: a continuum. Tick stays 60.1/s. 2-tick intervals: 37-42 % at 42-43.5 swaps/s, 22-26 % at 47-49, 4-6 % normally. No stalls (0-1 gaps over 100 ms either way), through the whole window, and already low in the swipes before it. Up and down the same.
 - Not the list or swipes: 9 low and 9 normal screenshots follow the same positions, none at the end of the list; swipe cycles and swap counts per swipe alike (swipes are seen only at kernel injection). Not backboardd: it submits nothing on a skipped tick, tick-to-submit and GPU end are the same, render CPU per swap the same. Not boot leftovers: uptimes overlap, and a line-by-line log diff found nothing that replicates. Home and Control Center run first in the same boots and look normal.
