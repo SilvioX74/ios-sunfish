@@ -23,6 +23,9 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 23:27 Correction: kernel150 and kernel151 lack their newest patch
+- tools/vm-build-xnu.sh builds from xnu/patches, not work/src/xnu, and both were built before their patch was exported. By string count: kernel150 has no `sweetwdtcrumb`; kernel151 has it but no `sweetsmmutcr`. So sm3a's `sweetsmmutcr=3` tested nothing (0 `smmu: tcr` lines). lb0-lb3 on kernel150 stand: they need neither. Kernel152 has both. Export first, then build.
+
 ### 2026-11-01 23:01 CX refusal, read-only: no reference forces it down; stock SMMU attributes to test
 - gdscr f8222001: bit 0 collapse request accepted, PWR_ON still 1, HW_CONTROL and SW_OVERRIDE 0; hw ctrl 88809fe0 on, 5ff4 off. Linux only logs `cx gdsc didn't collapse` (a6xx_gpu.c:1627) and carries on; no source here forces it. Guess: waits on a bus-idle handshake from GBIF or SMMU to the NoC (a6xx_gmu.c:564-567, Qactive, not gated for A618). Notes in research/notes/g1-sources.
 - SMMU +0x6000 differs: all 4 G1 read 2270, the 3 non-G1 2378, 2378, 2370; bit 8 meaning unknown. Correction to the 17:45 entry: `+1554` going 0 isn't G1 only, G4 at 461.251 reads 0 with ack 3. HUPCF is out as a cause: G1 has fsr 0, far 0 (n6's far is stale from G4).
