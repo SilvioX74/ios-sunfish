@@ -259,11 +259,12 @@ home_swipes() {
 		C swipe 150 1200 900 1200 400; sleep 0.45
 	done
 }
-# Down then up in the left margin, off the sliders (brightness!). The up swipe can dismiss Control Center: so reopen each round.
+# Each round: a slow pull from the top-right edge opens Control Center, an up drag in the left margin (off the sliders,
+# brightness!) closes it. No swipe starts mid-screen on Home: before 2026-11-02 a down drag at x 30 opened Spotlight
+# whenever a reopen missed, and the rest of the window measured Spotlight (ata5, -9 swaps/s; smoothness.md cc2).
 cc_swipes() {
 	while more "$1"; do
-		C swipe 1000 5 1000 900 300; sleep 0.35
-		C swipe 30 1100 30 1900 800; sleep 0.85
+		C swipe 1000 5 1000 1500 800; sleep 0.85
 		C swipe 30 1900 30 1100 800; sleep 0.85
 	done
 }
