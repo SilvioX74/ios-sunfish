@@ -17,6 +17,7 @@
 #   mgq      KEY...: MobileGestalt answers                    autobright [0|1]: Auto-Brightness (CoreBrightness)
 #   proxon   MODE [SECONDS]: proximity detection via backboardd (1 on, 0 off), prints active + near/far
 #   shot     [OUT.png]: render-server screenshot (default /var/local/shot.png; tools/sunfish-shot.sh)
+#   catrace  [-t] SECONDS [OUT.bin]: Core Animation kdebug points (0x31ca) + thread map; tools/catrace-dump.py
 #   fpfix.dylib  fileproviderd hook (DYLD_INSERT_LIBRARIES): FP library on HFSX (tools/sunfish-install-fpfix.sh)
 #   fpdump   [--enable ID]: FileProvider domains + flags as Files sees them; --enable sets enabled, unhides
 #   expt, exq, runmigrator: one-off probes of ExtensionFoundation and DataMigration (runmigrator needs
@@ -35,7 +36,7 @@ build() {	# NAME SOURCE [FLAGS...]
 		../../tools/linux-ios-sign "out/$name"
 	fi
 }
-for c in membw pstack psx vcopy sctl sysq fcopy oslog; do build $c $c.c; done
+for c in membw pstack psx vcopy sctl sysq fcopy oslog catrace; do build $c $c.c; done
 for m in expt exq fpdump nettest openapp oslogls prefs proxon runmigrator; do build $m $m.m -fobjc-arc -framework Foundation; done
 build imgtest imgtest.m -fobjc-arc -framework Foundation -framework ImageIO -framework CoreGraphics
 build lsreg lsreg.m -fobjc-arc -framework Foundation -framework MobileCoreServices
