@@ -30,7 +30,8 @@ function newboot() {
 trap 'kill $! 2>/dev/null' EXIT
 while true; do
 	ifname=$(ip -o link | grep -i "$mac" | awk -F': ' '{print $2}' | cut -d@ -f1)
-	if [ -n "$ifname" ] && ! ip -br addr show "$ifname" | grep -q 192.168.7.1/; then
+	# The address can survive while the link is set down (seen 2026-11-02 05:09: no SSH, iOS alive): check both.
+	if [ -n "$ifname" ] && { ! ip -br addr show "$ifname" | grep -q 192.168.7.1/ || ! ip link show "$ifname" | grep -q "<[^>]*,UP"; }; then
 		nmcli dev set "$ifname" managed no 2>/dev/null || true
 		sudo ip addr replace 192.168.7.1/24 dev "$ifname"
 		sudo ip link set "$ifname" up

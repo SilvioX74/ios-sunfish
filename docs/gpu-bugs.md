@@ -34,6 +34,10 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | csr3 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 2 | 6 k | 0 | 0 | 0 | 2 |
+| 2026-11-02 | csr2 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 19 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | csr1 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 13 k | 0 | 0 | 0 | 2 |
+| 2026-11-02 | csa | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 2 | 6 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | rl4 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_CTL=/var/local/turnip/ctl.txt | 1 | 21 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | rl3 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_CTL=/var/local/turnip/ctl.txt | 1 | 22 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | rl2 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_CTL=/var/local/turnip/ctl.txt | 1 | 21 k | 0 | 0 | 0 | 0 |

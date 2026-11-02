@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 05:24 cs: TU_FETCH_GMEM_MIN_DRAWS on Control Center: about +1 swap/s, not enough boots; stopped on a lost USB link
+- `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh`, kernel154, metal2-next, cc,home. Control Center swaps/s (p95): default 39.6 (44.7), 40.3 (44.5), 39.0 (45.9); `TU_FETCH_GMEM_MIN_DRAWS=5` 40.5 (41.7), 40.4 (43.9); `=20` 41.2 (40.8), one void (0 swaps, cause not read). Home 53.2-53.5 all. First submit about 1 ms lower with the env. Too few boots for the stop rule; screenshots not read. Far from 45 either way.
+- Stopped at csr3 d5: no SSH for 15 min while iOS ran (lock screen on the webcam): the host's usb0 interface had its address but was set down, and the listener only checked the address. Brought up by hand; listener fixed to check the link state too (applies when it restarts).
+
 ### 2026-11-02 04:48 Correction to rl: "handlers done -> swap" restates the skipped ticks; CA's render gate (read-only)
 - tools/sunfish-timeline.py:81-94 pairs each swap with the last command buffer whose handlers finished before it: the previous frame's. So that stage is "wait for the tick plus the next render": low launches' p95 24-25 ms is a good p50 (7-8 ms) plus one tick. It doesn't locate the skip.
 - Read in QuartzCore (research/re/QuartzCore.s): each tick runs vsync_callback, which renders only if tick + period >= the next-update time (server+0x2b0; 0x1882ba354-3a4); a client commit sets next-update = t + period x (N - 0.25) (0x1882cf960-9ec, 0x188501014). SwapEnd doesn't wait for the GPU. From the TL lines: swap 11.9-14.0 ms after the tick, the same in low and good launches; tick interval p1/p99 15.7/17.6 ms, mean 16666.95 us, in every launch: our tick is reported as the wake time (SweetFramebuffer.cpp:494), about +-1 ms of jitter.
