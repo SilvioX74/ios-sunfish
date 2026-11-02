@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 19:45 dl3: real Control Center caught only at its rare 105-draw open frames; steady frames are under 100 draws (read-only)
+- kernel158 everyday + SWEET_CULL=3, fixed cc motion, webcam: Control Center open; SWEET_DRAWLOG_MIN=100 logged 3 passes of 105 draws, seconds apart (Clock icon hands move between them): Home draws 0-91, then a blended (not opaque) 284x611 blur `PBGRABsovXm_TimgA2Xhf_IsrcCcl` (draw 93) and 3 small modules. Under a blended blur Home is live, so cull 3 correctly keeps it. DF3's 790-947 draws/s at 43.8 swaps/s means ~20 draws culled in each steady frame, which has fewer than 100 draws.
+- The drawlog records draws before the cull (DrawLog::draw at encode, :1400/:1421; cullReplay at endEncoding :1290).
+- Found on the way: draws 9-12 and 27 (S1 wallpaper draws) have colour mask 0 in passes without depth/stencil: they write nothing (~2.65 Mpx per pass in every pass that draws Home). A skip rule behind an env is being written (SWEET_CULL_MASK0). Next: capture the steady frame (MIN=30, SKIP~40, COUNT=8).
+
 ### 2026-11-02 19:10 cv: cover cull SWEET_CULL=3: Control Center 41.9 -> 43.8 swaps/s in 5 of 5 pairs, picture clean; default now
 - Bundle metal2-next 6826fcb (cull 3), kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20 + SWEET_SURF_FLUSH=1, fixed cc motion (cc2), 5 boots a side alternating, `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh TAG 1 --screens cc,home,settings`, 4453-4454 mV, 0 G1/G2/G4, 0 caps, 0 void. Webcam: the new cc motion opens and closes Control Center, no Spotlight.
 - Control Center def 41.70, 41.87, 41.64, 42.30, 42.21 (p95 mean 39.9) / c3 43.50, 43.75, 43.72, 43.80, 44.10 (p95 34.5): +1.83, ranges don't overlap. Home 52.55 / 53.36 (+0.8, noise), Settings 56.99 / 56.88. Max C 78.3 / 77.7.
