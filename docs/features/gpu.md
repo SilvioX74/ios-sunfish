@@ -1,5 +1,5 @@
 # GPU
-**State:** 🟡 Adreno 618 at 565 MHz; injected and SMMU-fault hangs recover (~28 ms); real no-fault hangs don't (0 of 8; reboot needed). **Updated:** 2026-10-31.
+**State:** 🟡 Adreno 618 at 650 MHz; injected and SMMU-fault hangs recover (~37 ms); real no-fault hangs (G1) don't, but none in the first full 1 h soak with stock SMMU walks (n7, 397 k submits, one soak). **Updated:** 2026-11-02.
 
 ## How to use
 - Default clock 565 MHz (`sweetgpufreq=5`); 430 MHz = `sweetgpufreq=4`; stock levels 650/800/825 = `sweetgpufreq=6..8` (xnu 0148).
@@ -22,6 +22,12 @@
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-02 00:51 n7: first full clean soak: 397 k submits, 0 G1 with stock SMMU walks
+- Soak n7, kernel152, base args + `sweetcxcycle=1 sweetwdtcrumb=1 sweetsmmutcr=3`, luma boost off, boot 20261101-235007, 23:50:57-00:51:05: 3608 s, 397 k submits, G1 0, G2 0, G4 1 (2564 s, fsr 40000002, recovered), 1 backboardd restart, no silent reset, no CX cycle.
+- At the old rate (about 1 G1 per 100 k: n4 31 k, n6 76 k, n5 reset at 61 k) about 4 G1 were expected; P(0) about 2 %. One soak, so not proof, and two changes went in together (TCR and ACTLR), plus lower GPU load from luma boost off. Not split: `sweetsmmutcr=1`, `2` only if G1 comes back.
+- Default now (xnu 0271, kernel153): `sweetsmmutcr=3`, `sweethwcg=1`, `sweetgpufreq=6`. `sweetsmmutcr=0` on the boot line turns it off. `sweetcxcycle` stays off: it failed the one real G1 (n6) and nothing else uses it.
+- The silent reset (n1, n5) didn't happen in this hour; pet crumb had nothing to catch.
 
 ### 2026-11-01 23:50 tm: sweetsmmutcr=3 applied, no speed cost; soak n7 next
 - `SWIPE_MS=3000 SETTLE=60 tools/sunfish-perfab.sh`, kernel152, 3 boots a side, settings,home, luma boost off, 5 nits, 0 hangs, 0 void. Settings swaps/s, p95 tcr 57.0, 19.5 / 56.4, 20.3 / 43.8, 34.0 (42 % busy, the known low run); off 56.4, 20.4 / 52.8, 32.9 / 55.1, 30.1. Home tcr 54.3, 54.4, 54.8 (32 ms); off 52.7, 53.0, 52.4 (33 ms). Max C about 84 on both.

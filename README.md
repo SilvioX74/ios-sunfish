@@ -35,7 +35,7 @@ plan is [docs/plan.md](docs/plan.md).
 | [Smoothness](docs/features/smoothness.md) | 🟡 | Safari 60, Settings 57 (p95 20 ms), Home about 52, Control Center 36 swaps/s, full resolution, luma boost off (fixes low brightness), env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1 + tools/sunfish-install-ccscale.sh (2026-11-01, kernel139, not default yet); target 60 |
 | [Haptics](docs/features/haptics.md) | ✅ | iOS haptics work: switch taps pulse the motor (DRV2624 via hapticd, launchd job, `HAPTICS=1` boot); feel check by the user open |
 | [Brightness](docs/features/brightness.md) | ✅ | Control Center slider drives the panel brightness (DCS 0x51, `sweetbl=2`) |
-| [GPU](docs/features/gpu.md) | 🟡 | Adreno 618 at 565 MHz; SMMU-fault hangs recover (~28 ms); no-fault hangs need a reboot (0 of 8 recovered, kernel134) |
+| [GPU](docs/features/gpu.md) | 🟡 | Adreno 618 at 650 MHz; SMMU-fault hangs recover (~37 ms); no-fault hangs still need a reboot but none in the first full 1 h soak (397 k submits, stock SMMU walks, 2026-11-02) |
 | [GPU memory](docs/features/gpu-memory.md) | ✅ | leak fixed (spare command pools capped): pool flat over a 20 min app soak |
 | [Metal](docs/features/metal.md) | ✅ | Metal via SweetMetal2 (metal2vulkan + Turnip) |
 | [Touch](docs/features/touch.md) | ✅ | ST FTM5 over I²C |
