@@ -36,7 +36,7 @@ G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `
 Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted ev158 (kernel158 everyday setup).
 
 ## Next (in this order)
-1. adspboot idle poll: idle2 doubled its CPU (id2), reverted on the phone; implementer diagnosing with a per-60 s sleep-share log line. Then rebuild and repeat the idle A/B.
+1. Heat, idle with the screen on: adspboot parked (O18: per-pass work, not poll rate); Clock icon's 10 fps full-screen redraw (O17). Next: tonight's soak n8 on kernel158; meanwhile Control Center (Priority 2).
 2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel158 + `sweetwdtcrumb=1`).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)

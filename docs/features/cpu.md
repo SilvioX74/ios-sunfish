@@ -15,6 +15,11 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 15:20 idN3: adspboot's CPU is per-pass work, not the poll rate: idle-poll change reverted, parked (O18)
+- adspboot id3 in its idle mode, kernel158 everyday, boot 12:58:56, log fetched in time (work/heat/idN3-sensors.log). Its 60 s lines after setup: 641-711 passes, 10 ms sleeps 100 %, cpu 4173-4604 ms. Fast poll (F2): 1136-1244 passes at 2 ms, 3495-3810 ms. So a pass takes 50-90 ms of wall time and 3-6 ms of CPU whatever the sleep: the cost is inside the pass (blocking reads or per-pass work), not the loop rate. Sleeping longer only moved the same work into fewer, longer passes.
+- Sensors start on the third try (`sns: motion: 0 sensors`, again in 10 s, twice, then `8 sensors`); accel, ALS and pressure stream, gyro and compass off at idle.
+- Original binary restored on the phone (/var/local/bin/adspboot.id3 kept), flag removed; source changes reverted (5c59813, fbece50). Backlog O18: profile adspboot's pass (pstack) to find the 3-6 ms; worth ~3-4 % of a core screen on.
+
 ### 2026-11-02 15:00 id3: same-binary fast/slow poll A/B mostly lost; fast poll costs 3.7 s CPU per minute; motion sensors weren't streaming
 - adspboot id3 (fbece50), kernel158 everyday, 4 boots N1 F1 N2 F2 (F = /var/local/adspboot.fastpoll), 300 s windows. sensors.log is rewritten every boot and was fetched only at the end: N1, F1, N2 stats lost. N2 and F2 windows weren't at Home (Settings open / lock screen), so only N1-F1 and N2-F2 pair up.
 - psx adspboot CPU s: N1 22.9, F1 23.4, N2 17.8, F2 18.6 (side means 20.4 / 21.0): no difference. a55 mean 55.6 / 54.6 / 53.0 / 52.8 C.
