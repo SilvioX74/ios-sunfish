@@ -1,0 +1,284 @@
+From 318795a5ebc506f098fbe0b793490ce0635b1b72 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 20:14:16 -0500
+Subject: [PATCH] sunfish: frontmost app's main thread prefers A76, sweetfgbig,
+ per-cluster CPU in the log, off by default
+
+---
+ bsd/dev/sweet_thermal.c  |   2 +
+ osfmk/kern/sched_prim.c  | 180 ++++++++++++++++++++++++++++++++++++++-
+ osfmk/kern/task_policy.c |   4 +
+ osfmk/kern/thread.h      |   1 +
+ 4 files changed, 183 insertions(+), 4 deletions(-)
+
+diff --git a/bsd/dev/sweet_thermal.c b/bsd/dev/sweet_thermal.c
+index f67adae..7c5d126 100644
+--- a/bsd/dev/sweet_thermal.c
++++ b/bsd/dev/sweet_thermal.c
+@@ -35,6 +35,7 @@ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
+ extern void thread_deallocate(thread_t);
+ extern void sweet_cpufreq_log(void);
++extern void sweet_fgbig_log(void);      /* 0265: osfmk/kern/sched_prim.c */
+ extern void sweet_cpufreq_cap(int dir, const char *temp);
+ void sweet_thermal_start(void);
+ 
+@@ -218,6 +219,7 @@ ts_thread(void *arg __unused, wait_result_t wr __unused)
+ 		}
+ 		if (log) {
+ 			sweet_cpufreq_log();
++			sweet_fgbig_log();      /* 0265 */
+ 			since_log = TS_LOG_MS;
+ 		}
+ 	}
+diff --git a/osfmk/kern/sched_prim.c b/osfmk/kern/sched_prim.c
+index 7166253..cbb6f42 100644
+--- a/osfmk/kern/sched_prim.c
++++ b/osfmk/kern/sched_prim.c
+@@ -3564,6 +3564,15 @@ thread_dispatch(
+ #endif /* defined(CONFIG_SCHED_MULTIQ) */
+ 			}
+ 
++#if defined(__arm64__)
++			{
++				extern int sweet_fgbig_stats;
++				extern void sweet_fgbig_account(thread_t, processor_t);
++				if (__improbable(sweet_fgbig_stats)) {
++					sweet_fgbig_account(thread, processor);    /* 0265 */
++				}
++			}
++#endif
+ 			thread->computation_metered += (processor->last_dispatch - thread->computation_epoch);
+ 
+ 			if (!(thread->state & TH_WAIT)) {
+@@ -5068,6 +5077,143 @@ sweet_ui_mode(void)
+ 	return sweet_ui_bigcore;
+ }
+ 
++/*
++ * sunfish 0265: boot-arg sweetfgbig, 0 off (default). 1: the first thread of a foreground app (effective role
++ * TASK_FOREGROUND_APPLICATION, apptype APP_DEFAULT) prefers the A76s; 2: also its threads named com.apple.coreanimation.*
++ * or com.apple.uikit.*. The role is read at each placement in choose_processor, so a background app stops at once. Same
++ * soft rule as 0238: an idle A76, else preempt a lower priority one (only at BASEPRI_FOREGROUND and up: below it
++ * processor_setrun may not send the IPI), else the normal choice. No cluster bind: !__AMP__, thread_bind_cluster_type
++ * is a no-op here. With sweetfgbig != 0 or sweetcpusample=1, thread_dispatch also counts the main thread's time per core
++ * type. Lines every 5 s (bsd/dev/sweet_thermal.c): SWEET SCHED: fg ... / SWEET SCHED: fgbig ...
++ */
++#define SWEET_FG_SLOTS          4               /* foreground tasks counted per window */
++#define SWEET_FG_NAME           17              /* p_comm, with the NUL */
++int sweet_fgbig = -1;                   /* -1 = boot-arg not parsed yet; treated as 0 */
++int sweet_fgbig_stats;
++static uint32_t sweet_fgbig_binds, sweet_fgbig_unbinds, sweet_fgbig_tagged;
++static uint32_t sweet_fgbig_idle_n, sweet_fgbig_preempt_n, sweet_fgbig_fallback_n;
++static char sweet_fgbig_name[SWEET_FG_NAME] = "none";
++static struct {
++	task_t task;                    /* compared only, never dereferenced */
++	uint64_t abs[2];                /* A55, A76 */
++	char name[SWEET_FG_NAME];
++} sweet_fg_st[SWEET_FG_SLOTS];
++
++/* thread context only (bsd_setthreadname, the 5 s log) */
++int sweet_fgbig_mode(void);
++int
++sweet_fgbig_mode(void)
++{
++	if (__improbable(sweet_fgbig < 0)) {
++		int v = 0, s = 0;
++		PE_parse_boot_argn("sweetfgbig", &v, sizeof(v));
++		PE_parse_boot_argn("sweetcpusample", &s, sizeof(s));
++		sweet_fgbig_stats = v == 1 || v == 2 || s == 1;
++		sweet_fgbig = (v == 1 || v == 2) ? v : 0;
++	}
++	return sweet_fgbig;
++}
++
++static inline bool
++sweet_fgbig_is_fg(task_t task)
++{
++	return task->effective_policy.tep_role == TASK_FOREGROUND_APPLICATION &&
++	       task->requested_policy.trp_apptype == TASK_APPTYPE_APP_DEFAULT;
++}
++
++/* pset and thread locked: plain reads, the list head is compared only */
++static bool
++sweet_fgbig_wants(thread_t thread, int mode)
++{
++	task_t task = get_threadtask(thread);
++	return sweet_fgbig_is_fg(task) && ((thread_t)queue_first(&task->threads) == thread ||
++	       (mode == 2 && (thread->sched_flags & TH_SFLAG_SWEET_FG_CA)));
++}
++
++/* task_policy_update_internal_locked, task locked: counts role changes for the log */
++void sweet_fgbig_role(task_t task, int prev, int next);
++void
++sweet_fgbig_role(task_t task, int prev, int next)
++{
++	void *p = get_bsdtask_info(task);
++	if (os_atomic_load(&sweet_fgbig, relaxed) <= 0 || p == NULL ||
++	    task->requested_policy.trp_apptype != TASK_APPTYPE_APP_DEFAULT) {
++		return;
++	}
++	char *name = proc_name_address(p);
++	if (next == TASK_FOREGROUND_APPLICATION) {
++		os_atomic_inc(&sweet_fgbig_binds, relaxed);
++		strlcpy(sweet_fgbig_name, name, sizeof(sweet_fgbig_name));
++	} else if (prev == TASK_FOREGROUND_APPLICATION) {
++		os_atomic_inc(&sweet_fgbig_unbinds, relaxed);
++		if (strncmp(sweet_fgbig_name, name, SWEET_FG_NAME - 1) == 0) {
++			strlcpy(sweet_fgbig_name, "none", sizeof(sweet_fgbig_name));
++		}
++	}
++}
++
++/* thread_dispatch, the thread going off core (interrupts off): atomics only, no printf */
++void sweet_fgbig_account(thread_t thread, processor_t processor);
++void
++sweet_fgbig_account(thread_t thread, processor_t processor)
++{
++	task_t task = get_threadtask(thread);
++	if (!sweet_fgbig_is_fg(task) || (thread_t)queue_first(&task->threads) != thread ||
++	    processor->last_dispatch <= thread->computation_epoch) {
++		return;
++	}
++	for (int i = 0; i < SWEET_FG_SLOTS; i++) {
++		task_t cur = os_atomic_load(&sweet_fg_st[i].task, relaxed);
++		if (cur == TASK_NULL && os_atomic_cmpxchg(&sweet_fg_st[i].task, TASK_NULL, task, relaxed)) {
++			void *p = get_bsdtask_info(task);
++			strlcpy(sweet_fg_st[i].name, p ? proc_name_address(p) : "?", sizeof(sweet_fg_st[i].name));
++			cur = task;
++		}
++		if (cur == task) {
++			os_atomic_add(&sweet_fg_st[i].abs[processor->cpu_id >= 6 ? 1 : 0],
++			    processor->last_dispatch - thread->computation_epoch, relaxed);
++			return;
++		}
++	}
++}
++
++/* the 5 s thread in bsd/dev/sweet_thermal.c; thread context, no locks */
++void sweet_fgbig_log(void);
++void
++sweet_fgbig_log(void)
++{
++	static uint32_t binds_prev, unbinds_prev;
++	int mode = sweet_fgbig_mode();
++	if (!sweet_fgbig_stats) {
++		return;
++	}
++	for (int i = 0; i < SWEET_FG_SLOTS; i++) {
++		uint64_t a55, a76;
++		absolutetime_to_nanoseconds(os_atomic_xchg(&sweet_fg_st[i].abs[0], 0, relaxed), &a55);
++		absolutetime_to_nanoseconds(os_atomic_xchg(&sweet_fg_st[i].abs[1], 0, relaxed), &a76);
++		a55 /= NSEC_PER_MSEC;
++		a76 /= NSEC_PER_MSEC;
++		if (a55 + a76 != 0) {
++			printf("SWEET SCHED: fg %.16s main cpu %u ms a55 %u a76 %u\n", sweet_fg_st[i].name,
++			    (uint32_t)(a55 + a76), (uint32_t)a55, (uint32_t)a76);
++		} else {
++			os_atomic_store(&sweet_fg_st[i].task, TASK_NULL, relaxed);      /* quiet for a window: slot free */
++		}
++	}
++	if (mode == 0) {
++		return;
++	}
++	uint32_t binds = os_atomic_load(&sweet_fgbig_binds, relaxed), unbinds = os_atomic_load(&sweet_fgbig_unbinds, relaxed);
++	uint32_t pi = os_atomic_xchg(&sweet_fgbig_idle_n, 0, relaxed), pp = os_atomic_xchg(&sweet_fgbig_preempt_n, 0, relaxed);
++	uint32_t pf = os_atomic_xchg(&sweet_fgbig_fallback_n, 0, relaxed);
++	if (binds != binds_prev || unbinds != unbinds_prev || pi + pp + pf != 0) {
++		printf("SWEET SCHED: fgbig binds %u unbinds %u task %.16s placed idle %u preempt %u fallback %u\n", binds, unbinds,
++		    sweet_fgbig_name, pi, pp, pf);
++	}
++	binds_prev = binds;
++	unbinds_prev = unbinds;
++}
++
+ void sweet_ui_thread_named(void *uth, const char *name);
+ void
+ sweet_ui_thread_named(void *uth, const char *name)
+@@ -5078,6 +5224,18 @@ sweet_ui_thread_named(void *uth, const char *name)
+ 		return;
+ 	}
+ 	(void)sweet_ui_mode();  /* 0238 v2: parse the boot-arg here, before any thread is tagged */
++	/* 0265: sweetfgbig=2; the tag alone does nothing, choose_processor also needs the foreground role */
++	if (__improbable(sweet_fgbig_mode() == 2) && (strncasecmp(name, "com.apple.coreanimation.", 24) == 0 ||
++	    strncasecmp(name, "com.apple.uikit.", 16) == 0)) {
++		spl_t fs = splsched();
++		thread_lock(th);
++		th->sched_flags |= TH_SFLAG_SWEET_FG_CA;
++		thread_unlock(th);
++		splx(fs);
++		if (os_atomic_inc(&sweet_fgbig_tagged, relaxed) <= 16) {
++			printf("SWEET SCHED: fgbig tagged thread %llu %s\n", thread_tid(th), name);
++		}
++	}
+ 	if (strncmp(name, "com.apple.coreanimation.display", 31) == 0) {
+ 		f = TH_SFLAG_SWEET_UI_DISPLAY;
+ 	} else if (strncmp(name, "com.apple.coreanimation.render-server", 37) == 0) {
+@@ -5246,7 +5404,10 @@ choose_processor(
+ 		/* 0238 (redfin 1041): a tagged CA thread takes an idle big core, else preempts a lower-priority one */
+ 		int ui = ((thread->sched_flags & TH_SFLAG_SWEET_UI_DISPLAY) ? 1 : 0) | ((thread->sched_flags & TH_SFLAG_SWEET_UI_RS) ? 2 : 0);
+ 		int uimode = os_atomic_load(&sweet_ui_bigcore, relaxed);   /* 0238 v2: no boot-arg parse here; -1 = 0 */
+-		if (__improbable(ui != 0) && uimode > 0 && (ui & uimode)) {
++		/* 0265: sweetfgbig, the same choice for the foreground app's main thread; its own counters */
++		int fgmode = os_atomic_load(&sweet_fgbig, relaxed);
++		bool fg = __improbable(fgmode > 0) && ui == 0 && sweet_fgbig_wants(thread, fgmode);
++		if (fg || (__improbable(ui != 0) && uimode > 0 && (ui & uimode))) {
+ 			processor_t idle = PROCESSOR_NULL, low = PROCESSOR_NULL;
+ 			for (int i = 7; i >= 6; i--) {          /* SWEET_UI_BIG_MASK: CPU7 first, as 0147 */
+ 				processor_t bp = processor_array[i];
+@@ -5265,11 +5426,22 @@ choose_processor(
+ 			}
+ 			if (idle != PROCESSOR_NULL) {
+ 				processor = idle;       /* an idle hint is taken as is below */
+-				sweet_ui_count(thread, idle, 0);
+-			} else if (low != PROCESSOR_NULL && thread->sched_pri < BASEPRI_RTQUEUES) {
++				if (fg) {
++					os_atomic_inc(&sweet_fgbig_idle_n, relaxed);
++				} else {
++					sweet_ui_count(thread, idle, 0);
++				}
++			} else if (low != PROCESSOR_NULL && thread->sched_pri < BASEPRI_RTQUEUES &&
++			    (!fg || thread->sched_pri >= BASEPRI_FOREGROUND)) {
+ 				/* 0238 v2: RT threads never preempt a running big core here (idle hint only) */
+-				sweet_ui_count(thread, low, 1);
++				if (fg) {
++					os_atomic_inc(&sweet_fgbig_preempt_n, relaxed);
++				} else {
++					sweet_ui_count(thread, low, 1);
++				}
+ 				return low;             /* pset locked; processor_setrun preempts it */
++			} else if (fg) {
++				os_atomic_inc(&sweet_fgbig_fallback_n, relaxed);
+ 			}
+ 			/* else the normal choice: never waits for a big core */
+ 		}
+diff --git a/osfmk/kern/task_policy.c b/osfmk/kern/task_policy.c
+index 461c0d9..56fcc61 100644
+--- a/osfmk/kern/task_policy.c
++++ b/osfmk/kern/task_policy.c
+@@ -1194,6 +1194,10 @@ task_policy_update_internal_locked(task_t task, bool in_create, task_pend_token_
+ 
+ 	/* Reflect task role transitions into the coalition role counters */
+ 	if (prev.tep_role != next.tep_role) {
++#if defined(__arm64__)
++		extern void sweet_fgbig_role(task_t, int, int);
++		sweet_fgbig_role(task, prev.tep_role, next.tep_role);   /* 0265: counters only (osfmk/kern/sched_prim.c) */
++#endif
+ 		if (task_policy_update_coalition_focal_tasks(task, prev.tep_role, next.tep_role, pend_token)) {
+ 			update_sfi = true;
+ 		}
+diff --git a/osfmk/kern/thread.h b/osfmk/kern/thread.h
+index 74ccec2..2d7e289 100644
+--- a/osfmk/kern/thread.h
++++ b/osfmk/kern/thread.h
+@@ -471,6 +471,7 @@ struct thread {
+ #define TH_SFLAG_PROMOTE_REASON_MASK    (TH_SFLAG_RW_PROMOTED | TH_SFLAG_WAITQ_PROMOTED | TH_SFLAG_EXEC_PROMOTED | TH_SFLAG_FLOOR_PROMOTED)
+ 
+ #define TH_SFLAG_RT_DISALLOWED         0x100000         /* thread wants RT but may not have joined a work interval that allows it */
++#define TH_SFLAG_SWEET_FG_CA           0x10000000       /* sunfish 0265: sweetfgbig=2, named com.apple.coreanimation.* or com.apple.uikit.* */
+ #define TH_SFLAG_SWEET_UI_RS           0x20000000       /* sunfish 0238 (redfin 1041): named com.apple.coreanimation.render-server* */
+ #define TH_SFLAG_SWEET_UI_DISPLAY      0x40000000       /* sunfish 0238 (redfin 1041): named com.apple.coreanimation.display* */
+ #define TH_SFLAG_SWEET_UI_MASK         (TH_SFLAG_SWEET_UI_RS | TH_SFLAG_SWEET_UI_DISPLAY)
+-- 
+2.56.0
+
