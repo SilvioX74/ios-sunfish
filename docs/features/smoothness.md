@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 16:45 dl4: Control Center's steady frames redraw Home offscreen every frame; no cover, nothing more to cull (read-only)
+- work/cc/drawlog-dl4.txt, 8 passes of 83 draws (research/notes/cc-draws-dl4-2026-11-02.md): fills 0-3, wallpaper 4-17 (8 clears c1, 9-12 draw into c1, 13 composites c1 onto c0), Bdso 18, icons, labels, widget (65 writes c1, 73 a backdrop), dock in one. No status bar, no blur, no module: Home rendered into an offscreen target (icons drift sub-pixel every pass: scaled and redrawn), most likely Control Center's blur source. Dirty rect 0,192 1120x2240 then 1120x1472; the Vulkan render area stays the full 1125x2436 (metal2vulkan-runtime render.rs:3905).
+- Per pass ~22.6 Mpx (~16.4 after deadfill) on a 2.5 Mpx dirty rect: fills 8.3, wallpaper 6.2, c1 offscreen 3.3, Bdso 2.1, c1 composite 1.2, icons and labels 0.7. Cull 3's ~20 draws per frame come from an unlogged pass (the final composite, under the drawlog's 30-draw / 1000x2000 limits).
+- Leads: c1 (second full-size BGRA8 attachment) load/store unknown: if Load/Store, ~22 MB per frame (guess ~1.5 ms); drawlog extension to log each attachment's load/store/storage mode and smaller passes being written. Then: render area = union of draw boxes (0.1-0.7 ms, guess); Home offscreen at reduced size (biggest, hard).
+
 ### 2026-11-02 16:35 Correction: clock times of today's later entries
 - Entries stamped 2026-11-02 13:05 to 20:50 in this Log were given estimated times that ran ahead of the clock; they were written between about 12:00 and 16:30 EST, in the order shown. Their content stands.
 
