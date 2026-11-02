@@ -135,3 +135,4 @@ output in /var/local.
 2026-11-02 14:05: adspboot idle2 made idle CPU worse (23.4 against 13.7 CPU s per 300 s): /var/local/bin/adspboot restored from adspboot.pre-idle2 (idle2 kept as adspboot.idle2); applies at the next boot.
 2026-11-02 14:30: /var/local/bin/adspboot = id3 build (fbece50) for the idle A/B; /var/local/adspboot.fastpoll toggled per boot and left in place at the end (old 2 ms poll); old binary at adspboot.pre-idle2.
 2026-11-02 15:20: adspboot id3 test over: /var/local/bin/adspboot is the original again (from adspboot.pre-idle2; id3 kept as adspboot.id3), /var/local/adspboot.fastpoll removed. Source changes reverted.
+2026-11-02 15:55: bundle work/metal2-next with Turnip 0111 (4bba3bf; SweetMetal2 4C4C44A6, libvulkan 4C4C4408) installed with tools/sunfish-metal2-install.sh --no-restart; 0111 is off unless SWEET_TU_ORDER_FETCHERS_ONLY=1.
