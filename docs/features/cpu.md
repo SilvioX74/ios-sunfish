@@ -15,6 +15,11 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 11:20 pax: Photos' steady CPU is its own layout and render, no accessibility client (read-only)
+- vt0 stacks symbolized (research/notes/photos-ax-2026-11-02.md), 51 running of 100: main thread layout from scrollViewDidScroll 18 %, PXGViewRenderer/texture streaming/MTKView draw 16 %, PXGBasicAXGroup upkeep (axContentInfoAtSpriteIndex) 8 %, UIKit touch/animation 16 %, unattributed objc/malloc 22 %; workers 18 %: PXBrowserSummaryController title requests, capitalising the date title builds a new ICU word tokenizer each time (px_firstLetterRange -> enumerateSubstringsInRange 0x403 -> NLLangid -> icu::RuleBasedTokenizer::init).
+- The AX group is PhotosUICore's normal path (PXGLayout init creates it, visibleRectDidChange invalidates it every frame; 0x1a5084b14, 0x1a5046060, 0x1a501e760); accessibility on would only add leaf features. No AX image in any of 2131 thread stacks; com.apple.Accessibility.plist (2026-10-30 audit) has ApplicationAccessibilityEnabled 0, AutomationEnabled 0.
+- No key turns these off. So Photos' heat is app work on the main thread and workers; the lever left is CPU clocks (A76 cap for the hot peaks: next, a soak A/B with sweetrowa76=10, 1939 MHz).
+
 ### 2026-11-02 11:00 vt: allowPixelTransferGraph crashes Photos; with cached thumbnails Photos' CPU is layout and accessibility, not scaling
 - Running boot mlend (kernel157 everyday, 20261102-100118). vt0 (no keys): 60 s grid scroll: 37.1 swaps/s; CPU s MobileSlideShow 46.8, mediaserverd 16.3, backboardd 60.2 (trustd 36.3 and accessoryupdater 22.3 in the same delta: boot-time work, gone at idle 10 min later); A55 busy 47.5 %, cpu6 73.2, cpu7 40.0; max cpu6 89.6 C (start 83-85, Photos had just opened); GPU busy 48.2 %. Thumbnails drawn.
 - vt0 stacks (100 samples, 51 running): 0 % vImage, 0 % Metal transfer. Running leaves: objc_msgSend, PhotosUICore PXGLayout accessibility (axContentInfoAtSpriteIndex), malloc, ICU tokenizer. So once thumbnails are cached, the vImage cost (phs, 57 % at the start of a scroll) is gone and Photos still burns ~47 CPU s/min elsewhere.
