@@ -34,6 +34,17 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | qs1e | qos=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_BRIDGE_QOS=1 | 1 | 7 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs0e | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 8 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs1d | qos=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_BRIDGE_QOS=1 | 1 | 7 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs0d | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 8 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs1c | qos=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_BRIDGE_QOS=1 | 1 | 8 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs0c | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 8 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs1b | qos=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_BRIDGE_QOS=1 | 1 | 7 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs0b | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 8 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs1a | qos=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,+SWEET_BRIDGE_QOS=1 | 1 | 8 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs0a_r | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 7 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | qs0a | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 8 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | fg1f | fg=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfgbig=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | fg0f | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | fg1e | fg=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfgbig=1 | 1 | 4 k | 0 | 0 | 0 | 0 |

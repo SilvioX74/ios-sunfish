@@ -6,7 +6,7 @@ details and history in the feature Logs (`docs/features/<name>.md`).
 ## Focus (the user, 2026-10-31)
 Make the phone fast and smooth first, stability later, and stop it running hot all the time.
 Targets (Claude's numbers, the user can change them):
-- Settings scrolling: at least 58 swaps/s with p95 at or under 20 ms, across 5 boots (good boots 56-57, 20-30 ms; about 1 in 6 boots 42-49).
+- Settings scrolling: at least 58 swaps/s with p95 at or under 20 ms, across 5 boots (qs off: 5 of 5 at 56.6-57.2, p95 median 19.6; earlier about 1 in 3 boots 42-52).
 - Control Center: at least 45 swaps/s (now 38.7).
 - Soak: no UI restarts in 30 min of hard scrolling (n7: 1 restart in 60 min).
 
@@ -38,8 +38,7 @@ Claude's. `work/night` set until the morning session. Everyday setup: kernel154 
 ## Next (in this order)
 1. Webcam motion check of mode 3 in the morning (st3 correction; dim screen at night). Defaults installed and checked: 2 boots, 15 min UI run clean (df, smoothness.md).
 2. Heat under load: n7 peaked 95.7 C on cpu6, 60 of 730 readings at 90 C or more, 0 caps. When and in which app, and do caps ever fire? A76 at 1939 MHz is 5 C cooler for 0.4 ms (cpu.md hot1).
-3. Bridge QoS on the fence bundle: `SWEET_BRIDGE_QOS=1`, 5-boot A/B (guess 0-0.5 ms; backlog U7). Fence poll done: default, 1.3 ms/frame off the A55s (fa, cpu.md).
-4. ▶ Low Settings runs (about 1 in 3): not idle, not A55 (fg1); fixed per launch, backboardd's GPU end -> swap waits (p95 27 vs 14 ms). Next: relaunch Settings 4-5 times per boot, with `SWEET_CTL` stage timing (smoothness.md).
+3. ▶ Low Settings runs (about 1 in 3): not idle, not A55 (fg1); fixed per launch, backboardd's GPU end -> swap waits (p95 27 vs 14 ms). Next: relaunch Settings 4-5 times per boot, with `SWEET_CTL` stage timing (smoothness.md).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),

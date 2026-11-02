@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 04:02 qs: bridge QoS no gain, stays off; without QoS 5 of 5 Settings boots at 56.6-57.2, p95 19.4-21.1
+- `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh`, kernel154, metal2-next, 5 boots a side, settings,home, 0 hangs, 0 restarts, 0 void (qs0a redone as qs0a_r after the runner's own timeout).
+- Settings off 57.2, 56.8, 56.8, 56.8, 56.6, p95 19.4, 19.4, 20.1, 19.6, 21.1: median 56.8, p95 19.6, no low run. `SWEET_BRIDGE_QOS=1`: 57.0, 53.1, 57.0, 41.2, 51.4, p95 median 32.4: 2 low (41.2 with skip2 42 %). Home 53.7 and 52.9. The metal2vulkan threads didn't move to A76 (names not in the log). QoS stays off; whether it causes low runs isn't separable from the base rate in 5 boots.
+- Settings without QoS: p95 target met on 4 of 5 boots; swaps/s about 57 against 58 (60 Hz minus the 2-tick share, 3-4 %).
+
 ### 2026-11-02 03:22 Low Settings runs: not idle (correction to fg1's lead); fixed per launch, render thread waits (read-only)
 - 43 OK Settings runs tonight (kernels 146-154), low under 54 swaps/s: waits were 5-10 s when they happened (wait from `SWEET CMD` timestamps; COOLED only goes to perfab's stdout, line 389); 10 runs waited: 2 low, 8 good; 33 didn't: 14 low, 19 good. The worst runs had no wait (fg1e 42.6, tm3c 43.8, fg0d 45.6, df2 46.0). Idle gap to the window 0 s in all; uptime 108-143 s both. So the start temperature lead was wrong: cpu6 was less busy in low lead-ins, so cooler (guess).
 - Fixed for the launch: per-5 s swaps stay low in all three blocks (fg1e 214/217/201) and in the 5 s before; Home right after a low Settings run is normal (lb1b 54.1, tm3c 54.8). Clocks the same (A55 1497, A76 2208, lmh 0). Render thread 12.4-13.4 ms per swap in both, GPU per submit the same.
