@@ -529,6 +529,7 @@ static std::string quartzCoreCallers();
 @property(nonatomic) unsigned dfPosFmt,dfPosOff,dfPosBuf,dfStride,dfColFmt,dfColOff,dfSamples;
 @property(nonatomic) BOOL dfA2C;
 @property(nonatomic) BOOL dfNoDest;   // sweet cull 2: its fragment function's constants say it reads no destination (only set under SWEET_CULL=2)
+@property(nonatomic) BOOL m0;   // sweet mask0: writes no colour attachment, rasterizes, and is one of CA's known shader pairs (only set under SWEET_CULL_MASK0=1)
 @end
 @implementation NBRenderPipeline
 - (void)dealloc {nmb_render_pipeline_release(_handle);}
@@ -850,6 +851,12 @@ static bool cull2On() {static const bool on=[]{const char *p=getenv("SWEET_CULL"
 // the destination and write a target the cover leaves (reads are per pixel: what they read of it is overwritten too). 2's own fill loop stays off. Telemetry: "DF3" row.
 static bool cull3On() {static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&atoi(p)==3&&deadfillMode()==3;}();return on;}
 static std::atomic<uint64_t> gC3Draws,gC3Px;   // sweet cull 3: draws dropped under a cover, and their boxes' pixels
+// sweet mask0 (SWEET_CULL_MASK0=1; off: unset or 0): a draw that writes nothing is never recorded: its pipeline has write mask 0 on every colour attachment
+// and rasterization on, the pass has no depth, stencil or visibility buffer, and the pipeline is Core Animation's (label) with a vertex/fragment pair known
+// to store nothing to memory (the bridge has no reflection of shader stores, so other shaders are kept). CA's S1 (stencil) draws in its no-stencil passes,
+// about 2.65 Mpx per full-size Home pass (cc dl3). Any pass, deferred or not: a skipped draw never exists for sweet cull / deadfill. Telemetry: "M0" row.
+static bool mask0On() {static const bool on=[]{const char *p=getenv("SWEET_CULL_MASK0");return p&&atoi(p)!=0;}();return on;}
+static std::atomic<uint64_t> gM0Skipped;
 // sweet cull 2: is this "name:type:hex" among a function's constants?
 static bool dfConstIs(const std::string &t,const std::string &kv) {
  const size_t p=t.find(kv);return p!=std::string::npos&&(p==0||t[p-1]==' ')&&(p+kv.size()==t.size()||t[p+kv.size()]==' ');
@@ -897,6 +904,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
 @interface NBRenderEncoder : NBEncoder
 - (void)drawLogStart:(MTLRenderPassDescriptor *)d;
 - (bool)dfHold:(const NmbRenderPassDescriptor &)pass load:(MTLLoadAction)load;
+- (bool)m0Skip;
 @end
 @implementation NBRenderEncoder {
  std::unique_ptr<DrawLog> _dl;   // sweet drawlog: null unless this pass is a big one and SWEET_DRAWLOG is set
@@ -912,7 +920,9 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  BOOL _cvRect;long _cvr[4];   // sweet cull 2: from coversPrim to recDraw: the pixels surely covered
  BOOL _dfOn,_dfDss,_dfPending,_cullPass;NBBuffer *_dfVb[8];NSUInteger _dfVbOff[8];std::vector<uint8_t> _dfVbytes[8];
  NmbRenderPassDescriptor _dfPass;unsigned _dfAttached;
+ BOOL _m0Pass;NBRenderPipeline *_m0Pipe;   // sweet mask0: the pass has no depth/stencil/visibility; the pipeline set last
 }
+- (bool)m0Skip {if(!_m0Pass||!_m0Pipe.m0)return false;gM0Skipped++;return true;}   // sweet mask0
 - (void)rec:(void (^)(void))b {CullEntry e;e.blk=[b copy];_ops.push_back(e);}
 - (void)clip:(long *)c {   // sweet cull: scissor within the target
  c[0]=0;c[1]=0;c[2]=(long)_tw;c[3]=(long)_th;
@@ -1253,6 +1263,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  [self rec:^{[super fence:fence stages:stages update:update];}];
 }
 - (void)drawLogStart:(MTLRenderPassDescriptor *)d {
+ _m0Pass=mask0On()&&!d.depthAttachment.texture&&!d.stencilAttachment.texture&&!d.visibilityResultBuffer;   // sweet mask0
  if(deadfillMode()) {   // sweet deadfill: the composited frame's passes are deferred (and tracked) too
   id<MTLTexture> t=d.colorAttachments[0].texture;const MTLPixelFormat pf=t?t.pixelFormat:MTLPixelFormatInvalid;
   if(t&&(pf==MTLPixelFormatBGRA8Unorm||pf==MTLPixelFormatRGBA8Unorm)&&t.sampleCount<=1&&t.textureType==MTLTextureType2D&&
@@ -1293,6 +1304,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
 }
 - (void)setRenderPipelineState:(id<MTLRenderPipelineState>)state {
  if(![(id)state isKindOfClass:[NBRenderPipeline class]]){[self.commandBuffer refuse:@"foreign render pipeline"];return;}
+ if(_m0Pass)_m0Pipe=(NBRenderPipeline *)state;   // sweet mask0
  if(_dl){NBRenderPipeline *p=(NBRenderPipeline *)state;   // sweet drawlog
   _dl->pipeline=(p.label.length?p.label.UTF8String:"-");_dl->pipeline+=" v="+p.vertexName+" f="+p.fragmentName+p.dlState;_dl->blend=p.blend;_dl->mask=p.writeMask;}
  if(_defer){NBRenderPipeline *pp=(NBRenderPipeline *)state;_pipe=pp;[self rec:^{[self check:nmb_render_set_pipeline(self.handle,[pp handle]) what:"setRenderPipelineState"];}];return;}   // sweet cull
@@ -1398,6 +1410,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
 - (void)drawPrimitives:(MTLPrimitiveType)t vertexStart:(NSUInteger)s vertexCount:(NSUInteger)n instanceCount:(NSUInteger)i baseInstance:(NSUInteger)b {
  gDraws++;self.commandBuffer->encodedWork.draws++;
  if(_dl)_dl->draw(t,s,n,i,false);   // sweet drawlog
+ if([self m0Skip])return;   // sweet mask0: writes nothing
  if(_defer){   // sweet cull
   const bool cv=[self coversPrim:t start:s count:n inst:i indexed:false indexType:MTLIndexTypeUInt16 indexBuffer:nil indexOffset:0 baseVertex:0];
   [self recDraw:^{[self check:nmb_render_draw(self.handle,t,(uint32_t)s,(uint32_t)n,(uint32_t)i,(uint32_t)b) what:"drawPrimitives"];} covering:cv];
@@ -1419,6 +1432,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  [self.commandBuffer.resourceOwners addObject:b];
  gDraws++;self.commandBuffer->encodedWork.draws++;
  if(_dl)_dl->draw(t,o,n,i,true);   // sweet drawlog (idx=offset/count)
+ if([self m0Skip])return;   // sweet mask0: writes nothing
  if(_defer){   // sweet cull
   const bool cv=[self coversPrim:t start:0 count:n inst:i indexed:true indexType:k indexBuffer:(NBBuffer *)b indexOffset:o baseVertex:v];
   [self recDraw:^{[self check:nmb_render_draw_indexed(self.handle,t,(uint32_t)n,k,[(NBBuffer *)b handle],o,(uint32_t)i,(int32_t)v,(uint32_t)bi) what:"drawIndexedPrimitives"];} covering:cv];
@@ -2327,7 +2341,7 @@ static void planarFill(NBTexture *t) {
  journalRenderPipeline(d,pipelineBegan,handle?nullptr:nmb_last_error(),gJournalPath.empty()?std::string():NBCost::now().since(costBegan));
  if(!handle)return failWith<id<MTLRenderPipelineState>>(error,@"render pipeline",nil);
  NBRenderPipeline *state=[NBRenderPipeline new];state.handle=handle;gPipelines++;if(error)*error=nil;
- if(drawLogPath()||cullEnabled()||deadfillMode()) {   // sweet drawlog / sweet cull / sweet deadfill
+ if(drawLogPath()||cullEnabled()||deadfillMode()||mask0On()) {   // sweet drawlog / sweet cull / sweet deadfill / sweet mask0
   state.label=d.label;
   if([(id)d.vertexFunction isKindOfClass:[NBFunction class]])state.vertexName=((NBFunction *)d.vertexFunction).name.UTF8String?:"";
   if([(id)d.fragmentFunction isKindOfClass:[NBFunction class]])state.fragmentName=((NBFunction *)d.fragmentFunction).name.UTF8String?:"";
@@ -2345,6 +2359,10 @@ static void planarFill(NBTexture *t) {
    }
   }
   state.dfSamples=(unsigned)d.rasterSampleCount;state.dfA2C=d.alphaToCoverageEnabled;   // sweet deadfill
+  if(mask0On()&&!state.writtenMask&&d.rasterizationEnabled&&[d.label hasPrefix:@"com.apple.coreanimation."]) {   // sweet mask0: CA's own shaders (cc dl1-3) store nothing
+   const std::string &v=state.vertexName,&f=state.fragmentName;
+   state.m0=(v=="fixed_vert_lph_spc"&&f=="fixed_frag_lph_cph")||(v=="path_blit_vert_lph"&&f=="attachment_clear_frag_lph");
+  }
   if(drawLogPath()) {   // sweet drawlog: blend factors (rgb src:dst:op/alpha src:dst:op) and the destination-read constants (see sweet cull 2 below)
    MTLRenderPipelineColorAttachmentDescriptor *a=d.colorAttachments[0];char t[96];
    snprintf(t,sizeof t," bf=%lu:%lu:%lu/%lu:%lu:%lu",(unsigned long)a.sourceRGBBlendFactor,(unsigned long)a.destinationRGBBlendFactor,(unsigned long)a.rgbBlendOperation,
@@ -2601,6 +2619,10 @@ extern "C" size_t native_bridge_metal_telemetry(char *out,size_t size) {
   const double sec=lastUs&&now>lastUs?(now-lastUs)/1e6:0;
   row("DF3 covered %llu %lluMpx | /s %.1f draws %.2f Mpx",(unsigned long long)cd,(unsigned long long)(cp>>20),sec>0?(cd-lastD)/sec:0.,sec>0?(cp-lastP)/sec/1048576.:0.);
   lastUs=now;lastD=cd;lastP=cp;}
+ if(mask0On()){static uint64_t lastUs,lastN;const uint64_t now=nowUs(),k=gM0Skipped.load();   // sweet mask0
+  const double sec=lastUs&&now>lastUs?(now-lastUs)/1e6:0;
+  row("M0 skipped %llu | /s %.1f",(unsigned long long)k,sec>0?(k-lastN)/sec:0.);
+  lastUs=now;lastN=k;}
  row("T pipeline n=%llu total=%llums max=%llums",(unsigned long long)gTimePipeline.count.load(),ms(gTimePipeline.total.load()),ms(gTimePipeline.slowest.load()));
  row("T library n=%llu total=%llums max=%llums",(unsigned long long)gTimeLibrary.count.load(),ms(gTimeLibrary.total.load()),ms(gTimeLibrary.slowest.load()));
  row("T function n=%llu total=%llums max=%llums",
