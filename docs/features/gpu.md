@@ -28,7 +28,8 @@
 - 633 boots: `texture refused: OutOfMemory` on 34 (first 20261029-093657), 33 lived on after it; 43/54 MB allocations 7,589 on 21 boots; n5's burst 142, longest 183 (n6, alive). Old pattern, n5 no outlier.
 - Printing stopped on the whole phone, USB dropped later: n5 18.3 s, n1 19.8 s (n1 had no big Maps allocation for 111 s before it); controls n2 1.6 s, n4 3.9 s. cx2a about 20 s with printers alive. So guess: all CPUs or the memory path freeze, then a reset 18-20 s on. The shim arms a 30 s bite (shim.c:334), uw2 measured about 49 s (boot.md:67): the source of the reset isn't confirmed.
 - One 54 MB cycle: `bzero` 54 MB fresh each time, as the reuse cache stops at 64 MB (:771), 13,824 PTEs in 14 flushes; locks are mutexes, TLB sync gives up at 10 ms. Maps writes about 0.4-1.3 GB/s this way (arithmetic). Rescue log has 485 bit flips in 244 KB, don't trust it byte for byte.
-- Next: crumb per watchdog pet (kernel150). For Maps speed, A/B: reuse cache 128 MB, `sweetgpucap=320` (no code).
+- xnu 0269, kernel150: `sweetwdtcrumb=1` logs `SWEET CRUMB: wdt pet t N cpu M` per 5 s pet and pushes it to DRAM (not run). The next soak uses it.
+- Next: read that crumb after the next silent reset. For Maps speed, A/B: reuse cache 128 MB, `sweetgpucap=320` (no code).
 
 ### 2026-11-01 22:36 n5: silent reset at 695 s in Maps, no GPU hang
 - Soak n5, kernel149 base args + `sweetcxcycle=1` (boot 20261101-222256), started 22:23:46; `ssh lost at 658 s`, phone in fastboot, 4455 mV, 61 k submits, G1 0, no CX cycle ran, 0 backboardd restarts. Last lines at 695.4-695.5 s: Maps holds 230 MB of GPU pool, `native-metal: texture refused: texture: OutOfMemory(Device)` x4, `command buffer refused`, `pool: 557 / 513 / 459 / 513 MB in use (peak 620)`, then nothing, no panic line.
