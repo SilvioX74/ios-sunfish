@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 14:05 id2: adspboot idle2 made idle CPU worse (23.4 against 13.7 CPU s per 300 s): reverted on the phone
+- kernel158 everyday + SWEET_SURF_FLUSH=1 + adspboot idle2 (5c59813), boot 20261102-120558, 4454 mV; same procedure as idle1 (Settings opened and closed, window from 3.5 min after boot, 300 s at Home screen on). Log: `adsp: poll: sensor rate, 2-10 ms, when idle; 2 ms while a reply is due; 20 ms blanked`; `SWEET SURF FLUSH: mode 1`.
+- CPU s in 300 s (id2 / idle1): adspboot 23.4 / 13.7, backboardd 22.3 / 23.2, mediaserverd 12.4 / 12.2, PosterBoard 12.3 / 12.1, total 131.5 / 125.4. a55 mean 57.6 / 59.8 C (max 68.0); busy A55 8.4-3.0 %, A76 8.7, 6.8 (same as idle1). Sensors still stream (accel, ALS, pressure counts rising).
+- Sound start not checked: the EM-01 mic card wasn't found (`pactl: No such entity`); `apr_tone` while adspboot runs gives `apr: no OPEN_ACK in 3 s` (one ADSP owner). One no-argument apr_tone run drove the amps for ~2 s by mistake.
+- Old binary restored (/var/local/bin/adspboot.idle2 kept); the implementer is diagnosing (guess: the "in flight" test is always true, plus more work per pass). The flush default stays.
+
 ### 2026-11-02 13:05 io: idle-on CPU: adspboot polls every 2 ms; Home's 10 frames/s are the Clock icon's second hand (read-only)
 - research/notes/idle-on-2026-11-02.md, boot 20261102-110735, idle1 on window.
 - adspboot: edge_loop (phone/wifi/adspboot.c:3301-3350) polls glink rx, rpc, the audio FIFO, apr, amp and the sensors each pass, then `usleep(sns_dark() && !(audio active) ? 20000 : 2000)`: 500 passes/s with the screen on (45.6 ms/s CPU), 50/s off (8.7 ms/s). backboardd keeps gyro at 200 Hz and accel at 50 Hz after an app open. Fix being written: poll at the shortest active sensor interval clamped to 2-10 ms unless audio or a reply is in flight; off switch kept.
