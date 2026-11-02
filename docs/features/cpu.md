@@ -15,6 +15,13 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 11:00 vt: allowPixelTransferGraph crashes Photos; with cached thumbnails Photos' CPU is layout and accessibility, not scaling
+- Running boot mlend (kernel157 everyday, 20261102-100118). vt0 (no keys): 60 s grid scroll: 37.1 swaps/s; CPU s MobileSlideShow 46.8, mediaserverd 16.3, backboardd 60.2 (trustd 36.3 and accessoryupdater 22.3 in the same delta: boot-time work, gone at idle 10 min later); A55 busy 47.5 %, cpu6 73.2, cpu7 40.0; max cpu6 89.6 C (start 83-85, Photos had just opened); GPU busy 48.2 %. Thumbnails drawn.
+- vt0 stacks (100 samples, 51 running): 0 % vImage, 0 % Metal transfer. Running leaves: objc_msgSend, PhotosUICore PXGLayout accessibility (axContentInfoAtSpriteIndex), malloc, ICU tokenizer. So once thumbnails are cached, the vImage cost (phs, 57 % at the start of a scroll) is gone and Photos still burns ~47 CPU s/min elsewhere.
+- vt1 (`tools/sunfish-vt-prefs.sh allowPixelTransferGraph=true allowPixelTransferFallbacks=true`): Photos crashed at launch, sig 11 in _lookUpImpOrForward from _VTPixelTransferGraphBuildChain+2264 <- _vtPixelTransferSession_BuildChain <- CMPhoto __convertAndScalePixelBuffer. Void; vt2 not run. Keys removed (--undo); backup .bak-vt on the phone.
+- Idle 10 min later, 30 s: healthappd 4.9 s, adspboot 2.5, backboardd 2.1, coreduetd 1.6, dasd 1.0.
+- Next: why PXGLayout computes accessibility info while scrolling (an AX client active? read-only).
+
 ### 2026-11-02 10:40 vts: VideoToolbox's transfer knobs: six booleans in com.apple.coremedia; the graph path may route scaling to Metal (read-only)
 - research/notes/vt-scaling-2026-11-02.md. CMPhoto reads no preferences. VideoToolbox reads from com.apple.coremedia: allowSoftwareTransferSession, allowMetalTransferSession, allowHardwareTransferSession (default 1), allowPixelTransferChain / Graph / Fallbacks (default 0), asyncpixeltransfer.
 - Default path: Metal (VTMetalTransferSession) is used only if the image isn't scaled or the session sets AllowLowQualityScaling (session property, CMPhoto never sets it; 0x194ec7834). Photos' thumbnails are scaled, so they stay in vImage: fits the stacks (0 Metal frames).

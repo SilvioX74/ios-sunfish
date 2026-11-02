@@ -36,7 +36,7 @@ G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `
 Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel157 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000 compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted hs1 (kernel157 everyday setup).
 
 ## Next (in this order)
-1. Heat: Photos' CPU is software scaling (no M2 scaler driver, phs); find a VideoToolbox/CMPhoto key for cheaper scaling (investigator), then A/B it; mediaserverd samples during a scroll.
+1. Heat: Photos burns ~47 CPU s/min scrolling; vImage only while thumbnails are made (phs), the graph key crashes Photos (vt). Steady state: PXGLayout accessibility (axContentInfoAtSpriteIndex), objc, ICU: find what asks for accessibility info (investigator).
 2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel157 + `sweetwdtcrumb=1`).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
