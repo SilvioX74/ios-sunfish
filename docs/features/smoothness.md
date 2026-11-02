@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 20:00 cs3: 15-min soak with SWEET_CULL=3 default: 0 GPU bugs in 100 k submits
+- Boot ev3 (kernel158 everyday, mtl2-env with SWEET_CULL=3). `tools/sunfish-uisoak.sh cs3a 450`, `cs3b 450`: 50.7 k + 49.7 k submits, 0 G1/G2/G4, 0 backboardd restarts, 0 caps; max 84.8 / 82.8 C. Per app swaps/s (a / b): Settings 53.6 / 51.2, Safari 56.9 / 56.7, Notes 33.8 / 34.8, Calendar 33.9 / 35.6, Maps 30.6 / 30.9, Photos 44.4 / 43.0 (dfs without cull 3: Settings 52.0, Safari 51.8, Photos 45.3). No sign of cull mode 2's G1 doubling so far; tonight's 1 h soak is the real check.
+
 ### 2026-11-02 19:45 dl3: real Control Center caught only at its rare 105-draw open frames; steady frames are under 100 draws (read-only)
 - kernel158 everyday + SWEET_CULL=3, fixed cc motion, webcam: Control Center open; SWEET_DRAWLOG_MIN=100 logged 3 passes of 105 draws, seconds apart (Clock icon hands move between them): Home draws 0-91, then a blended (not opaque) 284x611 blur `PBGRABsovXm_TimgA2Xhf_IsrcCcl` (draw 93) and 3 small modules. Under a blended blur Home is live, so cull 3 correctly keeps it. DF3's 790-947 draws/s at 43.8 swaps/s means ~20 draws culled in each steady frame, which has fewer than 100 draws.
 - The drawlog records draws before the cull (DrawLog::draw at encode, :1400/:1421; cullReplay at endEncoding :1290).
