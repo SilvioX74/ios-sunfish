@@ -69,7 +69,6 @@
 #include <pthread.h>
 #include <errno.h>
 #include <sys/stat.h>
-#include <sys/resource.h>
 #include "af_ring.h"
 #include "pmem.h"
 #include "smem.h"
@@ -3297,99 +3296,40 @@ static const struct sns_link_ops sns_ops = { sns_send, sns_pump };
 /*
  * idle2: with the screen on, 500 passes/s cost 2.7 % of a core at Home (research/notes/idle-on-2026-11-02.md). Once
  * --sns-motion has its sensors up and nothing is in flight, sleep for the shortest active sensor report interval,
- * clamped to 2..10 ms (10 with none streaming). 2 ms as before while an --audio-fifo stream is up (or starting) or
- * --pcm runs, and for 200 ms after any step of an exchange: AFE/ASM/APR step, tx queued for a remote intent,
- * FastRPC invoke or session state, channel opened. id3: those were states (id2: 23.4 CPU s per 300 s against
- * 13.7); a state that stays set no longer pins the 2 ms poll, only a change does. Every 60 s one "adsp: poll"
- * line: passes per sleep length, why 2 ms, CPU ms. ADSP_FASTPOLL=1 or /var/local/adspboot.fastpoll: always 2 ms.
+ * clamped to 2..10 ms (10 with none streaming). In flight = 2 ms as before: an audio stream or its AFE/ASM steps,
+ * the APR queries, tx queued for a remote intent, a FastRPC session attaching, and 500 ms after a FastRPC invoke
+ * or a channel opening. ADSP_FASTPOLL=1 or /var/local/adspboot.fastpoll: always 2 ms (the old way).
  */
 #define FASTPOLL_FILE	"/var/local/adspboot.fastpoll"
-#define POLL_HOLD_MS	200
 static int fastpoll;
 static uint64_t poll_hold;
-enum { PR_STREAM, PR_PCM, PR_HOLD, PR_FAST, PR_NOSNS, PR_N };	/* id3: why 2 ms */
-static const char *pr_name[PR_N] = { "stream", "pcm", "hold", "fastpoll", "sensors-not-up" };
-static unsigned pr_n[PR_N], ps_n[4];	/* ps_n: 2 ms, 3-9 ms, 10 ms, 20 ms */
-static unsigned ph_n[8];	/* id3: which change started a hold: afe pcm apr txq invoke rpc-state channels */
-static uint64_t ps_t0, ps_cpu0;
 
-static uint64_t cpu_us(void)
+static int poll_busy(void)
 {
-	struct rusage ru;
-	getrusage(RUSAGE_SELF, &ru);
-	return (uint64_t)(ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) * 1000000 + ru.ru_utime.tv_usec + ru.ru_stime.tv_usec;
-}
-
-/* id3: -1 = nothing in flight, else the PR_ reason for 2 ms */
-static int poll_busy(uint64_t now)
-{
-	static int last[7] = { -1, -1, -1, -1, -1, -1, -1 };
+	static uint32_t last_inv;
+	static int last_ch = -1;
 	int np = 0, nup = 0;
 	for (int i = 0; i < nch; i++) {
 		np += ch[i].npend;
 		nup += ch[i].up;
 	}
-	int cur[7] = { afe_step, pcm_step, apr_step, np, rpc_started ? (int)fastrpc_invokes() : 0,
-		       rpc_started ? fastrpc_settling() : 0, nch * 100 + nup };
-	for (int i = 0; i < 7; i++)
-		if (cur[i] != last[i]) {
-			if (last[i] != -1 || i == 6) {
-				poll_hold = now + POLL_HOLD_MS;
-				ph_n[i]++;
-			}
-			last[i] = cur[i];
-		}
-	if (af_on && (af_up || af_want || afe_step != AFE_IDLE))
-		return PR_STREAM;	/* sp23: the DSP holds 80 ms */
-	if (pcm_running)
-		return PR_PCM;
-	return now < poll_hold ? PR_HOLD : -1;
-}
-
-static void poll_stats(uint64_t now)
-{
-	if (!ps_t0) {
-		ps_t0 = now;
-		ps_cpu0 = cpu_us();
-		return;
-	}
-	if (now - ps_t0 < 60000)
-		return;
-	unsigned n = ps_n[0] + ps_n[1] + ps_n[2] + ps_n[3];
-	uint64_t c = cpu_us();
-	printf("adsp: poll 60 s: %u passes, 2 ms %u%% 3-9 ms %u%% 10 ms %u%% 20 ms %u%%; 2 ms for %s %u %s %u %s %u %s %u %s %u; "
-	       "holds afe %u pcm %u apr %u txq %u invoke %u rpc %u chan %u; cpu %llu ms\n", n,
-	       100 * ps_n[0] / (n ? n : 1), 100 * ps_n[1] / (n ? n : 1), 100 * ps_n[2] / (n ? n : 1), 100 * ps_n[3] / (n ? n : 1),
-	       pr_name[0], pr_n[0], pr_name[1], pr_n[1], pr_name[2], pr_n[2], pr_name[3], pr_n[3], pr_name[4], pr_n[4],
-	       ph_n[0], ph_n[1], ph_n[2], ph_n[3], ph_n[4], ph_n[5], ph_n[6], (unsigned long long)(c - ps_cpu0) / 1000);
-	memset(pr_n, 0, sizeof(pr_n));
-	memset(ps_n, 0, sizeof(ps_n));
-	memset(ph_n, 0, sizeof(ph_n));
-	ps_t0 = now;
-	ps_cpu0 = c;
+	uint32_t inv = rpc_started ? fastrpc_invokes() : 0;
+	if (inv != last_inv || nch * 100 + nup != last_ch)
+		poll_hold = now_ms() + 500;
+	last_inv = inv;
+	last_ch = nch * 100 + nup;
+	return np || af_up || af_want || afe_step != AFE_IDLE || pcm_running || (pcm_step > P_IDLE && pcm_step < P_DONE) ||
+	       (apr_on && apr_step <= 3) || (rpc_started && fastrpc_settling()) || now_ms() < poll_hold;
 }
 
 static useconds_t poll_us(void)
 {
-	uint64_t now = now_ms();
-	int why = poll_busy(now), ms = sns_poll_ms();	/* poll_busy every pass: it follows the steps */
-	poll_stats(now);
-	if (sns_dark() && !(af_on && afe_step != AFE_IDLE)) {
-		ps_n[3]++;
+	if (sns_dark() && !(af_on && afe_step != AFE_IDLE))
 		return 20000;	/* o12: 20 ms while the screen is blanked (SNS_DARK=0: off); sp23: not while streaming, the DSP holds 80 ms */
-	}
-	if (why < 0 && fastpoll)
-		why = PR_FAST;
-	if (why < 0 && ms < 0)
-		why = PR_NOSNS;
-	if (why >= 0) {
-		pr_n[why]++;
-		ps_n[0]++;
+	int ms = sns_poll_ms();
+	if (poll_busy() || fastpoll || ms < 0)	/* poll_busy first: it tracks the invokes and channels every pass */
 		return 2000;
-	}
-	ms = ms <= 0 || ms > 10 ? 10 : ms < 2 ? 2 : ms;
-	ps_n[ms == 10 ? 2 : ms == 2 ? 0 : 1]++;
-	return (useconds_t)ms * 1000;
+	return (useconds_t)(ms <= 0 || ms > 10 ? 10 : ms < 2 ? 2 : ms) * 1000;
 }
 
 static int edge_loop(int ms, int stop, uint64_t t0)
@@ -3798,7 +3738,7 @@ int main(int argc, char **argv)
 		watch_end = getenv("ADSP_WATCH_PER_PHASE") ? 0 : now_ms() + (uint64_t)watch * 1000;
 	fastpoll = getenv("ADSP_FASTPOLL") || !access(FASTPOLL_FILE, F_OK);	/* idle2 */
 	printf("adsp: poll: %s\n", fastpoll ? "every 2 ms (fast poll on)" :
-	       "sensor rate, 2-10 ms, when idle; 2 ms while streaming and 200 ms after an exchange step; 20 ms blanked (id3)");
+	       "sensor rate, 2-10 ms, when idle; 2 ms while a reply is due; 20 ms blanked");
 
 	uint32_t v;
 	if (smp2p_in(&v) == 0 && (v & 2) && !(v & 1)) {
