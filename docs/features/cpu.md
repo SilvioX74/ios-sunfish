@@ -15,6 +15,11 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 15:00 id3: same-binary fast/slow poll A/B mostly lost; fast poll costs 3.7 s CPU per minute; motion sensors weren't streaming
+- adspboot id3 (fbece50), kernel158 everyday, 4 boots N1 F1 N2 F2 (F = /var/local/adspboot.fastpoll), 300 s windows. sensors.log is rewritten every boot and was fetched only at the end: N1, F1, N2 stats lost. N2 and F2 windows weren't at Home (Settings open / lock screen), so only N1-F1 and N2-F2 pair up.
+- psx adspboot CPU s: N1 22.9, F1 23.4, N2 17.8, F2 18.6 (side means 20.4 / 21.0): no difference. a55 mean 55.6 / 54.6 / 53.0 / 52.8 C.
+- F2's own lines: 1136-1244 passes and 3495-3810 ms CPU per 60 s, all at 2 ms (fastpoll). `sensd: accel: the DSP has no "accel" sensor` (same for gyro): no motion stream was up. Guess: in N mode the "sensors not up" rule (2 ms until --sns-motion sensors start) never clears, so N polls at 2 ms too. One N boot with the log fetched in time is running.
+
 ### 2026-11-02 14:05 id2: adspboot idle2 made idle CPU worse (23.4 against 13.7 CPU s per 300 s): reverted on the phone
 - kernel158 everyday + SWEET_SURF_FLUSH=1 + adspboot idle2 (5c59813), boot 20261102-120558, 4454 mV; same procedure as idle1 (Settings opened and closed, window from 3.5 min after boot, 300 s at Home screen on). Log: `adsp: poll: sensor rate, 2-10 ms, when idle; 2 ms while a reply is due; 20 ms blanked`; `SWEET SURF FLUSH: mode 1`.
 - CPU s in 300 s (id2 / idle1): adspboot 23.4 / 13.7, backboardd 22.3 / 23.2, mediaserverd 12.4 / 12.2, PosterBoard 12.3 / 12.1, total 131.5 / 125.4. a55 mean 57.6 / 59.8 C (max 68.0); busy A55 8.4-3.0 %, A76 8.7, 6.8 (same as idle1). Sensors still stream (accel, ALS, pressure counts rising).
