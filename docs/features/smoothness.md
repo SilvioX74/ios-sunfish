@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 18:01 dl6b: Control Center held still renders nothing; all cost is the open/close animation (read-only)
+- work/cc/drawlog-dl6.txt passes 993-1330 (pid 60; screen = ios 2/3 double buffer), research/notes/cc-draws-dl6-2026-11-02.md. t is CPU encode time; drawlog writing slows frames (open ~33 ms apart, close 44-59 ms), so rates are inflated.
+- Open (181.50-182.69 s, 33 frames): 5 passes each: A screen 80-91 draws (fills, wallpaper, Home icons, then draw 79 an opaque full-screen 284x611 blur image over the changed region; cull 3 drops draws 4-78), B 207x460 volume slider offscreen, C screen 63-79 draws (~2-3 Mpx, module backgrounds read the framebuffer: GMEM), D 207x460 brightness slider, E screen 17-21 draws. No blur computed in open frames (reused). 182.2-182.69: spring tail, full cost for 2.5 -> 0.35 px of movement.
+- Held 182.78-185.05: not one pass (MIN=1). Close (185.05-185.51, 10 frames, 9-13 passes): Home in full (S93 ~36 Mpx pre-cull), two 284x611 blur passes reading it (cull 3 can't drop Home here: the blur reads it), a one-draw full-screen opaque blur pass, the sliders, the home-indicator pass (402x15 drawn in a full-screen 2-draw pass).
+- Remaining cuts (guesses): render area per pass + load elision when the first opaque draw covers it (only pays for GMEM passes; ra alone gave nothing), quarter-size Home in close frames (days), blur size already 0.25 (ccscale). Next check: which passes Turnip runs in GMEM vs sysmem during open/close (one GPU trace).
+
 ### 2026-11-02 17:56 dl6: timestamped drawlog with one real Control Center open/close; analysis running
 - Bundle fe75b25 (headers end ` t=<mach> tex=ios=<id> pid=<pid>`), kernel158 everyday + SWEET_CULL=3, SWEET_DRAWLOG_MIN=1 MINPX=20000 COUNT=1500: work/cc/drawlog-dl6.txt (24 MB) filled by uptime 192.4 s, so it holds boot, idle Home and cycle 1 only (open 181.682 s, held, close 185.816 s; work/cc/dl6-swipes.txt). Pass t/19.2e6 lines up with kernel uptime (passes at ~181.5/182.3 s and ~185.2/185.8 s around the swipes). Webcam: Control Center open in cycle 1.
 - Gotcha: SSH answers at ~18 s but iOS isn't up until the lock screen; unlock swipes before it are lost.
