@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 12:50 idle1: idle on kernel158: screen off 52.5 C as before; screen on 59.8 C, Home presents 10 frames/s, adspboot and PosterBoard busy
+- Boot ev158 (kernel158 everyday, 11:07), 300 s each at Home: screen on from 3.3 min after boot (includes settling), screen off (power key `flame-cmd.py key 0 150`; `H` isn't a flame-cmd command).
+- Screen on: a55 mean 59.8 C (max 72.8, single spikes; trend 60.9 -> 58.7), gpu 60.2, ddr 58.8; busy A55 8.2-3.0 %, A76 8.8, 7.2; 1497 / 1939 MHz flat; `SWEET FB: 5s` 50 swaps per 5 s (10 per s) with Home still; GPU ~101 submits per 5 s. CPU s in 300 s: backboardd 23.2, adspboot 13.7, mediaserverd 12.2, PosterBoard 12.1, kernel_task 6.2, coreduetd 5.9, SpringBoard 5.5, runningboardd 5.5, CollectionsPoster 4.5, bluetoothd 4.3 (total 125 s).
+- Screen off: a55 52.5 C falling to 50.9; busy 1-2 %; no FB lines; top wland 2.8, adspboot 2.6, dasd 2.0, healthd 1.9 (total 22.7 s). Matches 2026-11-01 07:17 (54.1 C).
+- Leads for idle-on heat: something presents Home at 10 frames/s (PosterBoard / CollectionsPoster wallpaper, guess); adspboot 2.7 % of a core screen on (our own tool); mediaserverd 4 %. backboardd 279 s/h against 40.7 on 2026-11-01.
+
 ### 2026-11-02 11:55 hA/hB: A76 at 1939 MHz: 6 C cooler at the peak, no 90 C readings, speed within noise; default in kernel158
 - kernel157 everyday args, 4 boots alternating, `tools/sunfish-uisoak.sh TAG 450` 60 s after SSH; capped boots add `sweetrowa76=10` (A76 real MHz 1939 in the THERM lines; default 2207-2208, one dip to 2190). 4454 mV, 0 G1/G2/G4, 0 restarts, 0 caps, ~50.5 k submits each.
 - Per boot max / mean C, readings at 90+ of 90: hA1 92.8 / 78.8, 3; hB1 86.1 / 76.2, 0; hA2 94.5 / 83.1, 7; hB2 89.0 / 78.7, 0. The two boots of a side differ by 2-5 C; capped was cooler in both pairs (-2.6 and -4.4 mean, -6.7 and -5.5 max).
