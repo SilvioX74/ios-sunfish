@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 13:05 io: idle-on CPU: adspboot polls every 2 ms; Home's 10 frames/s are the Clock icon's second hand (read-only)
+- research/notes/idle-on-2026-11-02.md, boot 20261102-110735, idle1 on window.
+- adspboot: edge_loop (phone/wifi/adspboot.c:3301-3350) polls glink rx, rpc, the audio FIFO, apr, amp and the sensors each pass, then `usleep(sns_dark() && !(audio active) ? 20000 : 2000)`: 500 passes/s with the screen on (45.6 ms/s CPU), 50/s off (8.7 ms/s). backboardd keeps gyro at 200 Hz and accel at 50 Hz after an app open. Fix being written: poll at the shortest active sensor interval clamped to 2-10 ms unless audio or a reply is in flight; off switch kept.
+- Home's 10 swaps/s are real: `sweet_fb_swap_count` counts only client swaps (SweetFramebuffer.cpp:1040, :1060). backboardd turns vsync notifications on every 100.0 ms; SpringBoardHome's SBHClockApplicationIconImageView runs a CADisplayLink at CAFrameRateRangeMake(10, 120, 10) (0x1c5325118, 0x1c52b13b8) for the second hand. A real iPhone ticks too but redraws only the icon; ours costs ~7.7 ms of backboardd CPU and a full-screen GPU frame (2 submits) per tick. Backlog: dirty-rect presents (O17).
+- Wallpaper posters at idle: PosterBoard 12.1, CollectionsPoster 4.5, EmojiPoster 3.2, WeatherPoster 1.5, AegirPoster 1.5 CPU s per 300 s, partly a refresh burst at 457-469 s. mediaserverd's 12.2 s unexplained.
+
 ### 2026-11-02 12:50 idle1: idle on kernel158: screen off 52.5 C as before; screen on 59.8 C, Home presents 10 frames/s, adspboot and PosterBoard busy
 - Boot ev158 (kernel158 everyday, 11:07), 300 s each at Home: screen on from 3.3 min after boot (includes settling), screen off (power key `flame-cmd.py key 0 150`; `H` isn't a flame-cmd command).
 - Screen on: a55 mean 59.8 C (max 72.8, single spikes; trend 60.9 -> 58.7), gpu 60.2, ddr 58.8; busy A55 8.2-3.0 %, A76 8.8, 7.2; 1497 / 1939 MHz flat; `SWEET FB: 5s` 50 swaps per 5 s (10 per s) with Home still; GPU ~101 submits per 5 s. CPU s in 300 s: backboardd 23.2, adspboot 13.7, mediaserverd 12.2, PosterBoard 12.1, kernel_task 6.2, coreduetd 5.9, SpringBoard 5.5, runningboardd 5.5, CollectionsPoster 4.5, bluetoothd 4.3 (total 125 s).
