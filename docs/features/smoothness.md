@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 17:56 dl6: timestamped drawlog with one real Control Center open/close; analysis running
+- Bundle fe75b25 (headers end ` t=<mach> tex=ios=<id> pid=<pid>`), kernel158 everyday + SWEET_CULL=3, SWEET_DRAWLOG_MIN=1 MINPX=20000 COUNT=1500: work/cc/drawlog-dl6.txt (24 MB) filled by uptime 192.4 s, so it holds boot, idle Home and cycle 1 only (open 181.682 s, held, close 185.816 s; work/cc/dl6-swipes.txt). Pass t/19.2e6 lines up with kernel uptime (passes at ~181.5/182.3 s and ~185.2/185.8 s around the swipes). Webcam: Control Center open in cycle 1.
+- Gotcha: SSH answers at ~18 s but iOS isn't up until the lock screen; unlock swipes before it are lost.
+
 ### 2026-11-02 18:40 ra: render area = union of draw scissors (bridge 0124): no gain; stays off
 - Bundle 9314dc0 (SweetMetal2 4C4C4422), kernel158 everyday + TU_FETCH_GMEM_MIN_DRAWS=20 + SWEET_SURF_FLUSH=1 + SWEET_CULL=3, 5 boots a side alternating (raa def, rab +SWEET_M2V_RENDER_AREA=1), home,cc,settings, 4453-4455 mV, 0 G1/G2/G4, 0 void.
 - Means def / ra: home 52.70 / 52.82, cc 43.49 / 43.36, settings 56.34 / 56.35; p95 the same. Pairs won by ra: home 3, cc 2, settings 1 of 5. `RA shrunk 3059 passes of 28672, 3929.5 Mpx, 21.4 Mpx/s` (rab1): only ~11 % of passes shrink, so too little load/store is saved to show.
