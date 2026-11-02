@@ -34,6 +34,16 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | vpb5 | off=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 23 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vpa5 | p5=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncphase=5000,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 23 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vpb4 | off=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 22 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vpa4 | p5=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncphase=5000,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 23 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vpb3 | off=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 22 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vpa3 | p5=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncphase=5000,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 23 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vpb2 | off=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 22 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vpa2 | p5=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncphase=5000,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 23 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vpb1 | off=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 23 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vpa1 | p5=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncphase=5000,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 23 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | vp13 | p13=156,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncphase=13500,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 18 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | u6c | trf=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+MESA_GPU_TRACES=print,+TU_GPU_TRACEPOINT=-draw_ib_gmem -gmem_load -gmem_store -binning_ib | 1 | 5 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | u6b | tr=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+MESA_GPU_TRACES=print | 1 | 234 | 0 | 0 | 0 | 2 |

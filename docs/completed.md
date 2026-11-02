@@ -46,3 +46,4 @@ Done 2026-10-30: VIBRATION MOTOR BUZZES (hp2), camera opens fixed (2ed9d22), dai
 - O4 [DONE 2026-10-29] lskdd respawn cost: dropped.
 - 2026-10-31 A/B bench tool `tools/sunfish-perfab.sh`: boots configs in turn, fixed screens, one table, void rules, temperature and A76 MHz columns; 5 boots a side on 4 screens takes about 37 min (cpu1).
 - 2026-11-02 mo3: mode 3 webcam motion check at 30 fps: no stale strip, band or flash in 900 frames; mid-motion doubling is the camera (smoothness.md). Live-log listener restarted with the usb0 link-state fix.
+- 2026-11-02 Low Settings launches (about 1 in 5-10 at 42-50 swaps/s): cause found with catrace (apps' display-link grid against our tick's phase), fixed by xnu 0274/0275 sweetvsyncphase=5000: 0 low in 25 launches, p95 19.3 ms (kernel157).

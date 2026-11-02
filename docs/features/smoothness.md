@@ -95,6 +95,13 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 09:05 vpa/vpb: sweetvsyncphase=5000 removes the low Settings launches (0 in 25); default in kernel157
+- kernel156, everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, `CATRACE=1 RELAUNCH=5` Settings, 5 boots a side alternating, 4453-4455 mV, 0 void, 0 G1/G2/G4 (22-23 k submits a boot), webcam after: Home normal.
+- `sweetvsyncphase=5000` (vpa1-5): 0 low of 25, none under 55.9; mean 57.0 swaps/s, median p95 19.26 ms, mean skip2 3.07, 22 of 25 with p95 <= 20 ms. Display-link phase 4.07-4.19 ms in all 10 launches checked (p10 3.98, p90 4.8).
+- Off (vpb1-5): 2 low (41.9, 44.7) plus 3 at 52.6-54.4 with p95 32-33 ms; mean 55.23, median p95 19.31, skip2 6.82, 17 of 25 with p95 <= 20. Their phases 11.3-14.9 ms, different each launch.
+- Default: xnu 0275, `sweetvsyncphase=5000` unless the boot-arg says otherwise; any value over 16000 turns it off (kernel157). Settings target: p95 met (19.3); 58 swaps/s not reachable by this bench (its swipe gaps cap it near 57).
+- Still open: the full fix is sending IOMFB frame info (Presentation_time) so CA anchors its display links itself (backlog Later); commits never start before tick + ~11 ms even with the display link at +4 ms (input or render handoff wait?), a latency lead.
+
 ### 2026-11-02 08:45 vp13: proof: kernel156 sweetvsyncphase=13500 locks the phase and makes every launch low
 - kernel156 (xnu 0274) everyday args + `sweetvsyncphase=13500`, TU_FETCH_GMEM_MIN_DRAWS=20, `CATRACE=1 RELAUNCH=5` Settings, boot 20261102-080939, 4453 mV, 0 G1/G2/G4.
 - Swaps/s L1-L5: 42.9 43.5 41.7 42.2 42.4 (p95 about 34 ms, skip2 35-37 %): 5 of 5 low, as predicted. Display-link phase (dl.py) 12.49-12.52 ms in all 5 launches (SpringBoard 12.49-12.57): locked, where it normally jumps between launches. It reads 1 ms under 13500 because the trace measures from the tick's wake time, about 1 ms after its deadline (guess for the offset).

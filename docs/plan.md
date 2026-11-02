@@ -1,4 +1,4 @@
-# Plan (2026-10-31, updated 2026-11-02 06:45): speed and heat
+# Plan (2026-10-31, updated 2026-11-02 09:10): speed and heat
 
 Rules: CLAUDE.md ("How to work"). Old plan: `docs/plans/2026-10-31-mixed-priorities.md`. One line per item;
 details and history in the feature Logs (`docs/features/<name>.md`).
@@ -6,7 +6,7 @@ details and history in the feature Logs (`docs/features/<name>.md`).
 ## Focus (the user, 2026-10-31)
 Make the phone fast and smooth first, stability later, and stop it running hot all the time.
 Targets (Claude's numbers, the user can change them):
-- Settings scrolling: at least 58 swaps/s with p95 at or under 20 ms, across 5 boots (good launches 57, p95 19-20 ms; about 1 launch in 10 at 42-50).
+- Settings scrolling: at least 58 swaps/s with p95 at or under 20 ms, across 5 boots: p95 met (19.3, kernel157 sweetvsyncphase, 0 low launches in 25); 57.0 swaps/s is this bench's cap.
 - Control Center: at least 45 swaps/s (now 40.3).
 - Soak: no UI restarts in 30 min of hard scrolling (n7: 1 restart in 60 min).
 
@@ -18,10 +18,10 @@ Targets (Claude's numbers, the user can change them):
 
 ## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each)
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
-1. ▶ **Low Settings launches** (about 1 in 5-10, 42-50 swaps/s): cause found (catrace): the apps' display-link grid (1/60 s from mach time 0) against our tick's random phase; lows when the display link fires 12.5-14.8 ms after our tick (7 of 7). Fix: xnu 0274 `sweetvsyncphase=US`, then US=13500 proof boot and US=5000 vs off, 5 boots each. (smoothness.md)
-2. **Heat**: idle 53-59 C; under load peaks 93-96 C (n7 95.7, 60 of 730 readings at 90+, 0 caps). Defaults in: A55 1497 MHz, GPU clock gating, fence poll 200 us (1.3 ms/frame off the A55s, no heat shown). Next: which app peaks (uisoak now logs `=== uisoak TAG app`), A76 at 1939 MHz (5 C cooler for 0.4 ms, cpu.md hot1). (cpu.md)
-3. **Control Center** 39.1 -> 40.3 swaps/s with `TU_FETCH_GMEM_MIN_DRAWS=20` (default now, cs4; target 45); trace without per-draw tracing (it crashes backboardd); Home redrawn at full size behind it (cc3). (smoothness.md)
-4. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30); time app opens and the keyboard. (smoothness.md, cpu.md)
+1. ▶ **Heat**: idle 53-59 C; under load peaks 93-96 C (n7 95.7, 60 of 730 readings at 90+, 0 caps). Defaults in: A55 1497 MHz, GPU clock gating, fence poll 200 us (1.3 ms/frame off the A55s, no heat shown). Next: which app peaks (uisoak now logs `=== uisoak TAG app`), A76 at 1939 MHz (5 C cooler for 0.4 ms, cpu.md hot1). (cpu.md)
+2. **Control Center** 39.1 -> 40.3 swaps/s with `TU_FETCH_GMEM_MIN_DRAWS=20` (default now, cs4; target 45); trace without per-draw tracing (it crashes backboardd); Home redrawn at full size behind it (cc3). (smoothness.md)
+3. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30); time app opens and the keyboard. (smoothness.md, cpu.md)
+4. **Latency**: Settings commits never start before tick + ~11 ms though the display link fires at +4 ms (catrace); find the wait (input or render handoff). (smoothness.md)
 5. **Upstream takeaways**: trace filter env (U6: works, still distorts, parked); UBWC census (U9), spare image blocks timing (U10). QoS (U7) no gain, off.
 
 After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.
@@ -33,11 +33,11 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `sweetsmmutcr=3` (stock SMMU walks and ACTLR), default in kernel153. Watch it in the next soaks. A CX cycle doesn't recover a real G1 (the GDSC refuses, n6), so off. Silent reset n1, n5: not seen in n7; pet crumb on in soaks (gpu.md).
 
 ## Phone
-Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel154 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200 compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off; /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20. kernel155 = 154 + `sweetvsyncgrid` (off; no gain). Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted mo3 (everyday setup).
+Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel157 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000 compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off; /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted mo3 (everyday setup).
 
 ## Next (in this order)
-1. kernel156 (xnu 0274 `sweetvsyncphase`): proof boot US=13500 (all launches should be low), then US=5000 vs off, 5 boots each (vp13, vpa/vpb; running).
-2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel154 + `sweetwdtcrumb=1`).
+1. Boot kernel157 (vsync phase 5000 default) as the everyday kernel; quick Settings + Home bench, webcam.
+2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel157 + `sweetwdtcrumb=1`).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),
