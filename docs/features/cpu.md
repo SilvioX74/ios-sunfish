@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 10:40 vts: VideoToolbox's transfer knobs: six booleans in com.apple.coremedia; the graph path may route scaling to Metal (read-only)
+- research/notes/vt-scaling-2026-11-02.md. CMPhoto reads no preferences. VideoToolbox reads from com.apple.coremedia: allowSoftwareTransferSession, allowMetalTransferSession, allowHardwareTransferSession (default 1), allowPixelTransferChain / Graph / Fallbacks (default 0), asyncpixeltransfer.
+- Default path: Metal (VTMetalTransferSession) is used only if the image isn't scaled or the session sets AllowLowQualityScaling (session property, CMPhoto never sets it; 0x194ec7834). Photos' thumbnails are scaled, so they stay in vImage: fits the stacks (0 Metal frames).
+- The graph builder (VTPixelTransferGraphBuildChain, allowPixelTransferGraph) can pick a Metal step with high-quality scaling (0x194f61610, guess); allowPixelTransferFallbacks returns to the default path if the build fails (0x194ec6b24).
+- Test: `tools/sunfish-vt-prefs.sh allowPixelTransferGraph=true allowPixelTransferFallbacks=true`, then Photos CPU s/min, pstack for VTMetalTransferSession frames, webcam for blank thumbnails. About 35 % that work moves to Metal; up to ~25 CPU s/min if it does.
+
 ### 2026-11-02 10:20 phs: Photos' CPU is software colour conversion and scaling (no M2 scaler driver), read-only
 - 200 pstack samples each (work/heat/), MobileSlideShow over 4.3 s at the start of a grid scroll, mediaserverd 3.0 s two minutes later; symbolized (research/notes/photos-cpu-2026-11-02.md).
 - MobileSlideShow, 368 running samples of 8032 (1.84 threads busy per sample, in bursts): VideoToolbox software transfer 57.1 % (vVertical_Shear_ARGB_8888 27.2, vConvert_420Yp8_CbCr8ToARGB8888 15.8, vHorizontal_Shear 6.2: VTPixelTransferSessionTransferImage -> vImageScale, spread with dispatch_apply), main thread UI 19.6, allocation/CF/objc 17.7, CGImageSourceCreateThumbnailAtIndex resample 4.9, HEIF parsing 0.8. No retries or failure paths.
