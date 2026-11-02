@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 08:45 vp13: proof: kernel156 sweetvsyncphase=13500 locks the phase and makes every launch low
+- kernel156 (xnu 0274) everyday args + `sweetvsyncphase=13500`, TU_FETCH_GMEM_MIN_DRAWS=20, `CATRACE=1 RELAUNCH=5` Settings, boot 20261102-080939, 4453 mV, 0 G1/G2/G4.
+- Swaps/s L1-L5: 42.9 43.5 41.7 42.2 42.4 (p95 about 34 ms, skip2 35-37 %): 5 of 5 low, as predicted. Display-link phase (dl.py) 12.49-12.52 ms in all 5 launches (SpringBoard 12.49-12.57): locked, where it normally jumps between launches. It reads 1 ms under 13500 because the trace measures from the tick's wake time, about 1 ms after its deadline (guess for the offset).
+- The setup line `SWEET FB: vsync phase ...` isn't in the per-boot log: that log starts at about 23 s (USB), after the framebuffer's setup. The kernel has the string.
+- Cause confirmed. Next: sweetvsyncphase=5000 against off, 5 boots each (vpa/vpb, running).
+
 ### 2026-11-02 08:35 u6: TU_GPU_TRACEPOINT filter works but doesn't make Control Center traces cheap
 - `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh u6a/u6b/u6c 1 --screens cc,home`, kernel154 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, 4454 mV, 0 G1/G2/G4.
 - Untraced (u6a): cc 39.3 (p95 46.2), home 53.9 (32.5). `MESA_GPU_TRACES=print` (u6b): void, 0 swaps on both screens, 234 submits in all, no backboardd restart seen, 3.3 MB of trace. With `TU_GPU_TRACEPOINT=-draw_ib_gmem -gmem_load -gmem_store -binning_ib` (u6c; spaces as separators reach the env intact, the four names are gone from the file): cc 22.4 (p95 90.1), home 33.1, 55.5 MB of trace.
