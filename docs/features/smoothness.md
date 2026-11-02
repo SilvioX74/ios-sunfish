@@ -95,7 +95,7 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
-### 2026-11-01 22:50 CoreAnimation's internal nits explain the n4/n5 gap (read-only); luma boost test next
+### 2026-11-01 22:41 CoreAnimation's internal nits explain the n4/n5 gap (read-only); luma boost test next
 - n4 (kernel144, internal nits 133) against n5 (kernel149, nits 5), first 10 app opens, same order, 650 MHz, no caps, panel DCS 43 in both. Mean over 5 s windows, n4 / n5: backboardd ms per present Settings 8.5 / 14.9, Safari 11.7 / 13.3, Notes 8.7 / 11.7, Calendar 15.5 / 21.8, Photos 9.0 / 12.0; all apps busy 58 / 72 %, GPU sensor mean 63.1 / 69.4 C (n5 started 8 C hotter, so at most about 6 C is the pass).
 - The panel isn't it: DCS 43 fast at 133 nits, DCS 239 slow at 5 nits (ni1). The extra pass (st5, 1125x2436, about 7-9 ms) is in the band 5 to 32 nits: slider position 0x1 gives 5.0 nits, 0x1a62 gives 32.8. Nothing logged in between.
 - Correction to dd1 (threshold 50-92): at `sweetblmin=50` the kernel saw 50 but CoreBrightness still said `NitsPhysical` 5.0, and Settings stayed 15.4-17.1 ms. So an xnu floor doesn't reach CoreAnimation.
