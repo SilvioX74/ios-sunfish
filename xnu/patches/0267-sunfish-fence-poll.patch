@@ -1,0 +1,41 @@
+From 836e95aa6f72556495a6c527271aae459508405a Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 22:07:24 -0500
+Subject: [PATCH] sunfish: fence wait poll interval past 200 us,
+ sweetfencepoll, default as before
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ bsd/dev/sweet_gpu.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/bsd/dev/sweet_gpu.c b/bsd/dev/sweet_gpu.c
+index 68f40be..223c11b 100644
+--- a/bsd/dev/sweet_gpu.c
++++ b/bsd/dev/sweet_gpu.c
+@@ -1716,6 +1716,13 @@ sweet_gpu_wait_fence_ns(uint32_t fence, uint64_t timeout_ns)
+ {
+ 	/* the hang check by time, not per call: Turnip's darwin backend waits in 1 ms slices */
+ 	static uint64_t last_check;
++	/* 0267: boot-arg sweetfencepoll=US: sleep between looks once a wait passes 200 us (default 20, as before) */
++	static uint32_t poll_us;
++	if (__improbable(poll_us == 0)) {
++		uint32_t v = 20;
++		PE_parse_boot_argn("sweetfencepoll", &v, sizeof(v));
++		poll_us = v != 0 ? v : 20;
++	}
+ 	uint64_t t0 = mach_absolute_time(), ns = 0, check_abs;
+ 	nanoseconds_to_absolutetime(5000000, &check_abs);
+ 	for (;;) {
+@@ -1735,7 +1742,7 @@ sweet_gpu_wait_fence_ns(uint32_t fence, uint64_t timeout_ns)
+ 		if (ns >= timeout_ns) {
+ 			return sweet_gpu_fence_done(fence) ? 0 : 1;
+ 		}
+-		delay(20);
++		delay(ns < 200000 ? 20 : poll_us);
+ 	}
+ }
+ 
+-- 
+2.56.0
+
