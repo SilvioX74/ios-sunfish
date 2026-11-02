@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 17:40 at: TU_AUTOTUNE_ALGO=profiled: no gain over 5 boots; one Control Center outlier at 31 swaps/s
+- kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20 + SWEET_SURF_FLUSH=1, 5 boots a side alternating (ata = def, atb = profiled), cc,home,settings, 4440-4455 mV, 0 G1/G2/G4, 0 void.
+- cc swaps/s def 40.2, 40.4, 40.2, 40.2, 31.1 / atp 39.9, 40.5, 40.0, 39.5, 40.3 (median 40.2 / 40.0; atp won 2 of 5 pairs). home def 53.3, 53.7, 51.6, 52.4, 52.3 / atp 47.7, 55.5, 53.3, 53.6, 53.5. settings def 55.5-57.2 / atp 56.5-57.5 (+0.6 mean, within noise). Screenshots normal. Profiled stays off.
+- ata5's Control Center run: 31.1 swaps/s, p95 64.7 ms, 10 gaps over 100 ms, GPU busy 82 %: a one-off stall on the default (1 in 15 Control Center runs today); not followed up yet.
+
 ### 2026-11-02 16:50 ts: Turnip env sweep on Control Center: TU_AUTOTUNE_ALGO=profiled about +1 swap/s (2 boots), GMEM_MIN_DRAWS=100 no gain
 - kernel158 everyday args + SWEET_SURF_FLUSH=1, new bundle, 2 boots per config, cc,home, 4453-4455 mV, 0 G1/G2/G4; one void run (lock screen, ts2b) rerun.
 - cc swaps/s (p95) / home: def (GMEM_MIN_DRAWS=20) 39.4 (36.9), 39.2 (35.9) / 53.1, 52.9; d100 38.8 (40.4), 39.1 (37.8) / 51.9, 52.7; atp (TU_AUTOTUNE_ALGO=profiled) 40.2 (36.6), 40.5 (34.7) / 52.7, 51.9. atp minus def: cc +1.05, home -0.7. Screenshots normal.

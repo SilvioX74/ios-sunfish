@@ -136,3 +136,4 @@ output in /var/local.
 2026-11-02 14:30: /var/local/bin/adspboot = id3 build (fbece50) for the idle A/B; /var/local/adspboot.fastpoll toggled per boot and left in place at the end (old 2 ms poll); old binary at adspboot.pre-idle2.
 2026-11-02 15:20: adspboot id3 test over: /var/local/bin/adspboot is the original again (from adspboot.pre-idle2; id3 kept as adspboot.id3), /var/local/adspboot.fastpoll removed. Source changes reverted.
 2026-11-02 15:55: bundle work/metal2-next with Turnip 0111 (4bba3bf; SweetMetal2 4C4C44A6, libvulkan 4C4C4408) installed with tools/sunfish-metal2-install.sh --no-restart; 0111 is off unless SWEET_TU_ORDER_FETCHERS_ONLY=1.
+2026-11-02 17:40: bundle work/metal2-next with drawlog options (972ef6a, SweetMetal2 4C4C4457) installed; /var/local/mtl2-env gets SWEET_DRAWLOG* lines for one boot (dl1), restored from /var/local/mtl2-env.pre-drawlog after.

@@ -34,6 +34,16 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | atb5 | atp=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+TU_AUTOTUNE_ALGO=profiled | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ata5 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1 | 1 | 9 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | atb4 | atp=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+TU_AUTOTUNE_ALGO=profiled | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ata4 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | atb3 | atp=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+TU_AUTOTUNE_ALGO=profiled | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ata3 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | atb2 | atp=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+TU_AUTOTUNE_ALGO=profiled | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ata2 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | atb1 | atp=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1,+TU_AUTOTUNE_ALGO=profiled | 1 | 9 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ata1 | def=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+SWEET_SURF_FLUSH=1 | 1 | 10 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | ts2c | atp=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=20,+TU_AUTOTUNE_ALGO=profiled | 1 | 5 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | ts2b2 | d100=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=100 | 1 | 6 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | ts2b | d100=158,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+SWEET_SURF_FLUSH=1,+TU_FETCH_GMEM_MIN_DRAWS=100 | 1 | 235 | 0 | 0 | 0 | 2 |
