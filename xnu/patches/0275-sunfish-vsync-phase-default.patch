@@ -1,0 +1,39 @@
+From 7e45c81b40c95c726cec892ca8a61e87e56cfb34 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Mon, 2 Nov 2026 09:06:30 -0500
+Subject: [PATCH] sunfish: sweetvsyncphase=5000 by default, over 16000 turns it
+ off
+
+---
+ iokit/Kernel/arm/SweetFramebuffer.cpp | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index e3dc6ef..66d1929 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -144,7 +144,7 @@ class AppleCLCD : public IOMobileFramebuffer {
+ 	uint64_t            fVsyncAbs;      /* tick period in absolute time units */
+ 	uint64_t            fVsyncAheadAbs; /* 0165: added to the vsync time CA is told (sweetvsyncahead=us) */
+ 	uint64_t            fVsyncPhaseAbs; /* 0274: ticks sit this long before CA's display-link grid */
+-	bool                fVsyncPhaseOn;  /* 0274: sweetvsyncphase=us given */
++	bool                fVsyncPhaseOn;  /* 0274: sweetvsyncphase=us given; 0275: default 5000 */
+ 	uint64_t            fStatSwaps, fStatPresents, fStatPresentAbs;
+ 
+ 	static void vsyncFired(OSObject *owner, IOTimerEventSource *sender);
+@@ -330,8 +330,10 @@ AppleCLCD::start(IOService *provider)
+ 	 * and ~30 % of frames are skipped. sweetvsyncphase=US (0..16000) makes the period exactly 1 s / 60 and
+ 	 * keeps ticks at k * period - US, so the display link fires US us after the tick. Absent: unchanged.
+ 	 */
+-	uint32_t phase = 0;
+-	if (PE_parse_boot_argn("sweetvsyncphase", &phase, sizeof(phase)) && phase <= 16000) {
++	/* 0275: on by default at 5000 us after vpa/vpb (0 low Settings launches in 25 against 2 + 3 dips); over 16000 = off */
++	uint32_t phase = 5000;
++	PE_parse_boot_argn("sweetvsyncphase", &phase, sizeof(phase));
++	if (phase <= 16000) {
+ 		uint64_t sec = 0;
+ 		nanoseconds_to_absolutetime(NSEC_PER_SEC, &sec);
+ 		nanoseconds_to_absolutetime(phase * 1000ULL, &fVsyncPhaseAbs);
+-- 
+2.56.0
+
