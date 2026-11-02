@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 15:55 dfs: 15-min soak on today's defaults: max 81.6 C, mean 69.6, none at 90+; 1 G4 with a backboardd restart
+- kernel158 (vsync phase 5000, A76 1939) everyday args, mtl2-env SWEET_U0011..14=1 TU_FETCH_GMEM_MIN_DRAWS=20 SWEET_SURF_FLUSH=1, original adspboot (boot 20261102-130815 after the 13:06 restore; the runner read the previous boot's sensors.log line), 4455 mV. `tools/sunfish-uisoak.sh dfsa 450` then `dfsb 450`.
+- dfsa void: 1 G4 and backboardd 60 -> 362 at 57 s (killed after recovery by design), 47.8 k submits. dfsb clean: 50.1 k submits, 0 G1/G2/G4.
+- Per app pooled (max / mean C, swaps/s): Settings 76.1 / 71.7, 52.0; Safari 76.7 / 71.8, 51.8; Photos 81.6 / 73.9, 45.3; Maps 75.1 / 69.7, 30.2; Notes 72.8 / 65.3, 32.8; Calendar 70.3 / 66.5, 33.7 (Calendar shows its "What's New" sheet). Overall max 81.6, mean 69.6, 0 of 173 at 90+.
+- Against hB (A76 1939 alone, kernel157): max 87.5 -> 81.6, mean 77.5 -> 69.6, swaps/s within ~1. The start temperature and room aren't controlled, so the extra 6-8 C isn't attributed to SWEET_SURF_FLUSH=1 or kernel158 alone.
+
 ### 2026-11-02 15:20 idN3: adspboot's CPU is per-pass work, not the poll rate: idle-poll change reverted, parked (O18)
 - adspboot id3 in its idle mode, kernel158 everyday, boot 12:58:56, log fetched in time (work/heat/idN3-sensors.log). Its 60 s lines after setup: 641-711 passes, 10 ms sleeps 100 %, cpu 4173-4604 ms. Fast poll (F2): 1136-1244 passes at 2 ms, 3495-3810 ms. So a pass takes 50-90 ms of wall time and 3-6 ms of CPU whatever the sleep: the cost is inside the pass (blocking reads or per-pass work), not the loop rate. Sleeping longer only moved the same work into fewer, longer passes.
 - Sensors start on the third try (`sns: motion: 0 sensors`, again in 10 s, twice, then `8 sensors`); accel, ALS and pressure stream, gyro and compass off at idle.
