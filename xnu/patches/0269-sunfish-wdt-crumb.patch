@@ -1,0 +1,50 @@
+From 7cf1a5043ff259a3b74b217d0df66c58e8d9d2ea Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 22:47:59 -0500
+Subject: [PATCH] sunfish: watchdog pet crumb, sweetwdtcrumb, off by default
+
+---
+ iokit/Kernel/arm/SweetPlatformExpert.cpp | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+index 393295a..df3c14a 100644
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -43,6 +43,9 @@ extern "C" volatile int flame_wdt_stop;
+ volatile int flame_wdt_stop;
+ /* 0189: set by the first IOMFB swap (SweetFramebuffer.cpp), disarms the boot watchdog */
+ extern "C" volatile int sweet_fb_swapped;
++extern "C" int cpu_number(void);
++extern "C" void sweet_log_append(const char *c, int size);
++extern "C" void sweet_log_flush(void);
+ volatile int sweet_fb_swapped;
+ 
+ static void
+@@ -57,6 +60,8 @@ flame_wdt_thread(void *arg)
+ 	 */
+ 	int bootwdt_s = 0;
+ 	PE_parse_boot_argn("sweetbootwdt", &bootwdt_s, sizeof(bootwdt_s));
++	int crumb = 0;
++	PE_parse_boot_argn("sweetwdtcrumb", &crumb, sizeof(crumb));
+ 	if (bootwdt_s > 0) {
+ 		IOLog("SWEET BOOTWDT: armed, %d s\n", bootwdt_s);
+ 	}
+@@ -72,6 +77,14 @@ flame_wdt_thread(void *arg)
+ 			}
+ 		}
+ 		wdt[FLAME_WDT_RST / 4] = 1;
++		/* 0269: boot-arg sweetwdtcrumb: a line per pet, pushed to DRAM, to set the last pet against the last line after a silent reset (n5, n1) */
++		if (crumb) {
++			char c[64];
++			int n = snprintf(c, sizeof(c), "SWEET CRUMB: wdt pet t %d cpu %d\n", t, cpu_number());
++			IOLog("%s", c);
++			sweet_log_append(c, n < (int)sizeof(c) ? n : (int)sizeof(c) - 1);
++			sweet_log_flush();
++		}
+ 		IOSleep(FLAME_WDT_PET_S * 1000);
+ 	}
+ 	IOLog("FLAME WDT: flamereboot=%d reached, no more pets: reset follows\n", reboot_s);
+-- 
+2.56.0
+
