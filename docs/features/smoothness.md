@@ -95,6 +95,13 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 04:48 Correction to rl: "handlers done -> swap" restates the skipped ticks; CA's render gate (read-only)
+- tools/sunfish-timeline.py:81-94 pairs each swap with the last command buffer whose handlers finished before it: the previous frame's. So that stage is "wait for the tick plus the next render": low launches' p95 24-25 ms is a good p50 (7-8 ms) plus one tick. It doesn't locate the skip.
+- Read in QuartzCore (research/re/QuartzCore.s): each tick runs vsync_callback, which renders only if tick + period >= the next-update time (server+0x2b0; 0x1882ba354-3a4); a client commit sets next-update = t + period x (N - 0.25) (0x1882cf960-9ec, 0x188501014). SwapEnd doesn't wait for the GPU. From the TL lines: swap 11.9-14.0 ms after the tick, the same in low and good launches; tick interval p1/p99 15.7/17.6 ms, mean 16666.95 us, in every launch: our tick is reported as the wake time (SweetFramebuffer.cpp:494), about +-1 ms of jitter.
+- `CA_FORCE_TIMER=1` already turns on the VBL path (`CADeviceUseVBL` = atoi(getenv) != 0): backboardd runs on our kernel tick. `sweetpresentwait=1` does nothing (only 2 is read).
+- Guess (about 50 %): each launch's commit time lands at its own offset to the gate's edge, and the tick's jitter turns that into a partial skip rate. No log has the app's commit times.
+- Next: RELAUNCH=5, 4 boots each: `sweetvsyncahead=4000` (moves the edge 4 ms, boot arg only); xnu 0273 `sweetvsyncgrid=1` (the tick's deadline instead of the wake time, kernel155). Base tonight: 2 clearly low + 4 mild in 20.
+
 ### 2026-11-02 04:39 rl: low Settings runs are per launch; the extra time is Core Animation's wait after the GPU (handlers done -> swap)
 - `RELAUNCH=5 SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh`, kernel154, no QoS, settings only, 4 boots (logs 20261102-040337, -041725, -042245, -043010), Preferences killed and relaunched between launches (pid 277 -> 414 checked), 0 hangs.
 - Per boot (swaps/s): rl1 57.0 56.3 55.0 57.5 57.0; rl2 55.9 53.9 57.1 46.8 57.0; rl3 56.6 54.6 56.9 57.4 57.3; rl4 57.4 57.0 57.7 41.5 57.2. Low launches mixed with good ones in 4 of 4 boots; clearly low 2 of 20 (skip2 25, 42 %), milder 4 (skip2 5-7 %, p95 27-31 ms). No pattern in launch order or start temperature (75-80 C both).
