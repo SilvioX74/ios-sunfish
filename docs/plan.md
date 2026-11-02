@@ -29,7 +29,7 @@ After these: GPU governor (full and idle levels at most), once the hangs in gpu-
 Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-loaded). Fix one now only if it voids benches, stops phone testing, or doubles in rate after a change (then turn that change off first). The rest wait until the speed targets are met.
 
 ## GPU bug now due
-G1 (no-fault hang, no recovery) voids benches today, 4 of about 40 boots: it qualifies for a fix. Stuck memory path, not our lock: GBIF never acks (24 of 24 failed, ack 3: 8 of 8 recovered). Next: xnu 0263 flush hammer to find the trigger, then CX-cycle recovery (gpu.md).
+G1 (no-fault hang, no recovery) voids benches today, 4 of about 40 boots: it qualifies for a fix. Stuck memory path, not our lock: GBIF never acks (24 of 24 failed, ack 3: 8 of 8 recovered). Flush hammer (hm1): flushes aren't the trigger; both SMMU syncs stuck, no fault. Next: CX-cycle recovery `sweetcxcycle`, what Linux does and we don't (gpu.md).
 
 ## Tonight's soak (after `work/night`, 9:30 pm)
 Already started and waiting (`tools/sunfish-nightsoak.sh n3`, detached, survives any session; don't kill or restart it, stay off the phone from 21:25 to about 22:35). It reboots the phone at 21:30. Result: work/nightsoak-n3.log, done at the "finished" line; nothing wakes a session, so check it after 22:35.
