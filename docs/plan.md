@@ -1,4 +1,4 @@
-# Plan (2026-10-31, updated 2026-11-02 06:30): speed and heat
+# Plan (2026-10-31, updated 2026-11-02 06:45): speed and heat
 
 Rules: CLAUDE.md ("How to work"). Old plan: `docs/plans/2026-10-31-mixed-priorities.md`. One line per item;
 details and history in the feature Logs (`docs/features/<name>.md`).
@@ -33,13 +33,11 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `sweetsmmutcr=3` (stock SMMU walks and ACTLR), default in kernel153. Watch it in the next soaks. A CX cycle doesn't recover a real G1 (the GDSC refuses, n6), so off. Silent reset n1, n5: not seen in n7; pet crumb on in soaks (gpu.md).
 
 ## Phone
-Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel154 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200 compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off; /var/local/mtl2-env = SWEET_U0011..14=1. kernel155 = 154 + `sweetvsyncgrid` (off; no gain). The live-log listener is the old copy: restart it once to pick up the usb0 link-state fix (tools/sunfish-livelog.sh).
+Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel154 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200 compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off; /var/local/mtl2-env = SWEET_U0011..14=1. kernel155 = 154 + `sweetvsyncgrid` (off; no gain). Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted mo3 (everyday setup).
 
 ## Next (in this order)
-1. Webcam motion check of mode 3 now it's light (st3 correction): swipe Home pages, look for ghosting or stale strips.
-2. Restart the live-log listener (link-state fix) between boots.
-3. Low Settings launches: read-only comparison of a low and a good launch (Priority 1); logs vg*/va*/rl* in work/perfab, per-boot logs 20261102-04* and -05*.
-4. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel154 + `sweetwdtcrumb=1`).
+1. Low Settings launches: read-only comparison of a low and a good launch (Priority 1, investigator running); logs vg*/va*/rl* in work/perfab, per-boot logs 20261102-04* and -05*.
+2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel154 + `sweetwdtcrumb=1`).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),

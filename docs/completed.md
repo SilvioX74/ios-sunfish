@@ -45,3 +45,4 @@ Done 2026-10-30: VIBRATION MOTOR BUZZES (hp2), camera opens fixed (2ed9d22), dai
 - O8 [DONE 2026-10-30] Camera ISP speed: whole-frame renders in row bands, camisp 84.8 -> 10.6 ms binned, 372 -> 47 ms full (identical output; the live preview was already parallel).
 - O4 [DONE 2026-10-29] lskdd respawn cost: dropped.
 - 2026-10-31 A/B bench tool `tools/sunfish-perfab.sh`: boots configs in turn, fixed screens, one table, void rules, temperature and A76 MHz columns; 5 boots a side on 4 screens takes about 37 min (cpu1).
+- 2026-11-02 mo3: mode 3 webcam motion check at 30 fps: no stale strip, band or flash in 900 frames; mid-motion doubling is the camera (smoothness.md). Live-log listener restarted with the usb0 link-state fix.
