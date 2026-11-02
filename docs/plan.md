@@ -1,4 +1,4 @@
-# Plan (2026-10-31): speed and heat
+# Plan (2026-10-31, updated 2026-11-02 06:30): speed and heat
 
 Rules: CLAUDE.md ("How to work"). Old plan: `docs/plans/2026-10-31-mixed-priorities.md`. One line per item;
 details and history in the feature Logs (`docs/features/<name>.md`).
@@ -6,7 +6,7 @@ details and history in the feature Logs (`docs/features/<name>.md`).
 ## Focus (the user, 2026-10-31)
 Make the phone fast and smooth first, stability later, and stop it running hot all the time.
 Targets (Claude's numbers, the user can change them):
-- Settings scrolling: at least 58 swaps/s with p95 at or under 20 ms, across 5 boots (qs off: 5 of 5 at 56.6-57.2, p95 median 19.6; earlier about 1 in 3 boots 42-52).
+- Settings scrolling: at least 58 swaps/s with p95 at or under 20 ms, across 5 boots (good launches 57, p95 19-20 ms; about 1 launch in 10 at 42-50).
 - Control Center: at least 45 swaps/s (now 38.7).
 - Soak: no UI restarts in 30 min of hard scrolling (n7: 1 restart in 60 min).
 
@@ -18,11 +18,11 @@ Targets (Claude's numbers, the user can change them):
 
 ## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each)
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
-1. ▶ **Heat**: idle fixed (53-59 C; aggregated and coreduetd data moved aside). A55 at 1497 MHz: 5 C cooler, +2.5 swaps/s, now everyday (`sweetrowa55=6`); 1248 MHz raises GPU hangs. Governor (kernel142, `sweetgov=1`) and screen-off clocks work, no heat gain shown: off. A76 at 1939 MHz is 5 C cooler for 0.4 ms. GPU clock gating (xnu 0262, `sweethwcg=1`): idle 3.4 C cooler on the GPU sensor, no speed loss shown (hw2, hw3); goes in the next soak, default if clean. Lowest GPU clock 3.5 C cooler at idle, top DDR vote no change (ddi1). (cpu.md)
-2. **CPU cost per frame** (about 14 ms): phone-CPU build tried, no gain (cpu1); redfin knobs 0117-0120: Settings 57, p95 20.2 ms (cp1), on for the soak; low Settings runs (42-49 swaps/s, 1 in 6) are real: the app misses ticks; `sweetfgbig`, xnu 0265, A/B running (fg1). Then cache flush off the render thread (backlog O9, O11). (smoothness.md)
-3. ▶ **GPU cost per frame**: at internal 5 nits (not 32) a second full-size pass costs 7 ms per frame, on all apps; slider minimum gives 5 nits; luma boost off fixes it: Settings GPU busy 83 -> 55 %, Home 47.8 -> 53.3 (lb0-lb3, default now); done so far: shadow copy cache, dead fill mode 3: Home 26 -> 52, Control Center 23 -> 37, Settings 50-56 swaps/s (env on the phone, not default). Next: Control Center trace without per-draw tracing (crashes backboardd); `SWEET_CULL=2`: off, more G1 and little gain; Control Center backdrop at quarter size: 33 swaps/s, p95 49 ms (cs1), on the phone under test; Home is redrawn at full size behind Control Center each frame (cc3), but pass hash shows no repeats (ph1): reuse parked; scratch trim no gain (hw2): off; low-draw full-size passes in sysmem next (guess 1-3 ms); widgets page draws at 26 swaps/s, not looked at; 650 MHz gave Home 48.6, Control Center 30.8 but a bad Settings boot (smoothness.md gd1); `sweetddr=1` no gain. Mode 3 and cache: defaults after clean soak n7. (smoothness.md)
-4. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30, before the recent fixes); time app opens and the keyboard. Then the screen-on CPU governor (redfin 0963, touch and animation at full speed), kept only if the A/B shows no speed loss. (smoothness.md, cpu.md)
-5. **Upstream takeaways** (backlog U4-U7, U9, U10; after the Next list below): bridge thread QoS (one line, up to 1 ms, guess); `TU_FETCH_GMEM_MIN_DRAWS=5`/`20` on Control Center (0.5-2 ms, guess; may be worse), 5-boot A/B for both; `SETTLE=90` benches; trace filter env. Then UBWC census, spare image blocks timing.
+1. ▶ **Low Settings launches** (about 1 in 10 clearly low, 42-50 swaps/s; the rest 57, p95 19-20 ms): per launch, not idle, not A55 time (`sweetfgbig` no help), not vsync jitter (`sweetvsyncgrid`, `sweetvsyncahead` no help, vg/va). Launch 2 after a kill was low in 6 of 8 boots. Next: read-only, a low against a good launch from the app's side (Preferences main thread, commits per frame, its display link). (smoothness.md)
+2. **Heat**: idle 53-59 C; under load peaks 93-96 C (n7 95.7, 60 of 730 readings at 90+, 0 caps). Defaults in: A55 1497 MHz, GPU clock gating, fence poll 200 us (1.3 ms/frame off the A55s, no heat shown). Next: which app peaks (uisoak now logs `=== uisoak TAG app`), A76 at 1939 MHz (5 C cooler for 0.4 ms, cpu.md hot1). (cpu.md)
+3. **Control Center** 38.7 swaps/s (target 45): `TU_FETCH_GMEM_MIN_DRAWS=5`/`20` about +1 in 1-2 boots, unfinished (backlog O15); trace without per-draw tracing (it crashes backboardd); Home redrawn at full size behind it (cc3). (smoothness.md)
+4. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30); time app opens and the keyboard. (smoothness.md, cpu.md)
+5. **Upstream takeaways**: trace filter env (U6); UBWC census (U9), spare image blocks timing (U10). QoS (U7) no gain, off.
 
 After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.
 
@@ -33,12 +33,13 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `sweetsmmutcr=3` (stock SMMU walks and ACTLR), default in kernel153. Watch it in the next soaks. A CX cycle doesn't recover a real G1 (the GDSC refuses, n6), so off. Silent reset n1, n5: not seen in n7; pet crumb on in soaks (gpu.md).
 
 ## Phone
-Claude's. `work/night` set until the morning session. Everyday setup: kernel154 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200 by default) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, bundle work/metal2-next (mode 3, cache, knobs on by default), luma boost off.
+Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel154 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200 compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off; /var/local/mtl2-env = SWEET_U0011..14=1. kernel155 = 154 + `sweetvsyncgrid` (off; no gain). The live-log listener is the old copy: restart it once to pick up the usb0 link-state fix (tools/sunfish-livelog.sh).
 
 ## Next (in this order)
-1. Webcam motion check of mode 3 in the morning (st3 correction; dim screen at night). Defaults installed and checked: 2 boots, 15 min UI run clean (df, smoothness.md).
-2. Heat under load: n7 peaked 95.7 C on cpu6, 60 of 730 readings at 90 C or more, 0 caps. When and in which app, and do caps ever fire? A76 at 1939 MHz is 5 C cooler for 0.4 ms (cpu.md hot1).
-3. ▶ Low Settings runs: per launch (rl, 2 clearly low + 4 mild of 20); CA renders only when the tick passes a gate set from the app's commit time, and our tick jitters +-1 ms. Next: RELAUNCH=5 x 4 boots with `sweetvsyncahead=4000`, then `sweetvsyncgrid=1` (xnu 0273) (smoothness.md).
+1. Webcam motion check of mode 3 now it's light (st3 correction): swipe Home pages, look for ghosting or stale strips.
+2. Restart the live-log listener (link-state fix) between boots.
+3. Low Settings launches: read-only comparison of a low and a good launch (Priority 1); logs vg*/va*/rl* in work/perfab, per-boot logs 20261102-04* and -05*.
+4. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel154 + `sweetwdtcrumb=1`).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),

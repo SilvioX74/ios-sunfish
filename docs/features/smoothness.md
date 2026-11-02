@@ -95,6 +95,13 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 06:24 vg/va: neither sweetvsyncgrid nor sweetvsyncahead removes the low Settings launches; launch 2 often low
+- `RELAUNCH=5 SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh`, kernel155 (xnu 0273), empty env, settings only, 4 boots each, 0 hangs.
+- `sweetvsyncgrid=1`: vg1 56.8 50.0 56.7 56.0 57.3; vg2 56.9 44.1 56.9 56.8 53.9; vg3 56.5 43.1 57.7 58.3 56.1; vg4 41.9 44.4 57.1 42.5 56.9: 6 clearly low (under 50) of 20, 1 mild.
+- `sweetvsyncahead=4000`: va1 55.9 28.4 57.6 43.8 57.2; va2 56.5 42.1 56.5 57.1 56.9; va3 56.5 57.0 57.1 57.4 57.0; va4 48.1 56.9 57.2 57.4 55.1: 4 clearly low (one at 28.4, p95 98 ms), 3 mild.
+- Base (rl, kernel154): 2 clearly low, 4 mild of 20. So both are no better, maybe worse; neither goes in. The gate/jitter guess isn't supported.
+- Launch 2 (the first fresh launch after the bench kills Settings) was low in 6 of 8 boots here, 2 of 4 in rl; launch 1 low 2 of 8. Not explained. Next: read-only, compare a low and a good launch from the app's side (Preferences main thread, commits per frame, its display link), and whether a killed app's relaunch differs (caches, `lsd`/`runningboard` lines).
+
 ### 2026-11-02 05:24 cs: TU_FETCH_GMEM_MIN_DRAWS on Control Center: about +1 swap/s, not enough boots; stopped on a lost USB link
 - `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh`, kernel154, metal2-next, cc,home. Control Center swaps/s (p95): default 39.6 (44.7), 40.3 (44.5), 39.0 (45.9); `TU_FETCH_GMEM_MIN_DRAWS=5` 40.5 (41.7), 40.4 (43.9); `=20` 41.2 (40.8), one void (0 swaps, cause not read). Home 53.2-53.5 all. First submit about 1 ms lower with the env. Too few boots for the stop rule; screenshots not read. Far from 45 either way.
 - Stopped at csr3 d5: no SSH for 15 min while iOS ran (lock screen on the webcam): the host's usb0 interface had its address but was set down, and the listener only checked the address. Brought up by hand; listener fixed to check the link state too (applies when it restarts).

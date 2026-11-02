@@ -34,6 +34,14 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | va4 | ahead=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncahead=4000 | 1 | 22 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vg4 | grid=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncgrid=1 | 1 | 19 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | va3 | ahead=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncahead=4000 | 1 | 23 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vg3 | grid=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncgrid=1 | 1 | 21 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | va2 | ahead=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncahead=4000 | 1 | 21 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vg2 | grid=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncgrid=1 | 1 | 22 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | va1 | ahead=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncahead=4000 | 1 | 19 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | vg1 | grid=155,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetvsyncgrid=1 | 1 | 21 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | csr3 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 2 | 6 k | 0 | 0 | 0 | 2 |
 | 2026-11-02 | csr2 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 19 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | csr1 | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 13 k | 0 | 0 | 0 | 2 |
