@@ -753,6 +753,9 @@ static void waitForResource(id resource) {
 // unless set; only passes with a colour target >= 1000x2000 are recorded, and only the first 20 such passes with >= 10 draws are written.
 // SWEET_DRAWLOG_MIN=N (default 10): only passes with >= N draws; SWEET_DRAWLOG_SKIP=K (default 0): skip the first K such passes;
 // SWEET_DRAWLOG_COUNT=C (default 20): write C passes. E.g. MIN=100 skips Home's ~60-draw passes and catches Control Center's ~134.
+// SWEET_DRAWLOG_MINPX=N (unset: the 1000x2000 rule above): instead record passes whose colour target 0 has >= N pixels (e.g. 100000 catches
+// Control Center's 284x611 blur passes). The pass header also lists every attachment (" cI=WxH fmt= ld= st= mem=", " d=", " s="): the Metal
+// load/store actions and storageMode (3 = memoryless) as CA asked for them; the bridge passes them through unchanged (Vulkan side: runtime).
 static const char *drawLogPath() {
  static const char *path=[]{const char *p=getenv("SWEET_DRAWLOG");return p&&*p?p:(const char *)nullptr;}();
  return path;
@@ -761,6 +764,8 @@ static int drawLogEnv(const char *name,int dflt) {const char *p=getenv(name);ret
 static int drawLogMin() {static const int n=drawLogEnv("SWEET_DRAWLOG_MIN",10);return n;}
 static int drawLogSkip() {static const int n=drawLogEnv("SWEET_DRAWLOG_SKIP",0);return n;}
 static int drawLogCount() {static const int n=drawLogEnv("SWEET_DRAWLOG_COUNT",20);return n;}
+static long drawLogMinPx() {static const long n=[]{const char *p=getenv("SWEET_DRAWLOG_MINPX");return p&&*p?atol(p):-1L;}();return n;}
+static bool drawLogBig(unsigned long w,unsigned long h) {const long n=drawLogMinPx();return n<0?(w>=1000&&h>=2000):(long)(w*h)>=n;}   // sweet drawlog: SWEET_DRAWLOG_MINPX
 static std::atomic<int> gDrawLogBlocks,gDrawLogMatched;
 // sweet drawlog: the hex value of one specialization constant in an NBFunction's constantsText ("name:type:hex ..."), "" if absent
 static std::string dlConst(const std::string &t,const char *name) {
@@ -776,7 +781,7 @@ static void dlFloats(std::string &out,const void *p,size_t bytes,unsigned maxFlo
 }
 struct DrawLog {
  unsigned long w=0,h=0,format=0,load=0,store=0;bool depth=false;
- std::string text;unsigned draws=0;
+ std::string text,atts;unsigned draws=0;   // atts: the attachment list of the pass header
  std::string pipeline="-";bool blend=false;unsigned long mask=0;
  struct VB {__unsafe_unretained NBBuffer *b=nil;unsigned long offset=0;} vbs[31];
  struct FT {__unsafe_unretained NBTexture *t=nil;bool sampler=false;} fts[16];
@@ -809,11 +814,11 @@ struct DrawLog {
   draws++;
  }
  void finish() {
-  if(w<1000||h<2000||(int)draws<drawLogMin()||gDrawLogBlocks>=drawLogCount())return;
+  if(!drawLogBig(w,h)||(int)draws<drawLogMin()||gDrawLogBlocks>=drawLogCount())return;
   const int match=gDrawLogMatched++;if(match<drawLogSkip())return;   // sweet drawlog: SWEET_DRAWLOG_SKIP
   gDrawLogBlocks++;
   if(FILE *f=fopen(drawLogPath(),"a")) {
-   fprintf(f,"=== pass %lux%lu fmt=%lu load=%lu store=%lu depthstencil=%d draws=%u match=%d\n%s",w,h,format,load,store,(int)depth,draws,match,text.c_str());
+   fprintf(f,"=== pass %lux%lu fmt=%lu load=%lu store=%lu depthstencil=%d draws=%u match=%d%s\n%s",w,h,format,load,store,(int)depth,draws,match,atts.c_str(),text.c_str());
    fclose(f);
   }
  }
@@ -1292,10 +1297,15 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  }
  if(!drawLogPath() || gDrawLogBlocks>=drawLogCount())return;
  id<MTLTexture> t=d.colorAttachments[0].texture;
- if(!t || t.width<1000 || t.height<2000)return;
+ if(!t || !drawLogBig(t.width,t.height))return;
  _dl.reset(new DrawLog());_dl->w=t.width;_dl->h=t.height;_dl->format=t.pixelFormat;
  _dl->load=d.colorAttachments[0].loadAction;_dl->store=d.colorAttachments[0].storeAction;
  _dl->depth=d.depthAttachment.texture||d.stencilAttachment.texture;
+ auto att=[&](const char *name,MTLRenderPassAttachmentDescriptor *a){id<MTLTexture> x=a.texture;if(!x)return;char b[120];   // sweet drawlog: every attachment
+  snprintf(b,sizeof b," %s=%lux%lu fmt=%lu ld=%lu st=%lu mem=%lu",name,(unsigned long)x.width,(unsigned long)x.height,(unsigned long)x.pixelFormat,
+   (unsigned long)a.loadAction,(unsigned long)a.storeAction,(unsigned long)x.storageMode);_dl->atts+=b;};
+ for(unsigned i=0;i<8;i++){char n[8];snprintf(n,sizeof n,"c%u",i);att(n,d.colorAttachments[i]);}
+ att("d",d.depthAttachment);att("s",d.stencilAttachment);
 }
 - (void)endEncoding {
  if(_defer)[self cullReplay];   // sweet cull
