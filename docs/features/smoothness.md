@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 16:35 Correction: clock times of today's later entries
+- Entries stamped 2026-11-02 13:05 to 20:50 in this Log were given estimated times that ran ahead of the clock; they were written between about 12:00 and 16:30 EST, in the order shown. Their content stands.
+
 ### 2026-11-02 20:50 mk: SWEET_CULL_MASK0 no gain (2 boots a side, as expected after b54); steady Control Center frames captured
 - Bundle 0167c75 (mask-0 skip), kernel158 everyday + SWEET_CULL=3, 2 boots a side (cut short): home def 53.1, 53.1 / m0 53.8, 52.1; cc 43.7, 42.6 / 43.8, 42.2; settings 56.9, 55.0 / 56.4, 54.8. All within noise, screenshots identical, 0 G1/G2/G4. Stays off.
 - dl4: SWEET_DRAWLOG_MIN=30 SKIP=40 COUNT=8, fixed cc motion, webcam: Control Center. 8 passes 1125x2436, 83 draws each (one 94): work/cc/drawlog-dl4.txt. Analysis running.

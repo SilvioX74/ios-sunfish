@@ -15,6 +15,9 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 16:35 Correction: clock times of today's later entries
+- Entries stamped 2026-11-02 13:05 to 20:50 in this Log were given estimated times that ran ahead of the clock; they were written between about 12:00 and 16:30 EST, in the order shown. Their content stands.
+
 ### 2026-11-02 15:55 dfs: 15-min soak on today's defaults: max 81.6 C, mean 69.6, none at 90+; 1 G4 with a backboardd restart
 - kernel158 (vsync phase 5000, A76 1939) everyday args, mtl2-env SWEET_U0011..14=1 TU_FETCH_GMEM_MIN_DRAWS=20 SWEET_SURF_FLUSH=1, original adspboot (boot 20261102-130815 after the 13:06 restore; the runner read the previous boot's sensors.log line), 4455 mV. `tools/sunfish-uisoak.sh dfsa 450` then `dfsb 450`.
 - dfsa void: 1 G4 and backboardd 60 -> 362 at 57 s (killed after recovery by design), 47.8 k submits. dfsb clean: 50.1 k submits, 0 G1/G2/G4.

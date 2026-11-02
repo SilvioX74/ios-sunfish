@@ -1,4 +1,4 @@
-# Plan (2026-10-31, updated 2026-11-02 09:10): speed and heat
+# Plan (2026-10-31, updated 2026-11-02 16:35): speed and heat
 
 Rules: CLAUDE.md ("How to work"). Old plan: `docs/plans/2026-10-31-mixed-priorities.md`. One line per item;
 details and history in the feature Logs (`docs/features/<name>.md`).
@@ -18,10 +18,10 @@ Targets (Claude's numbers, the user can change them):
 
 ## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each)
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
-1. ▶ **Heat**: A76 at 1939 MHz now default (xnu 0276, kernel158): soak peaks 93.7 -> 87.5 C, 90+ readings 5 -> 0 of 90, swaps/s within noise (hA/hB). Photos' CPU is its own work (pax). Next: idle heat (53-59 C) and tonight's soak on kernel158. (cpu.md)
-2. **Control Center** 43.8 swaps/s with the cover cull SWEET_CULL=3 (default now; 41.9 without, fixed cc motion; target 45). Next: a real Control Center draw log (fixed motion, webcam-checked) to find the remaining ~1 ms. (smoothness.md)
+1. **Heat**: A76 1939 MHz default (kernel158); today's defaults soak max 81.6 C, none at 90+ (dfs; this morning 95.7). Idle screen on: adspboot (O18), Clock icon 10 fps full redraw (O17) parked. Next: tonight's 1 h soak. (cpu.md)
+2. ▶ **Control Center** 43.8 swaps/s with the cover cull SWEET_CULL=3 (default; 41.9 without; fixed cc motion; target 45). Steady frames (83 draws) logged (dl4), analysis running; then the best cut. (smoothness.md)
 3. **Real-use hitches**: bench gaps are the swipe reversal (gp), not stalls; next: time app opens and the keyboard by hand-like taps; recheck the Oct 30 >100 ms gaps in a real-use soak. (smoothness.md, cpu.md)
-4. **Render CPU**: backboardd's render_for_time takes 13.2 ms of each 16.7 ms tick on Settings (catrace lat); what it spends that on (profile tick+0..13 with tools/sunfish-pc-hist.py). (smoothness.md)
+4. **Render CPU**: backboardd's render thread 13.4 ms/frame on Settings, mostly bridge per-draw work (rc); surface flush done (SWEET_SURF_FLUSH=1); next: Turnip redundant binds / per-frame VkRenderPass (0.3-0.5 ms, guess), allocation churn. (smoothness.md)
 5. **Upstream takeaways**: trace filter env (U6: works, still distorts, parked); UBWC census (U9), spare image blocks timing (U10). QoS (U7) no gain, off.
 
 After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.
@@ -33,11 +33,11 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `sweetsmmutcr=3` (stock SMMU walks and ACTLR), default in kernel153. Watch it in the next soaks. A CX cycle doesn't recover a real G1 (the GDSC refuses, n6), so off. Silent reset n1, n5: not seen in n7; pet crumb on in soaks (gpu.md).
 
 ## Phone
-Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted ev158 (kernel158 everyday setup).
+Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted ev4 (kernel158 everyday setup).
 
 ## Next (in this order)
-1. Heat, idle with the screen on: adspboot parked (O18: per-pass work, not poll rate); Clock icon's 10 fps full-screen redraw (O17). Next: tonight's soak n8 on kernel158; meanwhile Control Center (Priority 2).
-2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel158 + `sweetwdtcrumb=1`).
+1. Control Center steady-frame analysis (dl4) -> the best cut, A/B.
+2. Tonight's soak (n8) at 21:30: `tools/sunfish-nightsoak.sh n8` (kernel158 everyday + `sweetwdtcrumb=1`; mtl2-env now has SWEET_SURF_FLUSH=1 and SWEET_CULL=3: watch G1).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),
