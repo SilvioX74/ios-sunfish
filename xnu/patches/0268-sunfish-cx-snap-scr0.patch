@@ -1,0 +1,30 @@
+From 4e272b823bf655319e7ca49894ba87eba6dd8259 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 22:15:54 -0500
+Subject: [PATCH] sunfish: CX boot snapshot of sCR0 only
+
+---
+ bsd/dev/sweet_a6xx.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index a4ac169..ace4387 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -1974,10 +1974,11 @@ void a6_cx_release(void)
+  * 0264: what the SMMU held once the boot was done, to compare after a CX cycle (+offset, words): sCR0..sACR, IDR, SMR,
+  * S2CR, CBAR, CBA2R, context banks 0 and 1. First boot state not listed here is not checked. Only with sweetcxcycle
+  * set: on the default path these registers aren't read. 0266: the impl registers of smmu_bank came out, they were never
+- * read before and cx1's boot panicked with a CPU stuck 2 s after this ran (cause not proven).
++ * read before and cx1's boot panicked with a CPU stuck 2 s after this ran (cause not proven). 0268: cx2a stuck CPU0 the
++ * same way without them, so only sCR0 now, which the default path reads too and a6_recover_cx restores from.
+  */
+ static const uint32_t cx_snap_regs[][2] = {
+-	{ 0x00, 5 }, { 0x20, 8 }, { 0x800, 8 }, { 0xc00, 8 }, { 0x1000, 5 }, { 0x1800, 5 }, { 0x8000, 16 }, { 0x9000, 16 },
++	{ 0x00, 1 },
+ };
+ static uint32_t cx_snap[83];
+ 
+-- 
+2.56.0
+
