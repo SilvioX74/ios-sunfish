@@ -54,7 +54,7 @@ static Timed gTimeWaitScheduled,gTimeWaitCompleted;
 static Timed gTimeResourceWait;
 static std::atomic<uint64_t> gResourceChecks,gResourceSkipped;
 static Timed gTimeSurfaceFlush;
-static std::atomic<uint64_t> gSurfaceFlushBytes,gSurfaceFlushDuplicates;
+static std::atomic<uint64_t> gSurfaceFlushBytes,gSurfaceFlushDuplicates,gSurfaceFlushSkipped;
 struct EncodedWork {uint32_t passes,draws,dispatches,blits;uint64_t pixels;};
 struct CommitRecord {uint64_t committedUs=0,callbackUs=0,ageUs=0;int64_t scheduledUs=-1;uint32_t index=0;EncodedWork work={};};
 static CommitRecord gCommitRing[32];
@@ -319,12 +319,24 @@ NB_RESOURCE_SPI
  [self getBytes:bytes bytesPerRow:row bytesPerImage:row*r.size.height fromRegion:r mipmapLevel:level slice:0];
 }
 @end
+// sweet surf flush (SWEET_SURF_FLUSH, bits; unset 3 = both, today's behaviour; 0 neither): 1 = clean+invalidate at commit, 2 = at completion.
+// The A640 doesn't snoop. Commit (1) is the one correctness needs: it writes back CPU-dirty lines (the kernel's bzero at create, SweetSurface.cpp:992,
+// cacheable map :994; any CPU writer through IOSurfaceLock) before the GPU renders, else they land later over its pixels (and the kernel present's
+// clean_dcache64, sweet_gpu.c:1125, would push them out too). Completion (2) only drops stale CPU lines for CPU readers: the kernel's CPU-copy present
+// fallback (SweetFramebuffer.cpp:1257, cacheable getBytesNoCopy, no maintenance; only when the GPU present is off or fails) and user-space readers
+// (snapshots, IOSurfaceLock). The GPU present (default) reads DRAM by the GPU; flame-shot reads the panel carveout, not these surfaces.
+static int surfFlushMode() {
+ static const int mode=[]{const char *p=getenv("SWEET_SURF_FLUSH");const int m=p&&*p?(atoi(p)&3):3;
+  char t[64];snprintf(t,sizeof t,"SWEET SURF FLUSH: mode %d (1 commit, 2 completion)",m);sm2_logs(t);return m;}();
+ return mode;
+}
 // A command can use many independent imports/views of one IOSurface. Their
 // owners keep the mapping live through this phase. Maintain each exact CPU
 // range once; no address identity or decision is carried into another phase
 // or command, and distinct/partially overlapping ranges retain their calls.
-static void flushSurfaces(NSMutableSet *surfaces) {
+static void flushSurfaces(NSMutableSet *surfaces,int bit) {
  if(!surfaces.count)return;
+ if(!(surfFlushMode()&bit)){gSurfaceFlushSkipped+=surfaces.count;return;}   // sweet surf flush: off for this phase
  std::vector<std::pair<uintptr_t,size_t>> ranges;
  ranges.reserve(surfaces.count);
  for(NBTexture *texture in surfaces)if(texture.surface)
@@ -1564,7 +1576,7 @@ static void scheduled(void *context);
 // After completion (or a refusal): invalidate the CPU's view of imported surfaces, then completed handlers, once.
 - (void)finish {
  if(ctlPath())ctlF0=mach_absolute_time();   // sweet ctl
- flushSurfaces(_surfaces);
+ flushSurfaces(_surfaces,2);
  if(ctlPath())ctlF1=mach_absolute_time();
  // Actual GPU completion (or a local refusal that never submitted) is the
  // release point. A retained completed command must not pin every old frame.
@@ -1601,7 +1613,7 @@ static void scheduled(void *context);
  dispatch_group_enter(_schedulingHandlers);
  @synchronized(gInFlight){[gInFlight addObject:self];}
  if(!self.encodeFailure) {
-  flushSurfaces(_surfaces);
+  flushSurfaces(_surfaces,1);
   // Completion owns this reference; the runtime orders the non-owning scheduled callback before it.
   void *context=(__bridge_retained void *)self;
   if(nmb_command_buffer_on_completed(_handle,completed,context) &&
@@ -2505,8 +2517,8 @@ extern "C" size_t native_bridge_metal_telemetry(char *out,size_t size) {
  row("J completed wait n=%llu total=%llums max=%llums",(unsigned long long)gTimeWaitCompleted.count.load(),ms(gTimeWaitCompleted.total.load()),ms(gTimeWaitCompleted.slowest.load()));
  row("J resource wait n=%llu total=%llums max=%llums",(unsigned long long)gTimeResourceWait.count.load(),ms(gTimeResourceWait.total.load()),ms(gTimeResourceWait.slowest.load()));
  row("J resource checks=%llu skipped=%llu",(unsigned long long)gResourceChecks.load(),(unsigned long long)gResourceSkipped.load());
- row("J surface cache n=%llu bytes=%llu dup=%llu us=%llu max=%llu",(unsigned long long)gTimeSurfaceFlush.count.load(),
-  (unsigned long long)gSurfaceFlushBytes.load(),(unsigned long long)gSurfaceFlushDuplicates.load(),
+ row("J surface cache mode%d n=%llu bytes=%llu dup=%llu skip=%llu us=%llu max=%llu",surfFlushMode(),(unsigned long long)gTimeSurfaceFlush.count.load(),
+  (unsigned long long)gSurfaceFlushBytes.load(),(unsigned long long)gSurfaceFlushDuplicates.load(),(unsigned long long)gSurfaceFlushSkipped.load(),
   (unsigned long long)gTimeSurfaceFlush.total.load(),(unsigned long long)gTimeSurfaceFlush.slowest.load());
  // The runtime's VkPipeline makings (the creation log, METAL2VULKAN_LOG_PIPELINES; they happen at draws, not at the state's creation) and
  // its shader cache: where the driver's compile time goes.
