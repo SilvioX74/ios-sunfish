@@ -1,7 +1,7 @@
 Bridge 0119: port of UniXNU AdrenoMetal bridge/patches/0013-skip-unchanged-rebinds by way of ios-redfin bridge 0134 (unchanged).
 Original author: bluseliu50 <265648257+bluseliu50@users.noreply.github.com> (UniXNU/AdrenoMetal ce5e19e, BSD-2-Clause-Patent).
 Skips: the replay call log (one push, plus arena copies for slices, per encoder call), read only by rebind_bytes_no_copy, which SweetMetal2 never calls; with the knob on a rebind is refused.
-Knob: SWEET_U0013 (off unless set and not 0; off = same results and same work as before).
+Knob: SWEET_U0013 (on unless set to 0, since the 2026-11-01 soak; 0 = same results and same work as before).
 
 diff --git a/crates/metal2vulkan-runtime/README.md b/crates/metal2vulkan-runtime/README.md
 index c6dc9f69..f756943b 100644
@@ -120,11 +120,11 @@ index 9e354c2a..b999d2dc 100644
  }
 +
 +/// 0119 (UniXNU 0013, via ios-redfin 0134): whether every device refuses rebinds, as
-+/// `DeviceOptions::refuse_rebinds` (env `SWEET_U0013`, off unless set and not `0`).
++/// `DeviceOptions::refuse_rebinds` (env `SWEET_U0013`, on unless set to `0`).
 +fn sweet_u0013() -> bool {
 +    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 +    *ON.get_or_init(|| {
-+        std::env::var("SWEET_U0013").is_ok_and(|v| !v.trim().is_empty() && v.trim() != "0")
++        std::env::var("SWEET_U0013").map_or(true, |v| v.trim() != "0")
 +    })
 +}
 diff --git a/crates/metal2vulkan-runtime/src/device/mod.rs b/crates/metal2vulkan-runtime/src/device/mod.rs

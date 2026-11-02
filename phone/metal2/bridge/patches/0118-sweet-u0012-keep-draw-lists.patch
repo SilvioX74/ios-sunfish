@@ -1,7 +1,7 @@
 Bridge 0118: port of UniXNU AdrenoMetal bridge/patches/0012-keep-draw-lists by way of ios-redfin bridge 0133 (here also the tracker's inline first use is behind the knob, and the list reserve is dropped).
 Original author: bluseliu50 <265648257+bluseliu50@users.noreply.github.com> (UniXNU/AdrenoMetal ce5e19e, BSD-2-Clause-Patent).
 Skips: the per-draw use list and argument-sampler list allocations, and one Vec per resource first seen in a tracker part.
-Knob: SWEET_U0012 (off unless set and not 0; off = same results and same work as before).
+Knob: SWEET_U0012 (on unless set to 0, since the 2026-11-01 soak; 0 = same results and same work as before).
 
 diff --git a/crates/metal2vulkan-runtime/src/binding.rs b/crates/metal2vulkan-runtime/src/binding.rs
 index 000794dc..9f1fe648 100644
@@ -187,11 +187,11 @@ index 0b532a0a..6d1ee091 100644
  
 +/// 0118 (UniXNU 0012, via ios-redfin 0133): whether an encoder keeps its last draw's use and
 +/// argument-sampler lists for its next draw, and a part holds a resource's first use in place
-+/// (env `SWEET_U0012`, off unless set and not `0`).
++/// (env `SWEET_U0012`, on unless set to `0`).
 +pub(super) fn sweet_u0012() -> bool {
 +    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 +    *ON.get_or_init(|| {
-+        std::env::var("SWEET_U0012").is_ok_and(|v| !v.trim().is_empty() && v.trim() != "0")
++        std::env::var("SWEET_U0012").map_or(true, |v| v.trim() != "0")
 +    })
 +}
 +

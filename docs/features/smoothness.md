@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 22:02 Bridge 0117-0120: on by default in source, for after soak n4
+- SWEET_U0011..14 now on unless set to `0` (patches edited). `METAL2_VARIANT=next` built 22:01 into work/metal2-next (SweetMetal2 16,408,608 bytes); also has mode 3 and shadow cache as defaults. Not installed or run: goes on the phone only after a clean n4, with tools/sunfish-install-speed.sh.
+
 ### 2026-11-01 20:55 fg1: stopped early, too few boots: the user took the phone
 - kernel146 (xnu 0265), `sweetcpusample=1` both sides, everyday env, 3 boots usable of the 4 run, stopped by hand after b2 base when the user asked for the phone, 22 k submits, G1 0, void 0. Off / `sweetfgbig=1`: Home 51.6 (49.4-53.8) / 53.1; Settings 55.8 (54.3-57.4) / 56.1, p95 25.6 / 21.1, late % 5.5 / 4.3. 2 boots against 1: says nothing. No low Settings run came up. `SWEET SCHED: fg` lines not read yet: they're in the boot logs named in work/perfab/fg1/results.tsv. Rerun in full.
 

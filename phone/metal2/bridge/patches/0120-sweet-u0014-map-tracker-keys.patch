@@ -1,7 +1,7 @@
 Bridge 0120: port of UniXNU AdrenoMetal bridge/patches/0014-map-tracker-keys by way of ios-redfin bridge 0135 (unchanged).
 Original author: bluseliu50 <265648257+bluseliu50@users.noreply.github.com> (UniXNU/AdrenoMetal ce5e19e, BSD-2-Clause-Patent).
 Skips: SipHash rounds in the encoder's use-tracking maps: the runtime's KeyHasher instead. Iteration order follows the hash; the maps' users already see a random order.
-Knob: SWEET_U0014 (off unless set and not 0; off = same results and same work as before).
+Knob: SWEET_U0014 (on unless set to 0, since the 2026-11-01 soak; 0 = same results and same work as before).
 
 diff --git a/crates/metal2vulkan-runtime/src/key_hash.rs b/crates/metal2vulkan-runtime/src/key_hash.rs
 index bf06b74e..4f4e3f78 100644
@@ -37,7 +37,7 @@ index bf06b74e..4f4e3f78 100644
 +fn sweet_u0014() -> bool {
 +    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 +    *ON.get_or_init(|| {
-+        std::env::var("SWEET_U0014").is_ok_and(|v| !v.trim().is_empty() && v.trim() != "0")
++        std::env::var("SWEET_U0014").map_or(true, |v| v.trim() != "0")
 +    })
 +}
 +

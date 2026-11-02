@@ -1,7 +1,7 @@
 Bridge 0117: port of UniXNU AdrenoMetal bridge/patches/0011-keep-draw-commands by way of ios-redfin bridge 0132 (without its 0131, a type change no env knob can switch).
 Original author: bluseliu50 <265648257+bluseliu50@users.noreply.github.com> (UniXNU/AdrenoMetal ce5e19e, BSD-2-Clause-Patent).
 Skips: about 10 Vec allocations and frees per draw: the encoder keeps the last DrawCommands and refills its vectors.
-Knob: SWEET_U0011 (off unless set and not 0; off = same results and same work as before).
+Knob: SWEET_U0011 (on unless set to 0, since the 2026-11-01 soak; 0 = same results and same work as before).
 
 diff --git a/crates/metal2vulkan-runtime/src/render.rs b/crates/metal2vulkan-runtime/src/render.rs
 index 119119d8..01fa53c2 100644
@@ -32,11 +32,11 @@ index 119119d8..01fa53c2 100644
  }
  
 +/// 0117 (UniXNU 0011, via ios-redfin 0132): whether an encoder keeps its last draw's commands for
-+/// its next draw to fill again (env `SWEET_U0011`, off unless set and not `0`).
++/// its next draw to fill again (env `SWEET_U0011`, on unless set to `0`).
 +fn sweet_u0011() -> bool {
 +    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 +    *ON.get_or_init(|| {
-+        std::env::var("SWEET_U0011").is_ok_and(|v| !v.trim().is_empty() && v.trim() != "0")
++        std::env::var("SWEET_U0011").map_or(true, |v| v.trim() != "0")
 +    })
 +}
 +
