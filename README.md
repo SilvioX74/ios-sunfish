@@ -27,7 +27,7 @@ plan is [docs/plan.md](docs/plan.md).
 | Area | State | Summary |
 |---|---|---|
 | [Boot](docs/features/boot.md) | ✅ | RAM-only `fastboot boot`; iOS 16.7.16 (iPhone X userland) root on userdata |
-| [CPU](docs/features/cpu.md) | ✅ | 8 cores; A55 1804 MHz, A76 2208 MHz; temperature logged; idle 54 C after 1 h with 2 stuck daemons fixed (was 79-85 C) |
+| [CPU](docs/features/cpu.md) | ✅ | 8 cores; A55 1497 MHz, A76 1939 MHz by default (2026-11-02, kernel158: soak peaks about 6 C lower, none at 90 C); temperature logged; idle 54 C after 1 h with 2 stuck daemons fixed (was 79-85 C) |
 | [Storage](docs/features/storage.md) | ✅ | /private/var on a 94 GB HFSX volume (ufsroot1) via /private/etc/fstab; direct (uncached) I/O fixed |
 | [USB network](docs/features/usb-network.md) | ✅ | Ethernet 192.168.7.2, live kernel log; boot to SSH 16-18 s |
 | [SSH](docs/features/ssh.md) | ✅ | dropbear + dash + toybox; boot to SSH 16-18 s |

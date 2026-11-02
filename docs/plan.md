@@ -18,7 +18,7 @@ Targets (Claude's numbers, the user can change them):
 
 ## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each)
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
-1. ▶ **Heat**: idle 53-59 C; load peaks 93-96 C. Hottest app: Photos (hs1: max 95.7, 9 of its 22 readings at 90+; Safari 92.2; others under 90). Defaults in: A55 1497 MHz, GPU clock gating, fence poll 200 us. Next: what Photos burns (per-thread CPU, GPU per frame), then A76 at 1939 MHz for that load (5 C cooler for 0.4 ms, cpu.md hot1). (cpu.md)
+1. ▶ **Heat**: A76 at 1939 MHz now default (xnu 0276, kernel158): soak peaks 93.7 -> 87.5 C, 90+ readings 5 -> 0 of 90, swaps/s within noise (hA/hB). Photos' CPU is its own work (pax). Next: idle heat (53-59 C) and tonight's soak on kernel158. (cpu.md)
 2. **Control Center** 39.1 -> 40.3 swaps/s with `TU_FETCH_GMEM_MIN_DRAWS=20` (default now, cs4; target 45); trace without per-draw tracing (it crashes backboardd); Home redrawn at full size behind it (cc3). (smoothness.md)
 3. **Real-use hitches**: bench gaps are the swipe reversal (gp), not stalls; next: time app opens and the keyboard by hand-like taps; recheck the Oct 30 >100 ms gaps in a real-use soak. (smoothness.md, cpu.md)
 4. **Render CPU**: backboardd's render_for_time takes 13.2 ms of each 16.7 ms tick on Settings (catrace lat); what it spends that on (profile tick+0..13 with tools/sunfish-pc-hist.py). (smoothness.md)
@@ -33,11 +33,11 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `sweetsmmutcr=3` (stock SMMU walks and ACTLR), default in kernel153. Watch it in the next soaks. A CX cycle doesn't recover a real G1 (the GDSC refuses, n6), so off. Silent reset n1, n5: not seen in n7; pet crumb on in soaks (gpu.md).
 
 ## Phone
-Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel157 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000 compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted hs1 (kernel157 everyday setup).
+Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted hs1 (kernel157 everyday setup).
 
 ## Next (in this order)
-1. Heat: Photos' CPU is its own layout/render (pax), vImage only while thumbnails are made; no switch. Next: soak A/B with A76 at 1939 MHz (`sweetrowa76=10`) vs 2208, 2 boots a side, uisoak 450 s: max C, readings at 90+, swaps per app.
-2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel157 + `sweetwdtcrumb=1`).
+1. Boot kernel158 (A76 1939 default) as everyday: quick bench (settings, home, cc) + webcam.
+2. Tonight's soak (n8): `tools/sunfish-nightsoak.sh n8` (boots the everyday setup, kernel158 + `sweetwdtcrumb=1`).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),

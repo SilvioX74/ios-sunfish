@@ -23,7 +23,7 @@ if ! timeout 8 fastboot devices | grep -q fastboot; then
 	for i in $(seq 60); do fastboot devices | grep -q fastboot && break; sleep 3; done
 fi
 fastboot getvar battery-voltage 2>&1 | head -1
-timeout 150 tools/sunfish-boot.sh soakn work/kernel157/kernel.development.sweet sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetwdtcrumb=1 >/dev/null 2>&1
+timeout 150 tools/sunfish-boot.sh soakn work/kernel158/kernel.development.sweet sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetwdtcrumb=1 >/dev/null 2>&1
 for i in $(seq 120); do timeout 4 tools/sunfish-ssh true 2>/dev/null && break; sleep 1; done
 sleep 30
 C H; sleep 1; C swipe 540 2330 540 1100 300; sleep 2; C swipe 540 2330 540 1100 300; sleep 2

@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 11:55 hA/hB: A76 at 1939 MHz: 6 C cooler at the peak, no 90 C readings, speed within noise; default in kernel158
+- kernel157 everyday args, 4 boots alternating, `tools/sunfish-uisoak.sh TAG 450` 60 s after SSH; capped boots add `sweetrowa76=10` (A76 real MHz 1939 in the THERM lines; default 2207-2208, one dip to 2190). 4454 mV, 0 G1/G2/G4, 0 restarts, 0 caps, ~50.5 k submits each.
+- Per boot max / mean C, readings at 90+ of 90: hA1 92.8 / 78.8, 3; hB1 86.1 / 76.2, 0; hA2 94.5 / 83.1, 7; hB2 89.0 / 78.7, 0. The two boots of a side differ by 2-5 C; capped was cooler in both pairs (-2.6 and -4.4 mean, -6.7 and -5.5 max).
+- Per app (2-boot means), default -> capped: max C Photos 93.7 -> 87.5, Safari 90.1 -> 84.1, Maps 87.5 -> 82.0, Settings 86.4 -> 82.1, Notes 84.5 -> 81.5, Calendar 83.0 -> 79.2; swaps/s Settings 52.6 -> 52.5, Safari 57.0 -> 56.8, Photos 45.7 -> 45.0, Notes 33.6 -> 32.5, Calendar 35.8 -> 33.1, Maps 27.0 -> 27.8.
+- Default: xnu 0276, A76 boot row 10 (1939 MHz) unless sweetrowa76 or flamecpufreq is given; off: `sweetrowa76=12` (kernel158). Calendar's -2.8 swaps/s is the one cost to watch (2 boots).
+
 ### 2026-11-02 11:20 pax: Photos' steady CPU is its own layout and render, no accessibility client (read-only)
 - vt0 stacks symbolized (research/notes/photos-ax-2026-11-02.md), 51 running of 100: main thread layout from scrollViewDidScroll 18 %, PXGViewRenderer/texture streaming/MTKView draw 16 %, PXGBasicAXGroup upkeep (axContentInfoAtSpriteIndex) 8 %, UIKit touch/animation 16 %, unattributed objc/malloc 22 %; workers 18 %: PXBrowserSummaryController title requests, capitalising the date title builds a new ICU word tokenizer each time (px_firstLetterRange -> enumerateSubstringsInRange 0x403 -> NLLangid -> icu::RuleBasedTokenizer::init).
 - The AX group is PhotosUICore's normal path (PXGLayout init creates it, visibleRectDidChange invalidates it every frame; 0x1a5084b14, 0x1a5046060, 0x1a501e760); accessibility on would only add leaf features. No AX image in any of 2131 thread stacks; com.apple.Accessibility.plist (2026-10-30 audit) has ApplicationAccessibilityEnabled 0, AutomationEnabled 0.
