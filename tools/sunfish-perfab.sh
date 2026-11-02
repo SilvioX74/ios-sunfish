@@ -9,6 +9,9 @@
 # Env MAXSTART: each screen waits up to 3 min for the hottest CPU to read below this (default 75 C), then goes on and notes the temperature.
 # A window stops and is void at 95 C.
 # Env RELAUNCH=N (default 1): each screen runs N times in a row per boot, its app (Settings, Safari) killed before runs 2..N; adds a launch column and "launch L" markers.
+# Env RELAUNCH_SETTLE=S: seconds to wait after the kill before the next launch (default 0).
+# Env CATRACE=1: runs /var/local/bin/catrace over each window (Core Animation commit/render kdebug points), kept as
+#   work/perfab/TAG/ct-NAME-bB-SCREEN-LL.bin; read with tools/catrace-dump.py.
 # About 2 min per boot with settings only, 4 min with all five screens (estimates: boot to SSH 20-40 s, SETTLE 30 s, screens ~30 s each).
 cd "$(dirname "$0")/.." || exit 1
 L=../logs/usb-live.log
@@ -305,6 +308,7 @@ run_screen() {	# config index, boot number, screen
 		motion "$s" $((SECONDS + 5))
 		[ "$s" = home ] && go_home	# a swipe missed in the lead-in leaves the pair going between the icons and the widgets page (26 swaps/s)
 		# RELAUNCH: " launch L" after start/end keeps the parser's prefix match (sunfish-perfab.py, sunfish-timeline.py load())
+		[ -n "${CATRACE:-}" ] && S "rm -f /var/local/ct.bin; nohup /var/local/bin/catrace $((SECS + 2)) /var/local/ct.bin </dev/null >/dev/null 2>&1 &"
 		mark "$name b$b $s start$LMARK"
 		INWIN=1
 		motion "$s" $((SECONDS + SECS))
@@ -316,6 +320,10 @@ run_screen() {	# config index, boot number, screen
 		go_home
 		pid1=$(bb_pid) || SSH_LOST=1
 		[ -z "$SSH_LOST" ] && [ "$pid0" != "$pid1" ] && flags+=(--restart)
+	fi
+	if [ -n "${CATRACE:-}" ] && [ -z "$SSH_LOST" ]; then	# catrace ends 2 s after the window; the picture and go_home take longer
+		sleep 2
+		timeout 60 python3 -I tools/flame-files.py get /var/local/ct.bin "$OUT/ct-$name-b$b-$s-L$LAUNCH.bin" >/dev/null 2>&1 || echo "perfab: catrace file missing for $name b$b $s L$LAUNCH"
 	fi
 	[ -n "$SSH_LOST" ] && flags+=(--ssh-lost)
 	[ -n "$OPEN_FAILED" ] && flags+=(--open-failed)
@@ -417,6 +425,7 @@ for b in $(seq "$N"); do
 					line+=" $sl VOID ($aproc not killed)"
 					continue
 				fi
+				[ "$LAUNCH" -gt 1 ] && [ -n "${RELAUNCH_SETTLE:-}" ] && sleep "$RELAUNCH_SETTLE"
 				wait_cool
 				line+=$COOLED
 				run_screen "$i" "$b" "$s"
