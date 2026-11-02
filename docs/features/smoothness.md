@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 18:10 dl1: draw log caught Spotlight, not Control Center: 63 of ~110 draws (18 Mpx) are hidden under an opaque blurred backdrop
+- Bundle with drawlog options (972ef6a), kernel158 everyday, SWEET_DRAWLOG_MIN=100 COUNT=12, boot 20261102-144348; work/cc/drawlog-dl1.txt, 12 passes 1125x2436 of 108-110 draws (research/notes/cc-draws-2026-11-02.md). The runner's close swipe pulled Spotlight down; the scene is Spotlight over Home (Siri Suggestions platter, search bar, blinking caret = 108-110 draws).
+- Per pass ~23.7 Mpx on a 2.74 Mpx target: wallpaper 7.6, 4 identical opaque fills of the dirty rect 5.9, Home plates 1.9, Home icons/labels/widget ~1.5. Draw 71 (`PBGRAXm_TimgA2Xhfn_IsrcCcl`, blend off, full mask, the 509x1099 blurred backdrop stretched to full width) overwrites the whole dirty rect; draws 0-70 (~18 Mpx, 15 of them framebuffer-reading) lie inside it in all 12 passes: dead work. Same pipeline sequence every frame.
+- The bridge's cull catches only draws 43-70: IsrcCcl isn't whitelisted as covering, and it uses the scissor as each draw's clip. Being written: cover cull behind an env (implementer). Re-capture of the real Control Center pass (MIN=120, webcam-checked) running (dl2).
+
 ### 2026-11-02 17:40 at: TU_AUTOTUNE_ALGO=profiled: no gain over 5 boots; one Control Center outlier at 31 swaps/s
 - kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20 + SWEET_SURF_FLUSH=1, 5 boots a side alternating (ata = def, atb = profiled), cc,home,settings, 4440-4455 mV, 0 G1/G2/G4, 0 void.
 - cc swaps/s def 40.2, 40.4, 40.2, 40.2, 31.1 / atp 39.9, 40.5, 40.0, 39.5, 40.3 (median 40.2 / 40.0; atp won 2 of 5 pairs). home def 53.3, 53.7, 51.6, 52.4, 52.3 / atp 47.7, 55.5, 53.3, 53.6, 53.5. settings def 55.5-57.2 / atp 56.5-57.5 (+0.6 mean, within noise). Screenshots normal. Profiled stays off.
