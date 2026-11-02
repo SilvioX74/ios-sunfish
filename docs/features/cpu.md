@@ -15,6 +15,12 @@
 
 Older entries (before 2026-10-25): [archive/features/cpu.md](../archive/features/cpu.md).
 
+### 2026-11-02 02:04 fa: fence poll and 100 ms slice: 1.3 ms/frame off the A55s, no speed change; default
+- `SWIPE_MS=3000 SETTLE=90 MAXSTART=75 tools/sunfish-perfab.sh`, kernel153, 5 boots a side, settings,home, off = work/metal2-next, fence = work/metal2-fence + `sweetfencepoll=200` (xnu 0267, Turnip 0110), 0 hangs, 0 restarts, 0 void.
+- Backboardd's waiter thread (inferred from its place among the tids, tracks GPU busy, not named): 515-578 -> 141-205 ms per 5 s, about 1.3 ms per frame, nearly all A55, all 5 boots. A55 busy on Settings 36.8 -> 34.2 %. The A76 render thread (about 3.7 s per 5 s) and the other A55 thread (about 700 ms) don't move.
+- Settings median off 56.2, p95 29.3; fence 56.9, p95 20.5. Means 54.4 and 52.6, pulled down by low runs on both sides (off 50.5, 52.0; fence 49.3, 43.0). Home 52.4 and 52.8. Max C Settings 81.5 and 80.4, Home 84.5 and 82.7, but start temperatures also 1.7-1.9 C lower on fence and all above MAXSTART: no heat gain shown.
+- Goes in as a default for the idle CPU it saves: xnu 0272 `sweetfencepoll=200` (kernel154), bundle work/metal2-next rebuilt with Turnip 0110. Off: `sweetfencepoll=20` on the boot line. Low Settings runs were 4 of 10 here: fg1 next.
+
 ### 2026-11-01 20:45 hw3: clock gating is 3.4 C cooler at idle
 - kernel145, base args, 4 interleaved boots, same method as ddi1 (5 min with no touches, lit lock screen, minutes 2-5), 0 hangs, 4442-4455 mV. a55 / gpu / ddr C: `sweethwcg=1` 56.9 / 57.1 / 56.1 and 56.1 / 56.2 / 55.0; off 58.8 / 60.3 / 58.2 and 58.2 / 59.9 / 57.9. Means: on 56.5 / 56.7 / 55.6, off 58.5 / 60.1 / 58.1: 2.0, 3.4, 2.5 C cooler, about what the lowest GPU clock gave in ddi1 and with no loss of clock. Runs swing about 3 C inside themselves; ambient not read. The difference also shows gating is on at boot, which the log can't: no `hwcg on` line before the log starts.
 - With hw2's 5 boots and hw1's 3: no speed gain or loss shown (Settings low boots hit all sides), G1 0 in 8 boots on this side, 0-2 C at peak. Goes into the next soak, not tonight's (already set up on kernel139). Default if that's clean, with `sweethwcg=0` as the off switch.

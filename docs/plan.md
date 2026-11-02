@@ -33,13 +33,13 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `sweetsmmutcr=3` (stock SMMU walks and ACTLR), default in kernel153. Watch it in the next soaks. A CX cycle doesn't recover a real G1 (the GDSC refuses, n6), so off. Silent reset n1, n5: not seen in n7; pet crumb on in soaks (gpu.md).
 
 ## Phone
-Claude's. `work/night` set until the morning session. Everyday setup: kernel153 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3 by default) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, bundle work/metal2-next (mode 3, cache, knobs on by default), luma boost off.
+Claude's. `work/night` set until the morning session. Everyday setup: kernel154 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200 by default) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, bundle work/metal2-next (mode 3, cache, knobs on by default), luma boost off.
 
 ## Next (in this order)
 1. Webcam motion check of mode 3 in the morning (st3 correction; dim screen at night). Defaults installed and checked: 2 boots, 15 min UI run clean (df, smoothness.md).
 2. Heat under load: n7 peaked 95.7 C on cpu6, 60 of 730 readings at 90 C or more, 0 caps. When and in which app, and do caps ever fire? A76 at 1939 MHz is 5 C cooler for 0.4 ms (cpu.md hot1).
-3. ▶ Fence poll A/B running (fa): work/metal2-fence, `sweetfencepoll=200`, Turnip 100 ms slice: 5-boot A/B, waiter tid's ms, A55 temperature, p95 (read-only: about 2 ms/frame of A55 polling; backlog O11). Bridge QoS `SWEET_BRIDGE_QOS=1`, 5-boot A/B (guess 0-0.5 ms; backlog U7).
-4. fg1 again in full, kernel146, read `SWEET SCHED: fg` per window: do low Settings runs show more A55 time? (smoothness.md 20:10.)
+3. Bridge QoS on the fence bundle: `SWEET_BRIDGE_QOS=1`, 5-boot A/B (guess 0-0.5 ms; backlog U7). Fence poll done: default, 1.3 ms/frame off the A55s (fa, cpu.md).
+4. ▶ fg1 in full, kernel154, `sweetfgbig`, read `SWEET SCHED: fg` per window: low Settings runs were 4 of 10 boots in fa, the main miss against the target. Do they show more A55 time? (smoothness.md 20:10.)
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),
