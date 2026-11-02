@@ -5,7 +5,7 @@ next easy item), and when adding something newly broken. Priority items live in 
 history in the feature Logs. Finished items move to [completed.md](completed.md).
 
 ## Broken (cheapest first; [phone] = needs the phone)
-- B54 (2026-11-02 dl1-3, smoothness.md) Core Animation's "S1" draws (labels with S1, colour mask 0: stencil writes for masks) sit in passes with no depth/stencil attachment in all 354 logged cases: the bridge may drop a stencil attachment CA asked for, so masked content (rounded corners, clipped images) wouldn't be clipped. Check the render pass descriptor CA passes vs what the bridge builds; may relate to B44/B53.
+- B54 [CLOSED 2026-11-02, not a bug] "S1" in CA's pipeline labels is an index, not stencil: S1 pipelines write CA's second colour attachment (c1) and later M1 draws read it back onto c0 (offscreen layer for opacity or masks). CA sends no depth/stencil there; the bridge drops nothing (research/notes/b54-stencil-2026-11-02.md). Any skip rule must look at all colour attachments' write masks, not c0's.
 - B52 (2026-11-02 la) Notes crashed on 1 of 3 cold launches: SIGBUS, far 0x233ac7a68 inside a mapped region 0x232000000-0x234000000 prot 3/3 tag 35 (smoothness.md la). [phone]
 - B53 (2026-11-02 la) Visual: Notes shows a dark rounded rectangle in a note's body (attachment not drawn?), Safari's tab overview thumbnails are black, Maps' Work button has a magenta glitch. Likely B44's family; parked with it for the speed focus. [phone]
 - B51 (2026-11-02 gp) SWEET TL drops CPU-side records (swap, tick, present, submit) for 150-250 ms while GPU spans continue and the clock line says "dropped 0": 2 in 50 Settings windows; fakes >100 ms gaps in benches. Trace tool only.

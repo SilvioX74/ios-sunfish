@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 20:20 b54: correction to dl3: the "S1" draws write CA's second colour attachment; they are not empty (read-only)
+- The drawlog logs only colorAttachments[0].writeMask (NativeBridgeMetalFrontend.mm:2348), so "mask=0" hid that S1 pipelines write c1 (pipeline dump `PBGRAXm_TatcA2S1Xhf`, boot 20261030-214341: c0 writeMask 0, c1 all; stencil off). Later `..._IsrcM1` draws read c1 onto c0. "S" + digit in CA's labels comes from an index table (research/re/QuartzCore.s 0x18837b898). No stencil, nothing dropped (research/notes/b54-stencil-2026-11-02.md).
+- So dl3's "draws 9-12, 27 write nothing (2.65 Mpx)" was wrong. SWEET_CULL_MASK0 requires all 8 attachments' masks to be 0, so it leaves S1 draws alone and should skip about nothing; its A/B is cut to 2 boots a side. Open idea: c1 is a second full-size BGRA8 attachment in every Home pass; whether Turnip stores it out (cost) isn't known: log its storeAction/storage mode.
+
 ### 2026-11-02 20:00 cs3: 15-min soak with SWEET_CULL=3 default: 0 GPU bugs in 100 k submits
 - Boot ev3 (kernel158 everyday, mtl2-env with SWEET_CULL=3). `tools/sunfish-uisoak.sh cs3a 450`, `cs3b 450`: 50.7 k + 49.7 k submits, 0 G1/G2/G4, 0 backboardd restarts, 0 caps; max 84.8 / 82.8 C. Per app swaps/s (a / b): Settings 53.6 / 51.2, Safari 56.9 / 56.7, Notes 33.8 / 34.8, Calendar 33.9 / 35.6, Maps 30.6 / 30.9, Photos 44.4 / 43.0 (dfs without cull 3: Settings 52.0, Safari 51.8, Photos 45.3). No sign of cull mode 2's G1 doubling so far; tonight's 1 h soak is the real check.
 
