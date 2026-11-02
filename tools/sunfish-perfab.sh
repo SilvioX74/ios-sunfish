@@ -308,7 +308,7 @@ run_screen() {	# config index, boot number, screen
 		motion "$s" $((SECONDS + 5))
 		[ "$s" = home ] && go_home	# a swipe missed in the lead-in leaves the pair going between the icons and the widgets page (26 swaps/s)
 		# RELAUNCH: " launch L" after start/end keeps the parser's prefix match (sunfish-perfab.py, sunfish-timeline.py load())
-		[ -n "${CATRACE:-}" ] && S "rm -f /var/local/ct.bin; nohup /var/local/bin/catrace $((SECS + 2)) /var/local/ct.bin </dev/null >/dev/null 2>&1 &"
+		[ -n "${CATRACE:-}" ] && S "rm -f /var/local/ct.bin; /var/local/bin/catrace $((SECS + 2)) /var/local/ct.bin </dev/null >/dev/null 2>&1 &"
 		mark "$name b$b $s start$LMARK"
 		INWIN=1
 		motion "$s" $((SECONDS + SECS))

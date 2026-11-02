@@ -126,3 +126,4 @@ output in /var/local.
 2026-11-02 03:16: bundle work/metal2-next rebuilt (Turnip 0110, bridge 0123 off) installed with tools/sunfish-metal2-install.sh --no-restart; everyday boot kernel154.
 2026-11-02 07:35: /var/local/mtl2-env gets TU_FETCH_GMEM_MIN_DRAWS=20 (Control Center +1.1 swaps/s, cs4): `tools/sunfish-install-speed.sh`; off: delete the line.
 2026-11-02 07:35: /var/local/bin/catrace (kdebug reader for Core Animation points) installed: `python3 -I tools/flame-files.py put work/userland-linux/out/catrace /var/local/bin/catrace 755`, built by tools/build-userland-linux.sh.
+2026-11-02 08:05: /var/local/bin/nohup shim (`exec "$@"`) put there by a phone-runner for perfab CATRACE=1; perfab no longer uses nohup (no nohup on the phone). Not needed; remove with `rm /var/local/bin/nohup` at the next phone job.
