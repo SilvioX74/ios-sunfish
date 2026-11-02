@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 17:25 dl5b: correction to dl4/dl5: those passes were Home, not Control Center (read-only)
+- research/notes/cc-draws-dl5-2026-11-02.md. The 83-draw and 14-draw passes are two halves of one Home frame, split where the dock's blurred backdrop is re-captured: the 14 draws are the Search pill (269x107 blurred backdrop, 9-slice), magnifier and text, the dock platter (269x107 blur), dock icons, a badge and the status bar; the 97-draw pass is both halves merged. No scaling (icon width 180.000 in every pass), so dl4's "Home offscreen for Control Center's blur" was wrong: the bench window hadn't reached Control Center (SKIP counts passes since backboardd started).
+- Home frames: passes 29-39 have scissor 0,192 1120x1472 (only the Clock icon's hands move; grid icons drift 0.001-0.01 px with a 3D transform), yet the render area is the full 1125x2436 with c0 load+store: ~8.7 MB/frame of GMEM load/store more than the draws need. Change being written: render area = union of draw scissors (SWEET_M2V_RENDER_AREA). The 14-draw pass runs in sysmem already (TU_FETCH_GMEM_MIN_DRAWS=20).
+- To catch Control Center itself: SWEET_DRAWLOG_MIN=1 MINPX=20000 COUNT~200, better with a timestamp and the c0 texture id in the header (not done).
+
 ### 2026-11-02 17:10 dl5: c1 is memoryless (no load, no store): no traffic to save; Control Center alternates an 83-draw Home pass and a 14-draw composite
 - Bundle 228e2cc (drawlog logs every attachment), kernel158 everyday + SWEET_CULL=3, SWEET_DRAWLOG_MIN=1 MINPX=100000 SKIP=200 COUNT=40, fixed cc motion, webcam: Control Center. work/cc/drawlog-dl5.txt, 40 passes, all 1125x2436.
 - Every pass: c0 ld=1 st=1 mem=0 (load, store), c1 ld=0 st=0 mem=3 (don't-care, memoryless). So CA's second attachment costs no memory traffic, only GMEM space (two attachments, smaller bins). The c1 lead is closed.
