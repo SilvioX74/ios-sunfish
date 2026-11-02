@@ -23,6 +23,12 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 22:40 n5: silent reset at 695 s in Maps, no GPU hang
+- Soak n5, kernel149 base args + `sweetcxcycle=1` (boot 20261101-222256), started 22:23:46; `ssh lost at 658 s`, phone in fastboot, 4455 mV, 61 k submits, G1 0, no CX cycle ran, 0 backboardd restarts. Last lines at 695.4-695.5 s: Maps holds 230 MB of GPU pool, `native-metal: texture refused: texture: OutOfMemory(Device)` x4, `command buffer refused`, `pool: 557 / 513 / 459 / 513 MB in use (peak 620)`, then nothing, no panic line.
+- Not heat: cpu6 reached 88.3 C at 217 s and the phone ran on; last reading 81.9 C on cpu6, 73.5 C on the GPU sensor, caps 0.
+- Rescue ../logs/n5-rescue.txt, no panic or watchdog text; it ends 90 ms later than the live log, at 695.575 s, with the same cycle every 12-14 ms: Maps holds 176 -> 230 MB, pool 557 -> 611 MB (peak 620), a 54 MB image allocated and freed each time.
+- Guess: this alloc/free churn at the pool limit, or the map and unmap work it causes. n1's silent reset not compared yet. `SWEET_U0011..14` and kernel149 are not known to matter.
+
 ### 2026-11-01 22:30 cx3: CX-cycle recovery works on an injected hang; kernel149 (xnu 0268)
 - cx3a: kernel149 base args + `sweetcxcycle=1` (boot 20261101-221835, 4456 mV): snapshot of sCR0 only at 27.362 s, CPUs at about 100 % as on a healthy boot, SpringBoard and backboardd up, no panic. First `sweetcxcycle` boot past the snapshot, so a read in the wider snapshot is the likely cause of cx1 and cx2a (which register not known).
 - cx3b: `sweetcxcycle=2 sweethangtest=0xC0000040` (boot 20261101-222025, 4456 mV): stall injected 74.683 s, `GPU hang or fault` 76.702 s, `gbif halt ack 3`, all stages 0, `gdsc off after 16 us`, `smmu after cx on: 0 regs differ from boot` (sCR0 only), `smmu ok, tlbstatus 0`, `cx cycle: done rc 0 after 87456 us`, `recover2: done after 93087 us`. Warnings: `gcc gpu_memnoc_gfx still running, 220 TIMEOUT`, `gcc ddrss_gpu_axi still running, 0 TIMEOUT`.
