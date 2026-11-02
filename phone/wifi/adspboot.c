@@ -3293,6 +3293,45 @@ static int sns_pump(void)
 
 static const struct sns_link_ops sns_ops = { sns_send, sns_pump };
 
+/*
+ * idle2: with the screen on, 500 passes/s cost 2.7 % of a core at Home (research/notes/idle-on-2026-11-02.md). Once
+ * --sns-motion has its sensors up and nothing is in flight, sleep for the shortest active sensor report interval,
+ * clamped to 2..10 ms (10 with none streaming). In flight = 2 ms as before: an audio stream or its AFE/ASM steps,
+ * the APR queries, tx queued for a remote intent, a FastRPC session attaching, and 500 ms after a FastRPC invoke
+ * or a channel opening. ADSP_FASTPOLL=1 or /var/local/adspboot.fastpoll: always 2 ms (the old way).
+ */
+#define FASTPOLL_FILE	"/var/local/adspboot.fastpoll"
+static int fastpoll;
+static uint64_t poll_hold;
+
+static int poll_busy(void)
+{
+	static uint32_t last_inv;
+	static int last_ch = -1;
+	int np = 0, nup = 0;
+	for (int i = 0; i < nch; i++) {
+		np += ch[i].npend;
+		nup += ch[i].up;
+	}
+	uint32_t inv = rpc_started ? fastrpc_invokes() : 0;
+	if (inv != last_inv || nch * 100 + nup != last_ch)
+		poll_hold = now_ms() + 500;
+	last_inv = inv;
+	last_ch = nch * 100 + nup;
+	return np || af_up || af_want || afe_step != AFE_IDLE || pcm_running || (pcm_step > P_IDLE && pcm_step < P_DONE) ||
+	       (apr_on && apr_step <= 3) || (rpc_started && fastrpc_settling()) || now_ms() < poll_hold;
+}
+
+static useconds_t poll_us(void)
+{
+	if (sns_dark() && !(af_on && afe_step != AFE_IDLE))
+		return 20000;	/* o12: 20 ms while the screen is blanked (SNS_DARK=0: off); sp23: not while streaming, the DSP holds 80 ms */
+	int ms = sns_poll_ms();
+	if (poll_busy() || fastpoll || ms < 0)	/* poll_busy first: it tracks the invokes and channels every pass */
+		return 2000;
+	return (useconds_t)(ms <= 0 || ms > 10 ? 10 : ms < 2 ? 2 : ms) * 1000;
+}
+
 static int edge_loop(int ms, int stop, uint64_t t0)
 {
 	uint64_t end = now_ms() + (uint64_t)ms, next = 0, beat = now_ms() + 10000;
@@ -3347,7 +3386,7 @@ static int edge_loop(int ms, int stop, uint64_t t0)
 					return 1;	/* --rpc: keep serving until the watch ends or a crash */
 			}
 		}
-		usleep(sns_dark() && !(af_on && afe_step != AFE_IDLE) ? 20000 : 2000);	/* o12: 20 ms while the screen is blanked (SNS_DARK=0: off); sp23: not while streaming, the DSP holds 80 ms */
+		usleep(poll_us());	/* idle2 */
 	}
 	return 0;
 }
@@ -3697,6 +3736,9 @@ int main(int argc, char **argv)
 		watch = 2000000;
 	if (rpc_on || apr_on)	/* au14: --watch N is the whole serve, not N per phase; ADSP_WATCH_PER_PHASE=1 for the old way */
 		watch_end = getenv("ADSP_WATCH_PER_PHASE") ? 0 : now_ms() + (uint64_t)watch * 1000;
+	fastpoll = getenv("ADSP_FASTPOLL") || !access(FASTPOLL_FILE, F_OK);	/* idle2 */
+	printf("adsp: poll: %s\n", fastpoll ? "every 2 ms (fast poll on)" :
+	       "sensor rate, 2-10 ms, when idle; 2 ms while a reply is due; 20 ms blanked");
 
 	uint32_t v;
 	if (smp2p_in(&v) == 0 && (v & 2) && !(v & 1)) {

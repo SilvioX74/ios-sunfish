@@ -580,6 +580,22 @@ int sns_dark(void)
 	return mode == M_MOTION && t0 && dark;
 }
 
+/* idle2: the shortest report interval of the active streaming sensors in ms (on-change ones left out), 0 = none;
+ * -1 before --sns-motion has started its sensors (adspboot keeps its 2 ms poll then). */
+int sns_poll_ms(void)
+{
+	int ms = 0;
+	if (mode != M_MOTION || !t0)
+		return -1;
+	for (int i = 0; i < nss; i++)
+		if (ss[i].active && !ss[i].k->on_change && ss[i].hz > 0) {
+			int m = (int)(1000.0f / ss[i].hz);
+			if (!ms || m < ms)
+				ms = m;
+		}
+	return ms;
+}
+
 void sns_tick(const struct sns_link_ops *ops)
 {
 	static int linked;

@@ -25,5 +25,7 @@ void sns_tick(const struct sns_link_ops *ops);
 void sns_summary(void);
 /* o12: 1 while --sns-motion runs and the screen is blanked (adspboot then polls every 20 ms). */
 int sns_dark(void);
+/* idle2: shortest active sensor report interval in ms, 0 = none streaming, -1 = sensors not started (or not --sns-motion). */
+int sns_poll_ms(void);
 
 #endif
