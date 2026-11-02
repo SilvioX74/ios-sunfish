@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 15:40 ccp: Control Center plan: per-overlap flush only for framebuffer readers is the best lead (read-only)
+- research/notes/cc-plan-2026-11-02.md; cc3 trace re-read (kernel139, older than today's defaults; traced times ~2.4x real). Drag frame, real ms (estimates): main pass 134 draws ~11 (spread evenly over all bins: the draws, not one area), one-draw composite ~3.6, module tiles 79 draws ~3.2, overlay ~2.
+- metal2vulkan marks every pipeline of a pass with any framebuffer-fetch draw for rasterization order (pipeline/graphics.rs:811-824, render_target.rs:1209-1212), so Turnip flushes per overlap on all of them (tu_pipeline.cc:3790-3797, :4424-4438). ios-redfin's Turnip 0107 (SWEET_TU_ORDER_FETCHERS_ONLY=1) keeps it only for shaders that read an input attachment. On Settings, TU_SWEET_PRIM_ORDER=0 once gave -1.9 ms/frame (k1). Being ported; upper bound run (po0, TU_SWEET_PRIM_ORDER=0, picture broken) queued.
+- Ruled out or small: UBWC (U9) ~0 (targets linear, blur images already compressed, noubwc no change); no CA/CoreMaterial knob caches the Home redraw behind Control Center (reusing it is days of bridge work); TU_DEBUG=sysmem worse; scratch trim no change. Smaller: TU_FETCH_GMEM_MIN_DRAWS=100 / TU_AUTOTUNE_ALGO=profiled (0-1 ms), COLOR_WRITES=fetch (0-0.5 ms), SWEET_DRAWLOG_MIN to see the 134 draws.
+
 ### 2026-11-02 13:40 sf: SWEET_SURF_FLUSH=1 (no flush at completion): speed unchanged, picture fine; default now for heat
 - Bundle metal2-next de4fcfd (UUID 4C4C44C6), kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, 5 boots a side alternating (sfa = default 3, sfb = 1), `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh TAG 1 --screens settings,home,cc`, 4453-4455 mV, 0 G1/G2/G4, 0 void. mtl2.log: `SWEET SURF FLUSH: mode 3` / `mode 1` for backboardd.
 - Settings 56.60 / 56.54 swaps/s (p95 median 19.6 / 20.2), Home 53.39 / 52.85, Control Center 40.18 / 40.35; GPU busy the same; max C rises with run order, no side difference (79.9 / 79.0). Screenshots (Settings, Control Center) and the app switcher look normal.
