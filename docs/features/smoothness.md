@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 12:10 k158: kernel158 everyday check: speed unchanged with the A76 at 1939
+- `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh k158 1 --screens settings,home,cc`, kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, 4454 mV, 0 G1/G2/G4 in 10 k submits. Settings 56.6 (p95 19.9), Home 53.0 (32.6), Control Center 40.3 (41.5); A76 1939 MHz on all three; max 78.0-81.6 C (k157: 83.5-86.7). Everyday boot ev158 after, webcam: lock and Home normal.
+
 ### 2026-11-02 11:30 la: cold app launches: first frame ~0.3 s for most apps, Safari 1.0 s, Maps 2.9 s
 - Running boot (kernel157 everyday), 3 cold launches per app (killed, from Home, `openapp`), catrace 8 s each (work/launch/). t0 = the app's exec (class 7 record), t1 = its first CA commit, t2 = last render of the launch burst (ends at a 200 ms render pause; for Settings, Calendar and some Photos runs that falls around 3.5 s, idle or animation renders, so read t2 loosely).
 - Median t1-t0 / t2-t0 ms: Settings 290 / 3593; Calendar 301 / 3518; Photos 307 / 3653; Notes 530 / 1629 (2 runs); Safari 1004 / 1738; Maps 2880 / 7528 (2327-3899 first frame).
