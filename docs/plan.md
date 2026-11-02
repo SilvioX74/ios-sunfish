@@ -31,9 +31,14 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 ## GPU bug now due
 G1 (no-fault hang, no recovery) voids benches today, 4 of about 40 boots: it qualifies for a fix. Stuck memory path, not our lock: GBIF never acks (24 of 24 failed, ack 3: 8 of 8 recovered). Flush hammer (hm1): flushes aren't the trigger; both SMMU syncs stuck, no fault. Next: CX-cycle recovery `sweetcxcycle`, what Linux does and we don't: first boot panicked before any hang (cx1), smaller step kernel147 after the soak (gpu.md).
 
-## Tonight's soak (after `work/night`, 9:30 pm)
-Already started and waiting (`tools/sunfish-nightsoak.sh n3`, detached, survives any session; don't kill or restart it, stay off the phone from 21:25 to about 22:35). It reboots the phone at 21:30. Result: work/nightsoak-n3.log, done at the "finished" line; nothing wakes a session, so check it after 22:35.
-One 1 h soak with `tools/sunfish-uisoak.sh`: kernel139, sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetrowa55=6 sweetgpufreq=6, no flamereboot; env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1; bundle work/metal2-cpu; slider down first. Clean (no silent reset, no failed recovery): make these defaults with tools/sunfish-install-speed.sh, a rebuilt `METAL2_VARIANT=next` including 0117-0120 with knobs on by default, and kernel141 + sweetgpufreq default.
+## Phone is with the user (since 2026-11-01 20:55)
+Don't touch the phone, boot it or run phone-runner until the user says they've handed it back ("The phone's mine" rule). Until then only read-only work and builds. On it: kernel144 sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetrowa55=6 sweetgpufreq=6 sweethwcg=1, no flamereboot; env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1; bundle work/metal2-cpu.
+Night soak n3 didn't run: the session couldn't stop `tools/sunfish-nightsoak.sh n3` (kill refused by permissions). Unplugged at 21:30 it exits "phone not up" and leaves `work/night`, which the user's morning word clears as usual; plugged in it would reboot the phone. Check work/nightsoak-n3.log.
+
+## Next, once the phone is back (in this order)
+1. Soak: 1 h after `work/night`, on kernel144 + sweethwcg=1 (edit the boot line in sunfish-nightsoak.sh). Clean (no silent reset, no failed recovery): defaults with tools/sunfish-install-speed.sh, a rebuilt `METAL2_VARIANT=next` with 0117-0120 knobs on by default, sweetgpufreq and sweethwcg default on. Include a webcam motion check of mode 3 (st3 correction).
+2. CX-cycle recovery: kernel147 `sweetcxcycle=1` boot only, then `sweetcxcycle=2 sweethangtest=0xC0000040`, then the rest of cx1's steps (gpu.md 20:50).
+3. fg1 again in full, kernel146, read `SWEET SCHED: fg` per window: do low Settings runs show more A55 time? (smoothness.md 20:10.)
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),

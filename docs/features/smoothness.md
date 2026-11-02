@@ -95,6 +95,9 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 20:55 fg1: stopped early, too few boots: the user took the phone
+- kernel146 (xnu 0265), `sweetcpusample=1` both sides, everyday env, 3 boots usable of the 4 run, stopped by hand after b2 base when the user asked for the phone, 22 k submits, G1 0, void 0. Off / `sweetfgbig=1`: Home 51.6 (49.4-53.8) / 53.1; Settings 55.8 (54.3-57.4) / 56.1, p95 25.6 / 21.1, late % 5.5 / 4.3. 2 boots against 1: says nothing. No low Settings run came up. `SWEET SCHED: fg` lines not read yet: they're in the boot logs named in work/perfab/fg1/results.tsv. Rerun in full.
+
 ### 2026-11-01 20:45 ph1: pass hash: nothing repeats, so pass reuse is parked
 - kernel139, bundle work/metal2-passhash (bridge 0121, 0122), `SWEET_PASSHASH=1`, 1 boot, `SWIPE_MS=3000`, 0 void: Control Center 38.1, Home 53.0, Settings 54.5 swaps/s with hashing on. research/notes/ph1-passhash.txt; screens split by line order and pass rate, so an estimate: only 3 windows for Control Center.
 - 1125x2436: Control Center 32-99 draws: 229 passes, same-as-prev 0, same-last8 0, same-content-last8 0, same-without-buffers 6; loads 221; first-diff pso 94, state 108, buffer contents 23, counts 4; hash 237 us, 29 KB. No 100+ class there, though cc3's trace counts 133-144 draws: the two count differently, not understood. Home 32-99: 1055 passes, same-as-prev 0, same-content-last8 2. Settings 100+: 1230 passes, same-as-prev 0, same-content-last8 4.
