@@ -820,7 +820,7 @@ struct DrawLog {
 // sweet cull (SWEET_CULL=1): dead-draw culling. Off (one cached getenv) unless set. A render pass with one colour target and no depth/stencil defers
 // every encoder call; at endEncoding, draws before the last full-target opaque rectangle draw (whitelisted Core Animation pipelines) are skipped.
 static bool cullEnabled() {
- static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&atoi(p)!=0&&atoi(p)!=2;}();   // 2: see cull2On, not this cull
+ static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&atoi(p)!=0&&atoi(p)!=2&&atoi(p)!=3;}();   // 2, 3: see cull2On, cull3On, not this cull
  return on;
 }
 static std::atomic<unsigned> gCullPasses,gCullDraws;
@@ -843,7 +843,13 @@ static int deadfillMode() {
 }
 // sweet cull 2 (SWEET_CULL=2, only with SWEET_DEADFILL=3; ignored otherwise, off: unset): a fill also goes when a later whitelisted opaque draw (the wallpaper) covers all its pixels and
 // no draw in between may read the destination. Draws in between need no rectangle: what they leave on the fill's pixels is overwritten too. Sweet cull's own loop stays off.
-static bool cull2On() {static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&atoi(p)==2&&deadfillMode()==3;}();return on;}
+static bool cull2On() {static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&(atoi(p)==2||atoi(p)==3)&&deadfillMode()==3;}();return on;}   // 3 uses its machinery (see cull3On)
+// sweet cull 3 (SWEET_CULL=3, only with SWEET_DEADFILL=3; off: unset or any other value): cover cull. As 2's covering draws, plus CA's opaque blurred-backdrop quad
+// (draw.PBGRAXm_TimgA2Xhfn_IsrcCcl: Isrc's constants but fc_coord_function0 5). Any earlier draw goes, not only fills, when its pixels (clip within its vertices'
+// bbox through CA's transform, rounded outward) lie inside a later cover's, it writes no target the cover doesn't overwrite, and no draw in between may read
+// the destination and write a target the cover leaves (reads are per pixel: what they read of it is overwritten too). 2's own fill loop stays off. Telemetry: "DF3" row.
+static bool cull3On() {static const bool on=[]{const char *p=getenv("SWEET_CULL");return p&&atoi(p)==3&&deadfillMode()==3;}();return on;}
+static std::atomic<uint64_t> gC3Draws,gC3Px;   // sweet cull 3: draws dropped under a cover, and their boxes' pixels
 // sweet cull 2: is this "name:type:hex" among a function's constants?
 static bool dfConstIs(const std::string &t,const std::string &kv) {
  const size_t p=t.find(kv);return p!=std::string::npos&&(p==0||t[p-1]==' ')&&(p+kv.size()==t.size()||t[p+kv.size()]==' ');
@@ -886,6 +892,7 @@ static void dfRectProbe(float x0,float y0,float x1,float y1,unsigned long tw,uns
 #define DFRET(why) do{dfWhy(why);return;}while(0)
 struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4]={},rx0=0,ry0=0,rx1=0,ry1=0,rz=0;uint64_t bind=0;__unsafe_unretained NBRenderPipeline *fpipe=nil;   // sweet deadfill: r*: mode 3, the fill's vertex bbox and z; rok: finite, one z
  bool prok=false,reads=true;long px0=0,py0=0,px1=0,py1=0;   // sweet cull 2: p*: the pixels a fill may touch, known if prok; reads: the draw may read the destination
+ bool hok=false;long hx0=0,hy0=0,hx1=0,hy1=0;   // sweet cull 3: h*: the pixels any draw may touch, known if hok
  void (^blk)(void)=nil;bool draw=false,covering=false;unsigned writes=0xff,over=0;long cx0=0,cy0=0,cx1=0,cy1=0;NSString *label=nil;};   // c*: the draw's clip (scissor within the target)   // writes: targets the draw may change; over: targets a covering draw overwrites
 @interface NBRenderEncoder : NBEncoder
 - (void)drawLogStart:(MTLRenderPassDescriptor *)d;
@@ -923,8 +930,9 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  _cvRect=NO;
  if(!_defer||_noCull||!_cullPass||!_pipe||prim!=MTLPrimitiveTypeTriangle||inst!=1||n!=6||_cvis)return false;
  NSString *l=_pipe.label;
- if(!l||!([l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_A2Xhf"]||[l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_TimgA2Xhfn_Isrc"]))return false;
- if(cull2On()&&![l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_TimgA2Xhfn_Isrc"])return false;   // sweet cull 2: labels known not to discard: exactly this one
+ const bool ccl=cull3On()&&[l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_TimgA2Xhfn_IsrcCcl"];   // sweet cull 3: the blurred backdrop
+ if(!l||!([l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_A2Xhf"]||[l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_TimgA2Xhfn_Isrc"]||ccl))return false;
+ if(cull2On()&&![l isEqualToString:@"com.apple.coreanimation.draw.PBGRAXm_TimgA2Xhfn_Isrc"]&&!ccl)return false;   // sweet cull 2: labels known not to discard: exactly this one (3: and IsrcCcl, unverified)
  if(!(_pipe.opaqueMask&1)){char t[64];snprintf(t,sizeof t,"opaque %x att %x",_pipe.opaqueMask,_attMask);cullWhy(1,l,t);return false;}   // overwrites target 0 at least; per-draw targets are checked at replay
  long cr[4];[self clip:cr];if(cr[0]>=cr[2]||cr[1]>=cr[3])return false;
  if(_vpSet&&!(_cvp[0]<=cr[0]&&_cvp[1]<=cr[1]&&_cvp[0]+_cvp[2]>=cr[2]&&_cvp[1]+_cvp[3]>=cr[3])){cullWhy(2,l);return false;}
@@ -1081,6 +1089,39 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
  }
  e.clearOK=cx0<=-0.999f&&cx1>=0.999f&&cy0<=-0.999f&&cy1>=0.999f;
 }
+// sweet cull 3: the pixels the draw just recorded may touch: its clip within its vertices' bbox through CA's transform, rounded outward (triangles lie in
+// their vertices' bbox). CA's fixed vertex function, one instance, filled triangles (at most 64 vertices) or a 4-vertex strip, w 1, one z, viewport the target;
+// anything else: unknown (hok false), the draw stays.
+- (void)c3Note:(MTLPrimitiveType)prim start:(NSUInteger)start count:(NSUInteger)count inst:(NSUInteger)inst indexBuffer:(NBBuffer *)ib type:(MTLIndexType)itype
+        offset:(NSUInteger)ioff base:(NSInteger)base {
+ NBRenderPipeline *p=_pipe;CullEntry &e=_ops.back();
+ if(!p||_dfDss||_cvis||inst!=1||p.dfSamples>1||p.vertexName.compare(0,18,"fixed_vert_lph_spc"))return;
+ if(!(prim==MTLPrimitiveTypeTriangle?count>=3&&count<=64&&count%3==0:prim==MTLPrimitiveTypeTriangleStrip&&count==4))return;
+ NSNumber *fm=objc_getAssociatedObject(self,"fill");if(fm.unsignedLongLongValue!=MTLTriangleFillModeFill)return;
+ if(p.dfPosFmt!=MTLVertexFormatFloat4&&p.dfPosFmt!=MTLVertexFormatFloat2)return;
+ if(_vpSet&&(_cvp[0]!=0||_cvp[1]!=0||_cvp[2]!=_tw||_cvp[3]!=_th))return;
+ size_t len=0;const uint8_t *src=[self dfData:p.dfPosBuf length:&len];if(!src)return;
+ const uint8_t *ix=nullptr;size_t ilen=0;
+ if(ib){if(ib.storageMode!=MTLStorageModeShared||!ib.contents||ioff>=ib.length)return;ix=(const uint8_t *)ib.contents+ioff;ilen=ib.length-ioff;}
+ const unsigned comps=p.dfPosFmt==MTLVertexFormatFloat4?4:2,stride=p.dfStride?p.dfStride:comps*4;
+ float x0=1e30f,y0=1e30f,x1=-1e30f,y1=-1e30f,z0=0;
+ for(unsigned k=0;k<count;k++) {
+  int64_t v;
+  if(ib){if(itype==MTLIndexTypeUInt16){if((k+1)*2>ilen)return;uint16_t t;memcpy(&t,ix+k*2,2);v=t;}else{if((k+1)*4>ilen)return;uint32_t t;memcpy(&t,ix+k*4,4);v=t;}v+=base;}
+  else v=(int64_t)start+k;
+  if(v<0)return;
+  const size_t o=(size_t)v*stride+p.dfPosOff;if(o+comps*4>len)return;
+  float q[4]={0,0,0,1};memcpy(q,src+o,comps*4);
+  if(q[3]!=1||!std::isfinite(q[0])||!std::isfinite(q[1]))return;
+  if(k==0)z0=q[2];else if(q[2]!=z0)return;   // NaN z: refused
+  x0=std::min(x0,q[0]);x1=std::max(x1,q[0]);y0=std::min(y0,q[1]);y1=std::max(y1,q[1]);
+ }
+ const float *m=[self dfTransform:p.dfPosBuf];double r[4];
+ if(!m||!dfPixelRect(m,x0,y0,x1,y1,z0,_tw,_th,r))return;
+ long c[4];[self clip:c];
+ e.hx0=std::max(c[0],dfPix(r[0],-1));e.hy0=std::max(c[1],dfPix(r[1],-1));e.hx1=std::min(c[2],dfPix(r[2],1));e.hy1=std::min(c[3],dfPix(r[3],1));
+ e.hok=e.hx0<e.hx1&&e.hy0<e.hy1;
+}
 // sweet deadfill mode 2: hold the creation of a deferred pass that loads colour 0 (made in dfResolve)
 - (bool)dfHold:(const NmbRenderPassDescriptor &)pass load:(MTLLoadAction)load {
  if(!_dfOn||deadfillMode()<2||(load!=MTLLoadActionLoad&&load!=MTLLoadActionDontCare))return false;
@@ -1109,7 +1150,22 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
    if(ops[i].fill&&ops[i].clearOK){dead[i]=1;clear=true;memcpy(col,ops[i].col,sizeof col);gDfCleared++;}
    break;
   }
-  if(cull2On()&&_cullPass)for(long e=0;e<(long)ops.size();e++) {   // sweet cull 2: after the clear, which costs less than a load under the same fill
+  if(cull3On()&&_cullPass)for(long d=(long)ops.size()-1;d>=0;d--) {   // sweet cull 3: after the clear, as 2
+   const CullEntry &o=ops[d];
+   if(!o.draw||dead[d]||!o.covering)continue;
+   for(long e=d-1;e>=0;e--) {
+    const CullEntry &f=ops[e];
+    if(!f.draw||dead[e]||!f.hok||(f.writes&~o.over)||f.hx0<o.cx0||f.hy0<o.cy0||f.hx1>o.cx1||f.hy1>o.cy1)continue;
+    bool safe=true;
+    for(long m=e+1;m<d&&safe;m++) {   // a surviving reader that writes a target the cover leaves, on f's pixels, keeps f
+     const CullEntry &q=ops[m];if(!q.draw||dead[m]||!q.reads||!(q.writes&~o.over))continue;
+     const long a0=q.hok?q.hx0:q.cx0,b0=q.hok?q.hy0:q.cy0,a1=q.hok?q.hx1:q.cx1,b1=q.hok?q.hy1:q.cy1;   // covering draws (inner c*) never read
+     if(a0<f.hx1&&f.hx0<a1&&b0<f.hy1&&f.hy0<b1)safe=false;
+    }
+    if(safe){dead[e]=1;gC3Draws++;gC3Px+=(uint64_t)((f.hx1-f.hx0)*(f.hy1-f.hy0));}
+   }
+  }
+  if(cull2On()&&!cull3On()&&_cullPass)for(long e=0;e<(long)ops.size();e++) {   // sweet cull 2: after the clear, which costs less than a load under the same fill
    if(!ops[e].draw||dead[e]||!ops[e].fill)continue;
    int why=-1;
    for(long m=e+1;m<(long)ops.size();m++) {
@@ -1346,6 +1402,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
   const bool cv=[self coversPrim:t start:s count:n inst:i indexed:false indexType:MTLIndexTypeUInt16 indexBuffer:nil indexOffset:0 baseVertex:0];
   [self recDraw:^{[self check:nmb_render_draw(self.handle,t,(uint32_t)s,(uint32_t)n,(uint32_t)i,(uint32_t)b) what:"drawPrimitives"];} covering:cv];
   if(_dfOn)[self dfNote:t start:s count:n inst:i indexBuffer:nil type:MTLIndexTypeUInt16 offset:0 base:0];   // sweet deadfill
+  if(_dfOn&&cull3On())[self c3Note:t start:s count:n inst:i indexBuffer:nil type:MTLIndexTypeUInt16 offset:0 base:0];   // sweet cull 3
   return;
  }
  [self check:nmb_render_draw(self.handle,t,(uint32_t)s,(uint32_t)n,(uint32_t)i,(uint32_t)b) what:"drawPrimitives"];
@@ -1366,6 +1423,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
   const bool cv=[self coversPrim:t start:0 count:n inst:i indexed:true indexType:k indexBuffer:(NBBuffer *)b indexOffset:o baseVertex:v];
   [self recDraw:^{[self check:nmb_render_draw_indexed(self.handle,t,(uint32_t)n,k,[(NBBuffer *)b handle],o,(uint32_t)i,(int32_t)v,(uint32_t)bi) what:"drawIndexedPrimitives"];} covering:cv];
   if(_dfOn)[self dfNote:t start:0 count:n inst:i indexBuffer:(NBBuffer *)b type:k offset:o base:v];   // sweet deadfill
+  if(_dfOn&&cull3On())[self c3Note:t start:0 count:n inst:i indexBuffer:(NBBuffer *)b type:k offset:o base:v];   // sweet cull 3
   return;
  }
  [self check:nmb_render_draw_indexed(self.handle,t,(uint32_t)n,k,[(NBBuffer *)b handle],o,(uint32_t)i,(int32_t)v,(uint32_t)bi) what:"drawIndexedPrimitives"];
@@ -2539,6 +2597,10 @@ extern "C" size_t native_bridge_metal_telemetry(char *out,size_t size) {
   row("DF mode%d dropped %llu cleared %llu held %llu | /s dropped %.1f cleared %.1f",deadfillMode(),(unsigned long long)dr,(unsigned long long)cl,
    (unsigned long long)gDfPasses.load(),sec>0?(dr-lastDrop)/sec:0.,sec>0?(cl-lastClear)/sec:0.);
   lastUs=now;lastDrop=dr;lastClear=cl;}
+ if(cull3On()){static uint64_t lastUs,lastD,lastP;const uint64_t now=nowUs(),cd=gC3Draws.load(),cp=gC3Px.load();   // sweet cull 3
+  const double sec=lastUs&&now>lastUs?(now-lastUs)/1e6:0;
+  row("DF3 covered %llu %lluMpx | /s %.1f draws %.2f Mpx",(unsigned long long)cd,(unsigned long long)(cp>>20),sec>0?(cd-lastD)/sec:0.,sec>0?(cp-lastP)/sec/1048576.:0.);
+  lastUs=now;lastD=cd;lastP=cp;}
  row("T pipeline n=%llu total=%llums max=%llums",(unsigned long long)gTimePipeline.count.load(),ms(gTimePipeline.total.load()),ms(gTimePipeline.slowest.load()));
  row("T library n=%llu total=%llums max=%llums",(unsigned long long)gTimeLibrary.count.load(),ms(gTimeLibrary.total.load()),ms(gTimeLibrary.slowest.load()));
  row("T function n=%llu total=%llums max=%llums",
