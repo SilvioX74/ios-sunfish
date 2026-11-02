@@ -34,6 +34,19 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | fg1f | fg=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfgbig=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg0f | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg1e | fg=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfgbig=1 | 1 | 4 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg0e | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 4 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg1d | fg=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfgbig=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg0d | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 4 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg1c | fg=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfgbig=1 | 1 | 4 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg0c | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg1b | fg=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfgbig=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg0bb | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg0b | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 2 k | 0 | 1 | 0 | 1 |
+| 2026-11-02 | fg1a | fg=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfgbig=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | fg0a | off=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1 | 1 | 5 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | fa1e | fence=153,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfencepoll=200,@work/metal2-fence/out/phone/metal2/out | 1 | 7 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | fa0e | off=153,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,@work/metal2-next/out/phone/metal2/out | 1 | 8 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | fa1d | fence=153,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,sweetcpusample=1,sweetfencepoll=200,@work/metal2-fence/out/phone/metal2/out | 1 | 8 k | 0 | 0 | 0 | 0 |

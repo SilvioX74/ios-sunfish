@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 03:16 fg1: sweetfgbig doesn't remove the low Settings runs; the low runs may follow an idle wait
+- `SWIPE_MS=3000 SETTLE=90 MAXSTART=75 tools/sunfish-perfab.sh`, kernel154, metal2-next (md5 080f97ab, Turnip 0110, bridge 0123), no env, settings only, 6 boots a side, `sweetcpusample=1`. One void (fg0b, G2 `submit failed`, 21.5 swaps/s), redone.
+- off 57.4, 54.3, 56.5, 45.6, 50.6, 56.7 (mean 53.5, median 55.4, 2 low); `sweetfgbig=1` 57.0, 56.6, 48.8, 56.8, 42.6, 56.8 (53.1, 56.7, 2 low). The patch was active (29-38 `SWEET SCHED: fgbig` lines per boot), yet Preferences' main thread stayed 80-88 % on A55 in good runs; low runs had a lower A55 share (68-81 %), so A55 time isn't the cause. Good runs p95 19-21 ms: the target on good boots.
+- Lead: tonight's 40 OK Settings runs: of 5 with a start temperature under 76 C, 4 were low; of the other 35, 11. Under 76 C means perfab's wait_cool held input to cool. Guess: low runs follow an idle wait, not heat. Read-only check running.
+- `tools/sunfish-uisoak.sh d2 900` on kernel154 everyday: 906 s, 96.8 k submits, 0 hangs, 0 restarts, max 91.2 C, 650 MHz.
+
 ### 2026-11-02 01:23 df: speed settings are the real defaults now
 - tools/sunfish-install-speed.sh: bundle work/metal2-next, Control Center backdrop 0.25, luma boost off, env lines out. Kernel153 (xnu 0271) has sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3 compiled in.
 - `SWIPE_MS=3000 SETTLE=60 tools/sunfish-perfab.sh`, empty mtl2-env, args only sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, 2 boots, 5 nits, 649-650 MHz, `tcr 802019 actlr 70000000` and `hwcg on` in the log, 0 hangs, 0 void. Settings 55.6 (p95 30.3), 46.0 (33.4, 45 % busy: low run); Home 53.3 (32.6), 52.1 (32.8); Control Center 38.5 (37.6), 38.8 (38.4). Max C 87-92. Screenshots normal.

@@ -123,3 +123,4 @@ output in /var/local.
 2026-11-01 22:52: backboardd env for the low-nits A/B (lb0-lb3): tools/sunfish-install-caenv.sh; ends with --undo. Unfinished feature; script is the reproduction.
 2026-11-01 23:19: backboardd env CA_DISABLE_LUMA_BOOST=1, kept on as a default: `tools/sunfish-install-caenv.sh CA_DISABLE_LUMA_BOOST=1`, in tools/sunfish-install-speed.sh; off: --undo.
 2026-11-02 01:23: speed defaults installed: `tools/sunfish-install-speed.sh` (bundle work/metal2-next, mtl2-env keeps only SWEET_U0011..14, Control Center backdrop 0.25, luma boost off, daemon data moved). Everyday boot: kernel153 sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1.
+2026-11-02 03:16: bundle work/metal2-next rebuilt (Turnip 0110, bridge 0123 off) installed with tools/sunfish-metal2-install.sh --no-restart; everyday boot kernel154.
