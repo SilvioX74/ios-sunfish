@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 12:30 rc: backboardd's render CPU on Settings: mostly bridge per-draw work; the surface cache flush is the one hot spot (read-only)
+- 300 pstack samples of backboardd over 5.4 s of Settings scrolling (kernel158 everyday, metal2-next; work/heat/bbd-settings-raw.txt), symbolized (research/notes/bbd-cpu-2026-11-02.md). No thread spins: threads 25-28 are parked workqueue threads (pc 0, never in user space).
+- Render thread (thread 3): busy 13.4 ms per 16.7 ms frame (catrace: 13.2). Per frame: bridge Rust runtime 4.90, bridge allocation and collections 1.73, bridge ObjC mode-3 cull list (dfNote, dfBindHash, CullEntry copies) 1.28, CA's own code 2.00, Turnip 1.95, sys_dcache_flush at commit 0.72, other kernel calls ~0.6, idle 2.45. Inclusive: draw_resident 3.56, capture_backdrop 3.06 (reaches the deferred draws through cullReplay 2.56), malloc+free+FastAlloc ~2. Top leaf: sys_dcache_flush 5.4 %; the rest is a flat tail.
+- Completion worker (thread 6, contexts::run): 1.56 ms per frame, 21 of its 28 busy samples in sys_dcache_flush (flushSurfaces < -[NBCommandBuffer finish]).
+- Cut candidates: skip the IOSurface flushes the CPU doesn't need (0.72 ms on the critical path + 1.17 ms heat; env knob SWEET_SURF_FLUSH being written); redundant pipeline binds and a new VkRenderPass per frame in Turnip (0.3-0.5 ms, guess); allocation churn (0.5-1 ms, guess); mode 3 replay overhead ~0.9 ms against its GPU savings.
+
 ### 2026-11-02 12:10 k158: kernel158 everyday check: speed unchanged with the A76 at 1939
 - `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh k158 1 --screens settings,home,cc`, kernel158 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, 4454 mV, 0 G1/G2/G4 in 10 k submits. Settings 56.6 (p95 19.9), Home 53.0 (32.6), Control Center 40.3 (41.5); A76 1939 MHz on all three; max 78.0-81.6 C (k157: 83.5-86.7). Everyday boot ev158 after, webcam: lock and Home normal.
 
