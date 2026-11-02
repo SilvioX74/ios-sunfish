@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 09:30 lat: Settings commits wait for touches, not the display link; the hold to tick+9.6 costs about 0 ms (read-only, parked)
+- vpa1-5 traces (phase 5000), 24 981 frames, p50 ms after our tick: display link scheduled 4.13, fires 4.27; touch timestamp 5.63 (p10 1.1, p90 10.0); start_frame 0x31ca00d1 (CA::Transaction::start_frame 0x1882e1f40) 9.79; finish_frame 11.42; commit 11.55-12.40; next render 16.98. backboardd's render_for_time runs tick+0.05 to tick+13.43 (13.2 ms). Notes research/notes/latency-2026-11-02.md.
+- During a drag a touch starts each frame (start_frame reason 0x20 from __processEventQueue 0x188eb2388: UIKit's update cycle is off, _UIUpdateCycleEnabled 0x189192744), not the display link. Touches stamped tick+1..8 start their frame no earlier than tick+9.6; tick+9..17 start at once (+1.4-2.5 ms). SpringBoard shows the same floor (start_frame at 9.83). The floor follows backboardd's finish_update in the same tick (r 0.40), not the display link. Bench touches come from the kernel's ud_touch_cmd, about 93 Hz.
+- Guess (low): touch routing in backboardd or the HID queue starves while the render thread's CPU phase runs (tick+0.1..9.5).
+- Estimated gain of removing the hold: about 0 ms input-to-photon (the commit still lands before the same render tick); slack before the tick 4.3 -> 8-10 ms. Ungated commits could reach the touch rate (more CPU, heat). The bigger term is the 13.2 ms render. Parked (backlog Later); the confirm test is one catrace window with MACH_SCHED and UIKit 0x2b87 codes.
+
 ### 2026-11-02 09:05 vpa/vpb: sweetvsyncphase=5000 removes the low Settings launches (0 in 25); default in kernel157
 - kernel156, everyday args + TU_FETCH_GMEM_MIN_DRAWS=20, `CATRACE=1 RELAUNCH=5` Settings, 5 boots a side alternating, 4453-4455 mV, 0 void, 0 G1/G2/G4 (22-23 k submits a boot), webcam after: Home normal.
 - `sweetvsyncphase=5000` (vpa1-5): 0 low of 25, none under 55.9; mean 57.0 swaps/s, median p95 19.26 ms, mean skip2 3.07, 22 of 25 with p95 <= 20 ms. Display-link phase 4.07-4.19 ms in all 10 launches checked (p10 3.98, p90 4.8).

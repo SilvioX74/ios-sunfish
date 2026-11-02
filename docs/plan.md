@@ -21,7 +21,7 @@ Only items Claude can move now. User tasks are listed below and never gate work;
 1. ▶ **Heat**: idle 53-59 C; under load peaks 93-96 C (n7 95.7, 60 of 730 readings at 90+, 0 caps). Defaults in: A55 1497 MHz, GPU clock gating, fence poll 200 us (1.3 ms/frame off the A55s, no heat shown). Next: which app peaks (uisoak now logs `=== uisoak TAG app`), A76 at 1939 MHz (5 C cooler for 0.4 ms, cpu.md hot1). (cpu.md)
 2. **Control Center** 39.1 -> 40.3 swaps/s with `TU_FETCH_GMEM_MIN_DRAWS=20` (default now, cs4; target 45); trace without per-draw tracing (it crashes backboardd); Home redrawn at full size behind it (cc3). (smoothness.md)
 3. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30); time app opens and the keyboard. (smoothness.md, cpu.md)
-4. **Latency**: Settings commits never start before tick + ~11 ms though the display link fires at +4 ms (catrace); find the wait (input or render handoff). (smoothness.md)
+4. **Render CPU**: backboardd's render_for_time takes 13.2 ms of each 16.7 ms tick on Settings (catrace lat); what it spends that on (profile tick+0..13 with tools/sunfish-pc-hist.py). (smoothness.md)
 5. **Upstream takeaways**: trace filter env (U6: works, still distorts, parked); UBWC census (U9), spare image blocks timing (U10). QoS (U7) no gain, off.
 
 After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.

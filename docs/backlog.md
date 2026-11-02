@@ -40,6 +40,7 @@ Upstream survey 2026-11-01 (research/notes/upstream-2026-11-01.md; their numbers
 - SKIP. ios-fajita 0ecd69c b3a8: deep framebuffer off (SweetMetal2.mm:202), present BGRA only (SweetFramebuffer.cpp:1095); 0104 is about row size, theirs colour decode, no conflict. Tips banner format still unread (B44, parked).
 
 ## Later (needs repeated 1 h+ tests)
+- Touch hold (2026-11-02 lat, smoothness.md): during drags touches stamped tick+1..8 start their frame no earlier than tick+9.6 (backboardd or HID queue busy during the render, guess). About 0 ms gain estimated. Confirm: catrace window with MACH_SCHED (0x0140xxxx) and UIKit 0x2b87010c/0110/0190/0194; needs a catrace filter option for those classes.
 - IOMFB frame info (2026-11-02, smoothness.md vpa/vpb): send frame-info Presentation_time so CA anchors its display links to our ticks itself (frame_info_callback 0x1882bc6d4 -> add_timing 0x18853d33c); would replace the fixed sweetvsyncphase=5000 grid lock. Only if the grid lock shows a problem.
 - O16 GPU at 650 MHz: moved to plan priority 4 on 2026-10-31 (38 swaps/s against 34 on the full canvas before dead fill, clean for ~1 min only; the daily soak covers it). 800 MHz fails bring-up (me_init timeout).
 - Camera far focus: the user (2026-10-30): can't focus on far things. Lens range 400..725 is inferred; infinity is probably below code 400 (the board at 10 cm peaked at the 725 end). Next: read the per-unit AF calibration from the OIS flash (research/notes/camera-af.md) or widen the range in small steps and sweep on a far scene.
