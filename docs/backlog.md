@@ -5,6 +5,8 @@ next easy item), and when adding something newly broken. Priority items live in 
 history in the feature Logs. Finished items move to [completed.md](completed.md).
 
 ## Broken (cheapest first; [phone] = needs the phone)
+- B52 (2026-11-02 la) Notes crashed on 1 of 3 cold launches: SIGBUS, far 0x233ac7a68 inside a mapped region 0x232000000-0x234000000 prot 3/3 tag 35 (smoothness.md la). [phone]
+- B53 (2026-11-02 la) Visual: Notes shows a dark rounded rectangle in a note's body (attachment not drawn?), Safari's tab overview thumbnails are black, Maps' Work button has a magenta glitch. Likely B44's family; parked with it for the speed focus. [phone]
 - B51 (2026-11-02 gp) SWEET TL drops CPU-side records (swap, tick, present, submit) for 150-250 ms while GPU spans continue and the clock line says "dropped 0": 2 in 50 Settings windows; fakes >100 ms gaps in benches. Trace tool only.
 - B50 (2026-11-02, hs1) Maps shows its UI (search sheet, Home/Work favourites, location button) but the map area is empty: light grey at the end of the soak, dark now. Not checked whether it's missing network tiles or a render problem. [phone]
 - B49 Status-bar clock alternates between the current time and older frames in apps (Settings: 2:55 at real 3:04, webcam agrees), on kernels 128, 131, 132, with any fill mode; phone `date` is right. Found 2026-10-31 (smoothness.md). Guess: several surfaces in rotation with old contents. Period 3 per minute update, same real minute gives byte-identical shots (research/notes/b49-stale-clock.md); ~60 % guess: CPU-written surfaces never cleaned, GPU doesn't snoop. Cache clean excluded (bridge already flushes sampled surfaces), use counts excluded (kernel133). Next: GPU caches on reads. [phone]

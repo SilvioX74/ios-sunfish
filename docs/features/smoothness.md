@@ -95,6 +95,13 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 11:30 la: cold app launches: first frame ~0.3 s for most apps, Safari 1.0 s, Maps 2.9 s
+- Running boot (kernel157 everyday), 3 cold launches per app (killed, from Home, `openapp`), catrace 8 s each (work/launch/). t0 = the app's exec (class 7 record), t1 = its first CA commit, t2 = last render of the launch burst (ends at a 200 ms render pause; for Settings, Calendar and some Photos runs that falls around 3.5 s, idle or animation renders, so read t2 loosely).
+- Median t1-t0 / t2-t0 ms: Settings 290 / 3593; Calendar 301 / 3518; Photos 307 / 3653; Notes 530 / 1629 (2 runs); Safari 1004 / 1738; Maps 2880 / 7528 (2327-3899 first frame).
+- Notes launch 1 crashed: `CRASH MobileNotes[783] sig 10` (SIGBUS) far 0x233ac7a68 inside a mapped 0x232000000-0x234000000 prot 3/3 tag 35 (B52). 0 GPU errors, 0 backboardd restarts, 0 lost trace events.
+- Webcam after each app's 3rd launch: Settings, Calendar OK; Safari tab overview with black tab thumbnails; Notes "Hello there" with a dark rounded rectangle in the body (an attachment not drawn, guess; B44 family); Photos a black area and one solid blue tile (maybe still loading); Maps black map (B50) with a small magenta glitch on the Work button.
+- Next for launches: Maps' 2.9 s first frame and Safari's 1.0 s are the long ones (what they wait on: catrace + pstack at launch).
+
 ### 2026-11-02 11:15 gp: Settings' >100 ms gaps are the bench's swipe reversal, not a stall (read-only)
 - vpa1-5 and vpb1-5 per-boot logs + catrace (research/notes/settings-gaps-2026-11-02.md). All 28 vpa gaps and 28 of 30 vpb gaps sit at the bottom reversal: `SWEET HID: touch 9 up` and `down` at 540,2000 in the same ms, gap starting 7-40 ms later, lasting 100-130 ms, every ~6.45 s (one swipe cycle).
 - Inside each gap: Preferences' display link fires every 16.7 ms with ~1 ms of work, its 2-4 commits reach backboardd within 1 ms, backboardd's per-vsync event fires 4-8 times but render_for_time runs once (nothing changed), the kernel ticks every frame. The gap ends when Preferences sets a frame begin time and commits a moved list. Longest interval near each touch-down: bottom p50 98, max 130 ms; top p50 64, max 98.
