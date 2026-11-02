@@ -20,7 +20,7 @@ Targets (Claude's numbers, the user can change them):
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
 1. ▶ **Heat**: idle 53-59 C; load peaks 93-96 C. Hottest app: Photos (hs1: max 95.7, 9 of its 22 readings at 90+; Safari 92.2; others under 90). Defaults in: A55 1497 MHz, GPU clock gating, fence poll 200 us. Next: what Photos burns (per-thread CPU, GPU per frame), then A76 at 1939 MHz for that load (5 C cooler for 0.4 ms, cpu.md hot1). (cpu.md)
 2. **Control Center** 39.1 -> 40.3 swaps/s with `TU_FETCH_GMEM_MIN_DRAWS=20` (default now, cs4; target 45); trace without per-draw tracing (it crashes backboardd); Home redrawn at full size behind it (cc3). (smoothness.md)
-3. **Real-use hitches**: recheck the >100 ms gaps every ~3 s (Oct 30); time app opens and the keyboard. (smoothness.md, cpu.md)
+3. **Real-use hitches**: bench gaps are the swipe reversal (gp), not stalls; next: time app opens and the keyboard by hand-like taps; recheck the Oct 30 >100 ms gaps in a real-use soak. (smoothness.md, cpu.md)
 4. **Render CPU**: backboardd's render_for_time takes 13.2 ms of each 16.7 ms tick on Settings (catrace lat); what it spends that on (profile tick+0..13 with tools/sunfish-pc-hist.py). (smoothness.md)
 5. **Upstream takeaways**: trace filter env (U6: works, still distorts, parked); UBWC census (U9), spare image blocks timing (U10). QoS (U7) no gain, off.
 

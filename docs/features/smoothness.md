@@ -95,6 +95,12 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 11:15 gp: Settings' >100 ms gaps are the bench's swipe reversal, not a stall (read-only)
+- vpa1-5 and vpb1-5 per-boot logs + catrace (research/notes/settings-gaps-2026-11-02.md). All 28 vpa gaps and 28 of 30 vpb gaps sit at the bottom reversal: `SWEET HID: touch 9 up` and `down` at 540,2000 in the same ms, gap starting 7-40 ms later, lasting 100-130 ms, every ~6.45 s (one swipe cycle).
+- Inside each gap: Preferences' display link fires every 16.7 ms with ~1 ms of work, its 2-4 commits reach backboardd within 1 ms, backboardd's per-vsync event fires 4-8 times but render_for_time runs once (nothing changed), the kernel ticks every frame. The gap ends when Preferences sets a frame begin time and commits a moved list. Longest interval near each touch-down: bottom p50 98, max 130 ms; top p50 64, max 98.
+- The other 2 vpb gaps (248 and 150 ms) are lost SWEET TL records: catrace shows 14 commits and 15 renders at 60 Hz there; TL kept GPU spans and kernel blits but no swap/tick records while its clock line says "dropped 0". 2 in 50 windows: a trace tool bug that can fake gaps.
+- Cost of the reversal to the bench: about 1.3 swaps/s of the ~57 ceiling (guess). Not a user hitch. methods.md notes it.
+
 ### 2026-11-02 10:45 ml: CA_ENABLE_MEMORYLESS=0 is much worse: Control Center 40.5 -> 26.7, Home 54.2 -> 40.5
 - `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh mlo1/mlx1/mlo2/mlx2 1 --screens cc,home`, kernel157 everyday args + TU_FETCH_GMEM_MIN_DRAWS=20; backboardd env via tools/sunfish-install-caenv.sh: OFF = CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1 (the everyday plist), ON adds CA_ENABLE_MEMORYLESS=0. 4453-4454 mV, 0 G1/G2/G4, 0 void.
 - OFF: cc 40.3, 40.7 (p95 47.7, 47.8), home 54.6, 53.7. ON: cc 27.5, 25.9 (p95 60.0, 63.2), home 40.2, 40.8 (p95 48.5). Screenshots the same. Stopped at 2 boots a side: the gap is 13.7 swaps/s. Memoryless stays on (default).

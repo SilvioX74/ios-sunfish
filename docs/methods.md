@@ -78,6 +78,7 @@ Subagents that run these: `.claude/agents/` (phone-runner, builder, implementer,
     `work/perfab/TAG/results.tsv`. Adds a row to "Bench runs" in `docs/gpu-bugs.md` and restores the phone's env and
     bundle at the end. Run it in the background; it stops below 3600 mV.
   - Each screen waits up to 3 min for the hottest CPU to read below `MAXSTART` (75 C), then goes on regardless; adds start and max temperature and the lowest measured A76 MHz; void on a `SWEET THERM: cap` line in the window or at 95 C.
+  - Settings' `gaps100` (about 1 per 15 s window) is the bench's own swipe reversal at the bottom (finger lifts and lands at 540,2000 in the same ms; the list rests 100-130 ms until the new drag passes the pan threshold), not a stall (smoothness.md 2026-11-02 gp). Env CATRACE=1, RELAUNCH=N, RELAUNCH_SETTLE=S: see the script header.
 - **Soak logger:** `tools/sunfish-soak.sh ../logs/soak.log` logs up / unreachable / REBOOTED, battery and new
   crash lines every 60 s. Use it to catch reboots and hangs while away.
 - **Battery in fastboot:** `fastboot getvar battery-voltage`.
