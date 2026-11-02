@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 17:10 dl5: c1 is memoryless (no load, no store): no traffic to save; Control Center alternates an 83-draw Home pass and a 14-draw composite
+- Bundle 228e2cc (drawlog logs every attachment), kernel158 everyday + SWEET_CULL=3, SWEET_DRAWLOG_MIN=1 MINPX=100000 SKIP=200 COUNT=40, fixed cc motion, webcam: Control Center. work/cc/drawlog-dl5.txt, 40 passes, all 1125x2436.
+- Every pass: c0 ld=1 st=1 mem=0 (load, store), c1 ld=0 st=0 mem=3 (don't-care, memoryless). So CA's second attachment costs no memory traffic, only GMEM space (two attachments, smaller bins). The c1 lead is closed.
+- Pattern: 83-draw passes (Home offscreen) alternate with 14-draw full-size passes (likely Control Center's final composite) for matches 200-227, one 97-draw pass, then 83-draw passes. No blur pass (284x611 and smaller) appeared despite MINPX=100000; why isn't checked.
+
 ### 2026-11-02 16:45 dl4: Control Center's steady frames redraw Home offscreen every frame; no cover, nothing more to cull (read-only)
 - work/cc/drawlog-dl4.txt, 8 passes of 83 draws (research/notes/cc-draws-dl4-2026-11-02.md): fills 0-3, wallpaper 4-17 (8 clears c1, 9-12 draw into c1, 13 composites c1 onto c0), Bdso 18, icons, labels, widget (65 writes c1, 73 a backdrop), dock in one. No status bar, no blur, no module: Home rendered into an offscreen target (icons drift sub-pixel every pass: scaled and redrawn), most likely Control Center's blur source. Dirty rect 0,192 1120x2240 then 1120x1472; the Vulkan render area stays the full 1125x2436 (metal2vulkan-runtime render.rs:3905).
 - Per pass ~22.6 Mpx (~16.4 after deadfill) on a 2.5 Mpx dirty rect: fills 8.3, wallpaper 6.2, c1 offscreen 3.3, Bdso 2.1, c1 composite 1.2, icons and labels 0.7. Cull 3's ~20 draws per frame come from an unlogged pass (the final composite, under the drawlog's 30-draw / 1000x2000 limits).
