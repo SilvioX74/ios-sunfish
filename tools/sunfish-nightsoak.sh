@@ -16,11 +16,14 @@ flock -n 9 || { echo "another night soak is running"; exit 1; }
 C() { python3 -I tools/flame-cmd.py --wait 0 "$@" >/dev/null 2>&1; }
 now=$(date +%s); t=$(date -d '21:30' +%s); [ "$t" -gt "$now" ] && sleep $((t - now))
 touch work/night
-timeout 5 tools/sunfish-ssh true 2>/dev/null || { echo "phone not up at $(date +%T): soak not started"; exit 1; }
-python3 -I tools/flame-cmd.py reboot >/dev/null 2>&1
-for i in $(seq 60); do fastboot devices | grep -q fastboot && break; sleep 3; done
+# A phone already in fastboot needs no reboot.
+if ! timeout 8 fastboot devices | grep -q fastboot; then
+	timeout 5 tools/sunfish-ssh true 2>/dev/null || { echo "phone not up at $(date +%T): soak not started"; exit 1; }
+	python3 -I tools/flame-cmd.py reboot >/dev/null 2>&1
+	for i in $(seq 60); do fastboot devices | grep -q fastboot && break; sleep 3; done
+fi
 fastboot getvar battery-voltage 2>&1 | head -1
-timeout 150 tools/sunfish-boot.sh soakn work/kernel139/kernel.development.sweet sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetrowa55=6 sweetgpufreq=6 >/dev/null 2>&1
+timeout 150 tools/sunfish-boot.sh soakn work/kernel144/kernel.development.sweet sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetrowa55=6 sweetgpufreq=6 sweethwcg=1 >/dev/null 2>&1
 for i in $(seq 120); do timeout 4 tools/sunfish-ssh true 2>/dev/null && break; sleep 1; done
 sleep 30
 C H; sleep 1; C swipe 540 2330 540 1100 300; sleep 2; C swipe 540 2330 540 1100 300; sleep 2
