@@ -39,6 +39,7 @@ Night soak n3 didn't run: the session couldn't stop `tools/sunfish-nightsoak.sh 
 1. Soak: 1 h after `work/night`, on kernel144 + sweethwcg=1 (edit the boot line in sunfish-nightsoak.sh). Clean (no silent reset, no failed recovery): defaults with tools/sunfish-install-speed.sh, a rebuilt `METAL2_VARIANT=next` with 0117-0120 knobs on by default, sweetgpufreq and sweethwcg default on. Include a webcam motion check of mode 3 (st3 correction).
 2. CX-cycle recovery: kernel147 `sweetcxcycle=1` boot only, then `sweetcxcycle=2 sweethangtest=0xC0000040`, then the rest of cx1's steps (gpu.md 20:50).
 3. fg1 again in full, kernel146, read `SWEET SCHED: fg` per window: do low Settings runs show more A55 time? (smoothness.md 20:10.)
+4. Upstream quick tests (backlog U4-U7): bridge QoS one-liner, `TU_FETCH_GMEM_MIN_DRAWS=5`/`20` on Control Center, `SETTLE=90`, trace filter; 5-boot A/B for the first two.
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),
