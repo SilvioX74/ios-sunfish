@@ -782,6 +782,7 @@ static void dlFloats(std::string &out,const void *p,size_t bytes,unsigned maxFlo
 struct DrawLog {
  unsigned long w=0,h=0,format=0,load=0,store=0;bool depth=false;
  std::string text,atts;unsigned draws=0;   // atts: the attachment list of the pass header
+ std::string tail;   // sweet drawlog: " t=<mach time at pass start> tex=<c0 id> pid=<pid>", last in the header
  std::string pipeline="-";bool blend=false;unsigned long mask=0;
  struct VB {__unsafe_unretained NBBuffer *b=nil;unsigned long offset=0;} vbs[31];
  struct FT {__unsafe_unretained NBTexture *t=nil;bool sampler=false;} fts[16];
@@ -818,7 +819,7 @@ struct DrawLog {
   const int match=gDrawLogMatched++;if(match<drawLogSkip())return;   // sweet drawlog: SWEET_DRAWLOG_SKIP
   gDrawLogBlocks++;
   if(FILE *f=fopen(drawLogPath(),"a")) {
-   fprintf(f,"=== pass %lux%lu fmt=%lu load=%lu store=%lu depthstencil=%d draws=%u match=%d%s\n%s",w,h,format,load,store,(int)depth,draws,match,atts.c_str(),text.c_str());
+   fprintf(f,"=== pass %lux%lu fmt=%lu load=%lu store=%lu depthstencil=%d draws=%u match=%d%s%s\n%s",w,h,format,load,store,(int)depth,draws,match,atts.c_str(),tail.c_str(),text.c_str());
    fclose(f);
   }
  }
@@ -1306,6 +1307,11 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
    (unsigned long)a.loadAction,(unsigned long)a.storeAction,(unsigned long)x.storageMode);_dl->atts+=b;};
  for(unsigned i=0;i<8;i++){char n[8];snprintf(n,sizeof n,"c%u",i);att(n,d.colorAttachments[i]);}
  att("d",d.depthAttachment);att("s",d.stencilAttachment);
+ {char b[96];IOSurfaceRef sf=nullptr;   // sweet drawlog: pass start time, c0 identity (IOSurface ID, else the NBTexture pointer) and pid
+  if([(id)t isKindOfClass:[NBTexture class]]){NBTexture *x=(NBTexture *)t;id p=x.parent;sf=x.surface?x.surface:([p isKindOfClass:[NBTexture class]]?((NBTexture *)p).surface:nullptr);}
+  if(sf)snprintf(b,sizeof b," t=%llu tex=ios=%u pid=%d",(unsigned long long)mach_absolute_time(),(unsigned)IOSurfaceGetID(sf),(int)getpid());
+  else snprintf(b,sizeof b," t=%llu tex=%p pid=%d",(unsigned long long)mach_absolute_time(),(__bridge void *)t,(int)getpid());
+  _dl->tail=b;}
 }
 - (void)endEncoding {
  if(_defer)[self cullReplay];   // sweet cull
