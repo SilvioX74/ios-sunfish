@@ -95,6 +95,13 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-01 22:50 CoreAnimation's internal nits explain the n4/n5 gap (read-only); luma boost test next
+- n4 (kernel144, internal nits 133) against n5 (kernel149, nits 5), first 10 app opens, same order, 650 MHz, no caps, panel DCS 43 in both. Mean over 5 s windows, n4 / n5: backboardd ms per present Settings 8.5 / 14.9, Safari 11.7 / 13.3, Notes 8.7 / 11.7, Calendar 15.5 / 21.8, Photos 9.0 / 12.0; all apps busy 58 / 72 %, GPU sensor mean 63.1 / 69.4 C (n5 started 8 C hotter, so at most about 6 C is the pass).
+- The panel isn't it: DCS 43 fast at 133 nits, DCS 239 slow at 5 nits (ni1). The extra pass (st5, 1125x2436, about 7-9 ms) is in the band 5 to 32 nits: slider position 0x1 gives 5.0 nits, 0x1a62 gives 32.8. Nothing logged in between.
+- Correction to dd1 (threshold 50-92): at `sweetblmin=50` the kernel saw 50 but CoreBrightness still said `NitsPhysical` 5.0, and Settings stayed 15.4-17.1 ms. So an xnu floor doesn't reach CoreAnimation.
+- Why it wouldn't come back on demand: a drag changes `brightness` and DCS only; nits and position are written later (at a backboardd restart, or about 0.2 s after, next to an ALS report, link a guess). Boots since n4 start at position 1, 5 nits, so the 32-nit numbers (Settings 57) won't reproduce until the slider is raised and written.
+- Guess, about 60 %: luma boost, QuartzCore begin_update's nits gate (0x1882e6d40; note reads 2-20 nits). iPhone10,3 in boost_devices not confirmed. Test: `tools/sunfish-install-caenv.sh CA_DISABLE_LUMA_BOOST=1`, 2 boots with and 2 without at 5 nits: `SWIPE_MS=3000 tools/sunfish-perfab.sh TAG 2 --secs 15 --screens settings`; backboardd ms per present about 16 -> 8 confirms. If not: `CA_DISPLAY_COLOR_ACCURACY_FIX_NITS=1`.
+
 ### 2026-11-01 22:02 Bridge 0117-0120: on by default in source, for after soak n4
 - SWEET_U0011..14 now on unless set to `0` (patches edited). `METAL2_VARIANT=next` built 22:01 into work/metal2-next (SweetMetal2 16,408,608 bytes); also has mode 3 and shadow cache as defaults. Not installed or run: goes on the phone only after a clean n4, with tools/sunfish-install-speed.sh.
 
