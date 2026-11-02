@@ -1,0 +1,46 @@
+From 4e1644daa5bac00ed419ea10967d1a8c3edf0d93 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Mon, 2 Nov 2026 04:48:11 -0500
+Subject: [PATCH] sunfish: sweetvsyncgrid, report the tick's deadline to CA,
+ off by default
+
+---
+ iokit/Kernel/arm/SweetFramebuffer.cpp | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+index 1b62cb4..a226146 100644
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -455,6 +455,7 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ 		nanoseconds_to_absolutetime(SWEET_FB_VSYNC_US * 1000ULL, &fb->fVsyncAbs);
+ 		fb->fNextVsync = now;
+ 	}
++	uint64_t grid = fb->fNextVsync;		/* 0273: this tick's deadline, before the jitter of the wake */
+ 	fb->fNextVsync += fb->fVsyncAbs;
+ 	if (fb->fNextVsync <= now || __atomic_exchange_n(&fb->fDarkKick, false, __ATOMIC_ACQ_REL)) {
+ 		fb->fNextVsync = now + fb->fVsyncAbs;   /* 0242: also after a slow dark tick */
+@@ -489,9 +490,19 @@ AppleCLCD::vsyncFired(OSObject *owner, IOTimerEventSource *sender)
+ 	 * videoRefreshPeriod). a3 was 0: CA saw every frame's deadline as already past.
+ 	 */
+ 	uint64_t period = fb->fVsyncAbs;
++	/*
++	 * 0273: boot-arg sweetvsyncgrid=1 reports the tick's deadline, not the wake time (about +-1 ms of jitter), so
++	 * CA's render gate (next update = commit time + period * (N - 0.25)) sees a steady grid. Default 0: unchanged.
++	 */
++	static int vgrid = -1;
++	if (vgrid < 0) {
++		vgrid = 0;
++		PE_parse_boot_argn("sweetvsyncgrid", &vgrid, sizeof(vgrid));
++	}
++	uint64_t tick = (vgrid && grid != 0 && grid <= now) ? grid : now;
+ 	uint64_t values[6] = {
+ 		(uint32_t)count, (uint32_t)(count >> 32),
+-		(uint32_t)(now + fb->fVsyncAheadAbs), (uint32_t)((now + fb->fVsyncAheadAbs) >> 32),
++		(uint32_t)(tick + fb->fVsyncAheadAbs), (uint32_t)((tick + fb->fVsyncAheadAbs) >> 32),
+ 		(uint32_t)period, (uint32_t)(period >> 32),
+ 	};
+ 
+-- 
+2.56.0
+
