@@ -519,6 +519,7 @@ static std::string quartzCoreCallers();
 @interface NBRenderPipeline : NBObject
 @property(nonatomic) NmbRenderPipeline *handle;
 @property(nonatomic) std::string vertexName,fragmentName;   // sweet drawlog: what a draw's pipeline was (only filled when SWEET_DRAWLOG is set)
+@property(nonatomic) std::string dlState;   // sweet drawlog: blend factors of target 0 and the CA fragment's destination-read constants
 @property(nonatomic) BOOL blend;
 @property(nonatomic) NSUInteger writeMask;
 @property(nonatomic) unsigned opaqueMask,writtenMask;   // sweet cull: colour attachments written with blending off and a full write mask
@@ -749,11 +750,25 @@ static void waitForResource(id resource) {
 
 // sweet drawlog (SWEET_DRAWLOG=/path): a text dump of what the big Core Animation passes draw, to see why they are slow. Off (one cached getenv)
 // unless set; only passes with a colour target >= 1000x2000 are recorded, and only the first 20 such passes with >= 10 draws are written.
+// SWEET_DRAWLOG_MIN=N (default 10): only passes with >= N draws; SWEET_DRAWLOG_SKIP=K (default 0): skip the first K such passes;
+// SWEET_DRAWLOG_COUNT=C (default 20): write C passes. E.g. MIN=100 skips Home's ~60-draw passes and catches Control Center's ~134.
 static const char *drawLogPath() {
  static const char *path=[]{const char *p=getenv("SWEET_DRAWLOG");return p&&*p?p:(const char *)nullptr;}();
  return path;
 }
-static std::atomic<int> gDrawLogBlocks;
+static int drawLogEnv(const char *name,int dflt) {const char *p=getenv(name);return p&&*p?atoi(p):dflt;}
+static int drawLogMin() {static const int n=drawLogEnv("SWEET_DRAWLOG_MIN",10);return n;}
+static int drawLogSkip() {static const int n=drawLogEnv("SWEET_DRAWLOG_SKIP",0);return n;}
+static int drawLogCount() {static const int n=drawLogEnv("SWEET_DRAWLOG_COUNT",20);return n;}
+static std::atomic<int> gDrawLogBlocks,gDrawLogMatched;
+// sweet drawlog: the hex value of one specialization constant in an NBFunction's constantsText ("name:type:hex ..."), "" if absent
+static std::string dlConst(const std::string &t,const char *name) {
+ const std::string k=std::string(name)+":";size_t p=0;
+ while((p=t.find(k,p))!=std::string::npos){if(p==0||t[p-1]==' ')break;p++;}
+ if(p==std::string::npos)return "";
+ const size_t c=t.find(':',p+k.size());if(c==std::string::npos)return "";
+ const size_t e=t.find(' ',c);return t.substr(c+1,e==std::string::npos?std::string::npos:e-c-1);
+}
 static void dlFloats(std::string &out,const void *p,size_t bytes,unsigned maxFloats) {
  char t[32];const float *f=(const float *)p;size_t n=bytes/4;if(n>maxFloats)n=maxFloats;
  for(size_t i=0;i<n;i++){float v;memcpy(&v,f+i,4);snprintf(t,sizeof t,"%s%g",i?",":"",v);out+=t;}
@@ -784,7 +799,8 @@ struct DrawLog {
    text+="\n";
   }
   for(unsigned i=0;i<16;i++)if(fts[i].t||fts[i].sampler) {
-   if(fts[i].t){NBTexture *x=fts[i].t;snprintf(t,sizeof t,"  ftex %u %lux%lu fmt=%lu mips=%lu",i,(unsigned long)x.width,(unsigned long)x.height,(unsigned long)x.pixelFormat,(unsigned long)x.mipmapLevelCount);}
+   if(fts[i].t){NBTexture *x=fts[i].t;id p=x.parent;const bool ios=x.surface||([p isKindOfClass:[NBTexture class]]&&((NBTexture *)p).surface);
+    snprintf(t,sizeof t,"  ftex %u %lux%lu fmt=%lu mips=%lu ios=%d",i,(unsigned long)x.width,(unsigned long)x.height,(unsigned long)x.pixelFormat,(unsigned long)x.mipmapLevelCount,(int)ios);}
    else snprintf(t,sizeof t,"  ftex %u none",i);
    text+=t;if(fts[i].sampler)text+=" sampler";text+="\n";
   }
@@ -792,10 +808,11 @@ struct DrawLog {
   draws++;
  }
  void finish() {
-  if(w<1000||h<2000||draws<10||gDrawLogBlocks>=20)return;
+  if(w<1000||h<2000||(int)draws<drawLogMin()||gDrawLogBlocks>=drawLogCount())return;
+  const int match=gDrawLogMatched++;if(match<drawLogSkip())return;   // sweet drawlog: SWEET_DRAWLOG_SKIP
   gDrawLogBlocks++;
   if(FILE *f=fopen(drawLogPath(),"a")) {
-   fprintf(f,"=== pass %lux%lu fmt=%lu load=%lu store=%lu depthstencil=%d draws=%u\n%s",w,h,format,load,store,(int)depth,draws,text.c_str());
+   fprintf(f,"=== pass %lux%lu fmt=%lu load=%lu store=%lu depthstencil=%d draws=%u match=%d\n%s",w,h,format,load,store,(int)depth,draws,match,text.c_str());
    fclose(f);
   }
  }
@@ -1206,7 +1223,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
    sm2_logs(t);}
   static std::atomic<bool> said{false};if(!said.exchange(true)){char t[160];snprintf(t,sizeof t,"SWEET CULL: first pass %lux%lu single=%d defer=%d",(unsigned long)(t0?t0.width:0),(unsigned long)(t0?t0.height:0),(int)single,(int)_defer);sm2_logs(t);}   // sweet cull: one-time check
  }
- if(!drawLogPath() || gDrawLogBlocks>=20)return;
+ if(!drawLogPath() || gDrawLogBlocks>=drawLogCount())return;
  id<MTLTexture> t=d.colorAttachments[0].texture;
  if(!t || t.width<1000 || t.height<2000)return;
  _dl.reset(new DrawLog());_dl->w=t.width;_dl->h=t.height;_dl->format=t.pixelFormat;
@@ -1221,7 +1238,7 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
 - (void)setRenderPipelineState:(id<MTLRenderPipelineState>)state {
  if(![(id)state isKindOfClass:[NBRenderPipeline class]]){[self.commandBuffer refuse:@"foreign render pipeline"];return;}
  if(_dl){NBRenderPipeline *p=(NBRenderPipeline *)state;   // sweet drawlog
-  _dl->pipeline=(p.label.length?p.label.UTF8String:"-");_dl->pipeline+=" v="+p.vertexName+" f="+p.fragmentName;_dl->blend=p.blend;_dl->mask=p.writeMask;}
+  _dl->pipeline=(p.label.length?p.label.UTF8String:"-");_dl->pipeline+=" v="+p.vertexName+" f="+p.fragmentName+p.dlState;_dl->blend=p.blend;_dl->mask=p.writeMask;}
  if(_defer){NBRenderPipeline *pp=(NBRenderPipeline *)state;_pipe=pp;[self rec:^{[self check:nmb_render_set_pipeline(self.handle,[pp handle]) what:"setRenderPipelineState"];}];return;}   // sweet cull
  [self check:nmb_render_set_pipeline(self.handle,[(NBRenderPipeline *)state handle]) what:"setRenderPipelineState"];
 }
@@ -2270,6 +2287,21 @@ static void planarFill(NBTexture *t) {
    }
   }
   state.dfSamples=(unsigned)d.rasterSampleCount;state.dfA2C=d.alphaToCoverageEnabled;   // sweet deadfill
+  if(drawLogPath()) {   // sweet drawlog: blend factors (rgb src:dst:op/alpha src:dst:op) and the destination-read constants (see sweet cull 2 below)
+   MTLRenderPipelineColorAttachmentDescriptor *a=d.colorAttachments[0];char t[96];
+   snprintf(t,sizeof t," bf=%lu:%lu:%lu/%lu:%lu:%lu",(unsigned long)a.sourceRGBBlendFactor,(unsigned long)a.destinationRGBBlendFactor,(unsigned long)a.rgbBlendOperation,
+    (unsigned long)a.sourceAlphaBlendFactor,(unsigned long)a.destinationAlphaBlendFactor,(unsigned long)a.alphaBlendOperation);
+   std::string st=t;
+   if([(id)d.fragmentFunction isKindOfClass:[NBFunction class]]) {
+    const std::string fc=((NBFunction *)d.fragmentFunction).constantsText;
+    const std::string dc=dlConst(fc,"fc_dest_count"),df=dlConst(fc,"fc_destination_function"),bfn=dlConst(fc,"fc_blend_function"),fs=dlConst(fc,"fc_framebuffer_sample");
+    if(!dc.empty()||!fs.empty()) {   // fbread: 0 only for the known non-reading combination (sweet cull 2's rtj/rtj2 census), else 1
+     const bool none=dc=="00"&&df=="00"&&bfn=="36"&&fs=="00";
+     st+=" fc=dc"+dc+",df"+df+",bf"+bfn+",fs"+fs+" fbread="+(none?"0":"1");
+    }
+   }
+   state.dlState=st;
+  }
   // sweet cull 2: journal rtj/rtj2, 254 labels: every label reading the destination (Bvcm, Bdso, Bpld, Tbds, Idst, ...) has a non-zero dest count or another blend function. Anything else, unknown: a reader.
   if(cull2On()&&[(id)d.fragmentFunction isKindOfClass:[NBFunction class]]&&state.fragmentName=="fixed_frag_lph_cph") {
    const std::string fc=((NBFunction *)d.fragmentFunction).constantsText;
