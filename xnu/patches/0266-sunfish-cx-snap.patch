@@ -1,0 +1,48 @@
+From 9536970b511d711fc5dac5fb1dcae94b257425f1 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Sun, 1 Nov 2026 20:44:36 -0500
+Subject: [PATCH] sunfish: CX boot snapshot without impl registers, log around
+ it
+
+---
+ bsd/dev/sweet_a6xx.c | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/bsd/dev/sweet_a6xx.c b/bsd/dev/sweet_a6xx.c
+index 662f3e8..a4ac169 100644
+--- a/bsd/dev/sweet_a6xx.c
++++ b/bsd/dev/sweet_a6xx.c
+@@ -1972,13 +1972,12 @@ void a6_cx_release(void)
+ 
+ /*
+  * 0264: what the SMMU held once the boot was done, to compare after a CX cycle (+offset, words): sCR0..sACR, IDR, SMR,
+- * S2CR, CBAR, CBA2R, the attach-impl-defs of smmu_bank, context banks 0 and 1. First boot state not listed here is not
+- * checked. Only with sweetcxcycle set: on the default path these registers aren't read.
++ * S2CR, CBAR, CBA2R, context banks 0 and 1. First boot state not listed here is not checked. Only with sweetcxcycle
++ * set: on the default path these registers aren't read. 0266: the impl registers of smmu_bank came out, they were never
++ * read before and cx1's boot panicked with a CPU stuck 2 s after this ran (cause not proven).
+  */
+ static const uint32_t cx_snap_regs[][2] = {
+-	{ 0x00, 5 }, { 0x20, 8 }, { 0x800, 8 }, { 0xc00, 8 }, { 0x1000, 5 }, { 0x1800, 5 }, { 0x6000, 1 }, { 0x6060, 1 },
+-	{ 0x678c, 1 }, { 0x6794, 1 }, { 0x6800, 1 }, { 0x6900, 1 }, { 0x6924, 2 }, { 0x6930, 1 }, { 0x6960, 1 },
+-	{ 0x6b64, 2 }, { 0x8000, 16 }, { 0x9000, 16 },
++	{ 0x00, 5 }, { 0x20, 8 }, { 0x800, 8 }, { 0xc00, 8 }, { 0x1000, 5 }, { 0x1800, 5 }, { 0x8000, 16 }, { 0x9000, 16 },
+ };
+ static uint32_t cx_snap[83];
+ 
+@@ -2158,8 +2157,11 @@ int a6_recover_cx(struct a6_gpu *g)
+ /* 0264: for a6_recover_cx: the banks as boot left them, only if it can run */
+ static void a6_cx_snap_boot(void)
+ {
+-	if (a6_cxcycle_mode())
++	if (a6_cxcycle_mode()) {
++		a6_log("cx cycle: boot snapshot\n");
+ 		cx_snap_walk(NULL);
++		a6_log("cx cycle: boot snapshot done\n");
++	}
+ }
+ #endif
+ 
+-- 
+2.56.0
+
