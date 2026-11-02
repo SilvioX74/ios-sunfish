@@ -95,6 +95,13 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 08:10 ct/st: catrace over 30 Settings launches; settle after kill doesn't remove the lows; d20 on Settings unsettled
+- `CATRACE=1 RELAUNCH=5 SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh TAG 1 --screens settings`, kernel154 everyday args, 4454-4455 mV, 0 G1/G2/G4, 0 void. catrace works (sanity run: 6905 records in 6 s, 0 lost); a trace file per launch.
+- Swaps/s L1-L5: cta base 56.8 56.8 56.8 56.8 55.9; ctb d20 47.8 44.4 55.3 57.9 50.8; ctc base 56.7 55.4 56.8 57.4 42.7; ctd d20 57.3 57.1 57.3 57.2 44.3; sta base + RELAUNCH_SETTLE=10 49.7 45.4 57.3 57.3 57.0; stb same 56.4 56.1 57.1 56.2 56.8. skip2 15-38 % in low launches, 1.6-6 in good.
+- Settle check: 10 s after the kill, sta L2 was still low (45.4): a busy start right after the kill isn't needed for a low launch. Lows today: L1 2, L2 2, L5 3 (+1 mild).
+- `TU_FETCH_GMEM_MIN_DRAWS=20` on Settings: 3 clearly low of 10 (ctb L1, L2, ctd L5) against 3 of 20 base (ctc L5, sta L1, L2). Good launches the same (57.1-57.9). Too few to tell; d20 stays default, watched in the next Settings runs (if the rate doubles, it goes off).
+- Found: Preferences emits Transaction::commit (0x31ca0005, ~62/s), not commit_transaction 0x31ca0215 (only SpringBoard does), so catrace-dump --pair finds nothing; analysis on 0x0005 + backboardd's 0x0009/0x000d in progress (investigator). perfab started catrace with nohup, which the phone lacks: fixed (e049067).
+
 ### 2026-11-02 07:35 cs4: TU_FETCH_GMEM_MIN_DRAWS=20 on Control Center: +1.1 swaps/s over 5 boots, default now
 - `SWIPE_MS=3000 SETTLE=90 MAXSTART=99 tools/sunfish-perfab.sh cs4a..cs4d 1 --screens cc,home`, kernel154 everyday args, metal2-next, empty env except the threshold. 4453-4455 mV, 0 G1/G2/G4 in 62 k submits.
 - Control Center swaps/s (p95 ms): base 39.2 (49.1), 39.0 (47.0), 39.1 (45.3), 39.1 (45.9): mean 39.10, p95 46.8. d5 39.9 (43.1), 40.5 (46.6), 39.8 (44.7), one void (lock screen, bench setup): mean 40.07, p95 44.8. d20 40.2 (44.3), 40.8 (46.8), 40.3 (40.6), 39.8 (44.5): mean 40.28, p95 44.1. With cs/csr: d20 5 boots mean 40.5 against base 8 boots mean 39.4; d20 above base in every boot pair.

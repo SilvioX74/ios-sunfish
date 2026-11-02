@@ -34,6 +34,13 @@ Written by `tools/sunfish-perfab.sh`, newest first. Void runs are screen runs, n
 
 | Date | Tag | Kernels and configs | Boots | Submits | G1 | G2 | G4 | Void runs |
 |---|---|---|---|---|---|---|---|---|
+| 2026-11-02 | stb | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1 | 1 | 24 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | sta | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1 | 1 | 22 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ctd | d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 22 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ctc | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1 | 1 | 20 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | ctb | d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 1 | 20 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | cta | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1 | 1 | 23 k | 0 | 0 | 0 | 0 |
+| 2026-11-02 | cta | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1 | 1 | 19 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | cs4d | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 11 k | 0 | 0 | 0 | 2 |
 | 2026-11-02 | cs4c | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 17 k | 0 | 0 | 0 | 0 |
 | 2026-11-02 | cs4b | base=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1; d5=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=5; d20=154,sweetse9=2,sweetcampmic=2,sweetswapbig=6,sweetampreset=1,+TU_FETCH_GMEM_MIN_DRAWS=20 | 3 | 17 k | 0 | 0 | 0 | 0 |
