@@ -89,6 +89,13 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:49 Credit path retest (crD): JetsamMemoryLimit 128 in the job did not help
+`--check` shows JetsamProperties {JetsamMemoryLimit: 128} in the launchd.plist cache; first `venusc --surf` (720p, 6
+credits): boot log 20261103-174030 "[64.183] CRASH venusd[37] sig 9", "reason ns 1 code 0x7" right after "SWEET SURF:
+venusd sel 4" again. So either launchd ignores JetsamProperties for this job or the lookup maps far more than 3 MB.
+VTVENUS_SURF=0 again (crS0). Next: venusd logs its phys_footprint around each lookup and sets its own limit
+(memorystatus_control) as root.
+
 ### 2026-11-03 17:40 Credit path (331e616) first test (crA): jetsam killed venusd at the first credited frame
 venusd logged "session 1: frame 0 into credited IOSurface 119 (4.2-5.2 ms read)" then died, every session; boot log
 20261103-173338: "CRASH venusd[37] sig 9 ... reason ns 1 code 0x7" right after "SWEET SURF: venusd sel 4" = jetsam

@@ -22,6 +22,12 @@ hangs but only 7.4 fps (GPU-bound); HexGL parked (its loader stalls on iOS Safar
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:49 Bridge 0130 on the phone (crS0, bundle 4C4C44D4): no fps change, kept
+games_fps 60 s, page tick beacons after warm-up: 0130 on 8.4 median (8.2-8.6), SWEET_M2V_CENTER_VARY=0 8.3 (8.0-8.8):
+same. Cube aa=1 ~20.0 fps, no artefacts; home, CC, Settings normal; no GPU fault. So the 12 derivatives aren't what
+limits the 57 ms draw (or 1457d61d isn't the hot draw: unconfirmed). Kept installed (fewer instructions, no harm).
+Next for WebGL speed: a draw trace on this bundle to confirm the hot shader, then Turnip-side (sysmem MSAA, LRZ).
+
 ### 2026-11-03 17:40 Bridge 0130 SWEET_M2V_CENTER_VARY (d3316ff): Turnip reads center varyings directly
 Mesa 85fda3b: a plain input with sampleShadingEnable off reads load_barycentric_pixel (nir_lower_io.c:354-360), the same
 ij ir3's InterpolateAtOffset(0) starts from (ir3_nir_lower_load_barycentric_at_offset.c:24-25), minus the ddx/ddy.
