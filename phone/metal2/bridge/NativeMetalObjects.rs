@@ -9,8 +9,8 @@ use metal2vulkan::metal::state::{DepthStencilDescriptor, StencilDescriptor};
 use metal2vulkan::library::{FunctionConstantValue, FunctionConstantValues};
 use metal2vulkan::metal::{
     BlendFactor, BlendOperation, ColorWriteMask, CompareFunction, CullMode, DataType, IndexType, PixelFormat, PrimitiveTopologyClass,
-    PrimitiveType, RenderStages, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter, StencilOperation, TextureType,
-    TextureUsage, TriangleFillMode, VertexFormat, VertexStepFunction, Winding,
+    PrimitiveType, RenderStages, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter, StencilOperation, TextureSwizzle,
+    TextureSwizzleChannels, TextureType, TextureUsage, TriangleFillMode, VertexFormat, VertexStepFunction, Winding,
 };
 use metal2vulkan::pipeline::{
     ColorAttachmentDescriptor, ComputePipelineDescriptor, RenderPipelineDescriptor, StageSource, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
@@ -799,6 +799,33 @@ pub extern "C" fn nmb_texture_new_view(texture: *mut NmbTexture, format: u64, ki
             let ranges = (l[0]..l[0].checked_add(l[1]).ok_or("levels overflow")?, s[0]..s[0].checked_add(s[1]).ok_or("slices overflow")?);
             t.new_texture_view_with_levels_slices(format, raw::<TextureType>(kind, "texture type")?, ranges.0, ranges.1)
         };
+        Ok(boxed(NmbTexture(view.map_err(e("texture view"))?)))
+    })
+}
+
+// Ported from UniXNU/AdrenoMetal 243d63c bridge/NativeMetalObjects.rs:1067-1071,2912-2928 (MIT).
+// Bit 32 distinguishes an explicit all-zero swizzle from an omitted value; zero is the identity.
+fn swizzle_of(packed: u64) -> Result<TextureSwizzleChannels, String> {
+    if packed == 0 { return Ok(TextureSwizzleChannels::DEFAULT); }
+    let channel = |shift: u32| raw::<TextureSwizzle>((packed >> shift) & 0xff, "texture swizzle");
+    Ok(TextureSwizzleChannels { red: channel(0)?, green: channel(8)?, blue: channel(16)?, alpha: channel(24)? })
+}
+
+/// `newTextureViewWithPixelFormat:textureType:levels:slices:swizzle:`: levels and slices are {start, count}, swizzle packed as
+/// `swizzle_of` reads it.
+#[unsafe(no_mangle)]
+pub extern "C" fn nmb_texture_new_view_swizzle(texture: *mut NmbTexture, format: u64, kind: u64, levels: *const u64, slices: *const u64,
+                                               swizzle: u64) -> *mut NmbTexture {
+    guard(std::ptr::null_mut(), || {
+        let t = &get(texture)?.0;
+        if levels.is_null() || slices.is_null() {
+            return Err("null levels or slices".into());
+        }
+        // SAFETY: the header's two words each.
+        let (l, s) = unsafe { (std::slice::from_raw_parts(levels, 2), std::slice::from_raw_parts(slices, 2)) };
+        let ranges = (l[0]..l[0].checked_add(l[1]).ok_or("levels overflow")?, s[0]..s[0].checked_add(s[1]).ok_or("slices overflow")?);
+        let view = t.new_texture_view_with_swizzle(raw::<PixelFormat>(format, "pixel format")?, raw::<TextureType>(kind, "texture type")?,
+                                                   ranges.0, ranges.1, swizzle_of(swizzle)?);
         Ok(boxed(NmbTexture(view.map_err(e("texture view"))?)))
     })
 }

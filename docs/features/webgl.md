@@ -11,6 +11,9 @@ encoders). **Updated:** 2026-11-03.
 - Shader source (B55 route A, frontend): `newLibraryWithSource:` runs Apple's compile (MTLCompilerService), serializes the
   `_MTLLibrary` to a temp metallib and loads it as the bridge's NBLibrary; boot log `SWEET SRC: <proc> #N lib .. -> NBLibrary ok|fail (..)`,
   refusals of other devices' functions log `SWEET MTL: foreign function <class> refused`. SWEET_SRCLIB=0: off (Apple's library, as before).
+- Ported from UniXNU/AdrenoMetal 243d63c (MIT, 2026-11-03): swizzled texture views (bridge `nmb_texture_new_view_swizzle`), real
+  sampler LOD clamps (a sampler kept per clamp pair; SWEET_LODCLAMP=0 drops them), `presentDrawable:` (+ atTime:,
+  afterMinimumDuration:), and a missing selector answered nil/0 after its one `MISSING` line (SWEET_MISSING_ABORT=1: abort as before).
 - Test page: work/stage0/webgl.html (gitignored; beacons to the PC http.server on 192.168.7.1:8077, see video.md s0).
 
 ## Open

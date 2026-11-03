@@ -4,8 +4,8 @@
 // only adds this file's implementations; every other object is an own class answering the Metal protocol methods it implements.
 // Every result comes from the runtime and the GPU: a refused call returns nil/NO with the runtime's reason, an encoder call the runtime
 // refuses fails its command buffer (status Error, handlers run) instead of being dropped. A selector this frontend does not implement is
-// reported through the missing-selector hook before the usual exception, so a hardware run names the gap.
-// Shared events work within this process (no cross-process handle yet). Not yet implemented here: heaps, argument buffers, indirect commands, drawables/presentation.
+// reported once through the missing-selector hook and answered nil/0 (SWEET_MISSING_ABORT=1: the usual exception), so a hardware run names the gap.
+// Shared events work within this process (no cross-process handle yet). Not yet implemented here: heaps, argument buffers, indirect commands.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <IOSurface/IOSurfaceRef.h>
@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <sys/mman.h>
 #include <CommonCrypto/CommonDigest.h>
@@ -149,6 +150,28 @@ static void journal(const std::string &line) {
  if(FILE *f=fopen(gJournalPath.c_str(),"a")){fwrite(line.data(),1,line.size(),f);fputc('\n',f);fclose(f);}
 }
 
+// A selector this file lacks: reported once through the missing-selector hook (the same MISSING line) and answered as a no-op
+// returning nil/0, instead of the NSInvalidArgumentException that ended the GPU process (webgl wg3). respondsToSelector: still answers
+// NO, so a caller that asks first keeps its own fallback. Ported from UniXNU/AdrenoMetal 243d63c NativeBridgeMetalFrontend.mm:841-870,
+// 4054-4058 (MIT). SWEET_MISSING_ABORT=1: the old path (hook, then doesNotRecognizeSelector: aborts).
+static bool missingAbort() {static const bool on=[]{const char *p=getenv("SWEET_MISSING_ABORT");return p&&atoi(p)!=0;}();return on;}
+static NSMethodSignature *missingSignature(const char *cls,SEL selector) {
+ static std::mutex lock;static std::unordered_set<std::string> seen;
+ const std::string key=std::string(cls)+" "+sel_getName(selector);
+ {std::lock_guard<std::mutex> hold(lock);if(!seen.insert(key).second)return [NSMethodSignature signatureWithObjCTypes:"@@:"];}
+ if(gMissing)gMissing(cls,sel_getName(selector));
+ noteProblem([NSString stringWithFormat:@"missing %s (answered nil)",key.c_str()]);
+ return [NSMethodSignature signatureWithObjCTypes:"@@:"];
+}
+// A protocol signature's void method takes no return value (setting one traps in NSInvocation); anything else is answered with
+// zeroes of its own size.
+static void answerMissing(NSInvocation *invocation) {
+ const NSUInteger length=invocation.methodSignature.methodReturnLength;
+ if(!length)return;
+ alignas(16) unsigned char zero[256]={};
+ if(length<=sizeof zero)[invocation setReturnValue:zero];
+}
+
 @interface NBObject : NSObject
 @property(atomic,copy) NSString *label;
 @end
@@ -156,6 +179,11 @@ static void journal(const std::string &line) {
 - (id<MTLDevice>)device {return gDeviceObject;}
 // Metal SPI (Metal Performance Shaders asks every encoder and command buffer): an identity for its traces.
 - (uint64_t)globalTraceObjectID {return (uint64_t)(uintptr_t)self;}
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {
+ NSMethodSignature *signature=[super methodSignatureForSelector:selector];
+ return signature||missingAbort()?signature:missingSignature(class_getName(object_getClass(self)),selector);
+}
+- (void)forwardInvocation:(NSInvocation *)invocation {answerMissing(invocation);}
 - (void)doesNotRecognizeSelector:(SEL)selector {
  if(gMissing)gMissing(class_getName(object_getClass(self)),sel_getName(selector));
  noteProblem([NSString stringWithFormat:@"missing %s %s",class_getName(object_getClass(self)),sel_getName(selector)]);
@@ -299,6 +327,13 @@ NB_RESOURCE_SPI
 - (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)format textureType:(MTLTextureType)type levels:(NSRange)levels slices:(NSRange)slices {
  const uint64_t l[2]={levels.location,levels.length},s[2]={slices.location,slices.length};
  return [self view:nmb_texture_new_view(_handle,format,type,l,s,false)];
+}
+// ANGLE asks for swizzled views (WebGL's luminance/alpha formats, GL texture swizzle). Ported from UniXNU/AdrenoMetal 243d63c
+// NativeBridgeMetalFrontend.mm:1116-1118,1191-1195 (MIT). Bit 32 marks an explicit swizzle (the bridge's packing).
+- (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)format textureType:(MTLTextureType)type levels:(NSRange)levels slices:(NSRange)slices swizzle:(MTLTextureSwizzleChannels)swizzle {
+ const uint64_t l[2]={levels.location,levels.length},r[2]={slices.location,slices.length};
+ const uint64_t packed=(1ull<<32)|(uint64_t)swizzle.red|((uint64_t)swizzle.green<<8)|((uint64_t)swizzle.blue<<16)|((uint64_t)swizzle.alpha<<24);
+ return [self view:nmb_texture_new_view_swizzle(_handle,format,type,l,r,packed)];
 }
 - (void)replaceRegion:(MTLRegion)r mipmapLevel:(NSUInteger)level slice:(NSUInteger)slice withBytes:(const void *)bytes bytesPerRow:(NSUInteger)row bytesPerImage:(NSUInteger)image {
  const uint64_t region[6]={r.origin.x,r.origin.y,r.origin.z,r.size.width,r.size.height,r.size.depth};
@@ -543,10 +578,31 @@ static std::string quartzCoreCallers();
 @end
 @interface NBSampler : NBObject
 @property(nonatomic) NmbSampler *handle;
+@property(nonatomic) NmbSamplerDescriptor descriptor;   // what made it, for a binding that replaces its LOD clamps
 @end
-@implementation NBSampler
+// A binding's lodMinClamp:lodMaxClamp: (ANGLE binds every sampler so, for GL's TEXTURE_MIN_LOD/MAX_LOD and base level) is this sampler with
+// its clamps replaced: made once per pair and kept, at most 64 pairs (a caller that varies them every draw starts over rather than growing
+// without bound). Ported from UniXNU/AdrenoMetal 243d63c NativeBridgeMetalFrontend.mm:1650-1671 (MIT). SWEET_LODCLAMP=0: the clamps are
+// dropped (the sampler's own apply), as before.
+static bool lodClampOn() {static const bool on=[]{const char *p=getenv("SWEET_LODCLAMP");return !p||!*p||atoi(p)!=0;}();return on;}
+@implementation NBSampler {
+ NSMutableDictionary<NSString *,NBSampler *> *_clamped;
+}
 - (void)dealloc {nmb_sampler_release(_handle);}
 - (NSUInteger)pixelFormat {return MTLPixelFormatInvalid;}   // SPI: a sampler built from a plain descriptor names no format
+- (NBSampler *)withLodMin:(float)lodMin max:(float)lodMax {
+ if(!lodClampOn() || (lodMin==_descriptor.lod_min && lodMax==_descriptor.lod_max))return self;
+ NSString *key=[NSString stringWithFormat:@"%a %a",lodMin,lodMax];
+ @synchronized(self) {
+  if(!_clamped || _clamped.count>=64)_clamped=[NSMutableDictionary dictionary];
+  if(NBSampler *found=_clamped[key])return found;
+  NmbSamplerDescriptor d=_descriptor;d.lod_min=lodMin;d.lod_max=lodMax;
+  NmbSampler *handle=nmb_sampler_new(gDevice,&d);
+  if(!handle){NBLOG(@"native-metal: sampler with LOD clamps refused: %@",lastError());return nil;}
+  NBSampler *sampler=[NBSampler new];sampler.handle=handle;sampler.descriptor=d;_clamped[key]=sampler;
+  return sampler;
+ }
+}
 @end
 @interface NBDepthStencil : NBObject
 @property(nonatomic) NmbDepthStencil *handle;
@@ -703,6 +759,14 @@ static void waitForResource(id resource) {
  if(sampler && ![(id)sampler isKindOfClass:[NBSampler class]]){[_commandBuffer refuse:@"foreign sampler"];return;}
  [self check:nmb_encoder_set_sampler(_handle,stage,sampler?[(NBSampler *)sampler handle]:nullptr,(uint32_t)index) what:"setSamplerState"];
 }
+// The sampler with its LOD clamps replaced (NBSampler withLodMin:max:); nil and the command buffer refused where the runtime refuses it.
+// Ported from UniXNU/AdrenoMetal 243d63c NativeBridgeMetalFrontend.mm:2282-2287 (MIT).
+- (id<MTLSamplerState>)sampler:(id<MTLSamplerState>)sampler lodMin:(float)lodMin max:(float)lodMax {
+ if(!sampler || ![(id)sampler isKindOfClass:[NBSampler class]])return sampler;   // nil, or foreign: sampler:index:stage: refuses it
+ NBSampler *clamped=[(NBSampler *)sampler withLodMin:lodMin max:lodMax];
+ if(!clamped)[_commandBuffer refuse:@"sampler with LOD clamps refused"];
+ return (id<MTLSamplerState>)clamped;
+}
 - (void)bytes:(const void *)bytes length:(NSUInteger)length index:(NSUInteger)index stage:(uint32_t)stage {
  [self check:nmb_encoder_set_bytes(_handle,stage,bytes,length,(uint32_t)index) what:"setBytes"];
 }
@@ -737,7 +801,10 @@ static void waitForResource(id resource) {
  for(NSUInteger k=0;k<r.length;k++)[self texture:t[k] index:r.location+k stage:0];
 }
 - (void)setSamplerState:(id<MTLSamplerState>)s atIndex:(NSUInteger)i {[self sampler:s index:i stage:0];}
-- (void)setSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)lo lodMaxClamp:(float)hi atIndex:(NSUInteger)i {(void)lo;(void)hi;[self sampler:s index:i stage:0];}   // clamps dropped, as on the render encoder
+- (void)setSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)lo lodMaxClamp:(float)hi atIndex:(NSUInteger)i {
+ id<MTLSamplerState> c=[self sampler:s lodMin:lo max:hi];if(s && !c)return;
+ [self sampler:c index:i stage:0];
+}
 - (void)setThreadgroupMemoryLength:(NSUInteger)n atIndex:(NSUInteger)i {
  [self check:nmb_compute_set_threadgroup_memory(self.handle,(uint32_t)n,(uint32_t)i) what:"setThreadgroupMemoryLength"];
 }
@@ -1372,14 +1439,23 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
 - (void)setVertexSamplerState:(id<MTLSamplerState>)s atIndex:(NSUInteger)i {[self sampler:s index:i stage:1];}
 - (void)setFragmentSamplerState:(id<MTLSamplerState>)s atIndex:(NSUInteger)i {if(_dl && i<16)_dl->fts[i].sampler=s!=nil;[self sampler:s index:i stage:2];}
 // ANGLE (WebGL) binds every sampler with LOD clamps (webgl wg3: MISSING -setFragmentSamplerState:lodMinClamp:lodMaxClamp:atIndex:,
-// then SIGABRT in the GPU process). The clamps are dropped: the sampler's own lodMinClamp/lodMaxClamp apply, which is what GL's
-// default TEXTURE_MIN_LOD/MAX_LOD (-1000/1000) asks for anyway; a texture with narrowed LODs would sample more levels than asked.
-- (void)setVertexSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)lo lodMaxClamp:(float)hi atIndex:(NSUInteger)i {(void)lo;(void)hi;[self setVertexSamplerState:s atIndex:i];}
-- (void)setFragmentSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)lo lodMaxClamp:(float)hi atIndex:(NSUInteger)i {(void)lo;(void)hi;[self setFragmentSamplerState:s atIndex:i];}
+// then SIGABRT in the GPU process). The clamps apply through a sampler kept per clamp pair (NBSampler withLodMin:max:, SWEET_LODCLAMP=0 drops them).
+- (void)setVertexSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)lo lodMaxClamp:(float)hi atIndex:(NSUInteger)i {
+ id<MTLSamplerState> c=[self sampler:s lodMin:lo max:hi];if(s && !c)return;
+ [self setVertexSamplerState:c atIndex:i];
+}
+- (void)setFragmentSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)lo lodMaxClamp:(float)hi atIndex:(NSUInteger)i {
+ id<MTLSamplerState> c=[self sampler:s lodMin:lo max:hi];if(s && !c)return;
+ [self setFragmentSamplerState:c atIndex:i];
+}
 - (void)setVertexSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s withRange:(NSRange)r {for(NSUInteger k=0;k<r.length;k++)[self setVertexSamplerState:s[k] atIndex:r.location+k];}
 - (void)setFragmentSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s withRange:(NSRange)r {for(NSUInteger k=0;k<r.length;k++)[self setFragmentSamplerState:s[k] atIndex:r.location+k];}
-- (void)setVertexSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s lodMinClamps:(const float [])lo lodMaxClamps:(const float [])hi withRange:(NSRange)r {(void)lo;(void)hi;[self setVertexSamplerStates:s withRange:r];}
-- (void)setFragmentSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s lodMinClamps:(const float [])lo lodMaxClamps:(const float [])hi withRange:(NSRange)r {(void)lo;(void)hi;[self setFragmentSamplerStates:s withRange:r];}
+- (void)setVertexSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s lodMinClamps:(const float [])lo lodMaxClamps:(const float [])hi withRange:(NSRange)r {
+ for(NSUInteger k=0;k<r.length;k++)[self setVertexSamplerState:s[k] lodMinClamp:lo[k] lodMaxClamp:hi[k] atIndex:r.location+k];
+}
+- (void)setFragmentSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s lodMinClamps:(const float [])lo lodMaxClamps:(const float [])hi withRange:(NSRange)r {
+ for(NSUInteger k=0;k<r.length;k++)[self setFragmentSamplerState:s[k] lodMinClamp:lo[k] lodMaxClamp:hi[k] atIndex:r.location+k];
+}
 - (void)setDepthStencilState:(id<MTLDepthStencilState>)state {
  if(state && ![(id)state isKindOfClass:[NBDepthStencil class]]){[self.commandBuffer refuse:@"foreign depth/stencil state"];return;}
  if(state)_dfDss=YES;   // sweet deadfill
@@ -1677,6 +1753,13 @@ static void scheduled(void *context);
 }
 - (void)addScheduledHandler:(MTLCommandBufferHandler)block {if(block)@synchronized(self){[_scheduledHandlers addObject:[block copy]];}}
 - (void)addCompletedHandler:(MTLCommandBufferHandler)block {if(block)@synchronized(self){[_completedHandlers addObject:[block copy]];}}
+// A drawable (CAMetalLayer apps, games) is presented once the GPU has written it. Ported from UniXNU/AdrenoMetal 243d63c
+// NativeBridgeMetalFrontend.mm:3057-3059 (MIT); afterMinimumDuration: is ours, the same way.
+- (void)presentDrawable:(id<MTLDrawable>)drawable {[self addCompletedHandler:^(id<MTLCommandBuffer>){[drawable present];}];}
+- (void)presentDrawable:(id<MTLDrawable>)drawable atTime:(CFTimeInterval)time {[self addCompletedHandler:^(id<MTLCommandBuffer>){[drawable presentAtTime:time];}];}
+- (void)presentDrawable:(id<MTLDrawable>)drawable afterMinimumDuration:(CFTimeInterval)duration {
+ [self addCompletedHandler:^(id<MTLCommandBuffer>){[drawable presentAfterMinimumDuration:duration];}];
+}
 - (void)enqueue {}
 - (void)event:(id<MTLEvent>)event value:(uint64_t)value signal:(bool)signal {
  if(![(id)event isKindOfClass:[NBEvent class]]){[self refuse:@"foreign event"];return;}
@@ -2159,6 +2242,11 @@ static char sweetMemoryOwnerKey;
  uint64_t s[3]={};if(!nmb_device_max_threads_per_threadgroup(gDevice,s))NBLOG(@"native-metal: maxThreadsPerThreadgroup: %@",lastError());
  return MTLSizeMake(s[0],s[1],s[2]);
 }
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {   // the missing-selector fallback above, for the device
+ NSMethodSignature *signature=[super methodSignatureForSelector:selector];
+ return signature||missingAbort()?signature:missingSignature("NativeBridgeMetalDevice",selector);
+}
+- (void)forwardInvocation:(NSInvocation *)invocation {answerMissing(invocation);}
 - (void)doesNotRecognizeSelector:(SEL)selector {
  if(gMissing)gMissing("NativeBridgeMetalDevice",sel_getName(selector));
  noteProblem([NSString stringWithFormat:@"missing device %s",sel_getName(selector)]);
@@ -2531,7 +2619,7 @@ static void planarFill(NBTexture *t) {
      (uint64_t)d.borderColor,(uint64_t)d.normalizedCoordinates,d.maxAnisotropy,(uint64_t)d.compareFunction,(uint64_t)d.lodAverage,d.lodMinClamp,d.lodMaxClamp};
  NmbSampler *handle=nmb_sampler_new(gDevice,&s);
  if(!handle){NBLOG(@"native-metal: sampler refused: %@",lastError());return nil;}
- NBSampler *sampler=[NBSampler new];sampler.handle=handle;return (id<MTLSamplerState>)sampler;
+ NBSampler *sampler=[NBSampler new];sampler.handle=handle;sampler.descriptor=s;return (id<MTLSamplerState>)sampler;
 }
 - (id<MTLDepthStencilState>)newDepthStencilStateWithDescriptor:(MTLDepthStencilDescriptor *)d {
  auto face=[](MTLStencilDescriptor *s)->NmbStencil {

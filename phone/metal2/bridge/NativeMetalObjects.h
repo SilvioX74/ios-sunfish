@@ -94,6 +94,9 @@ NmbTexture *nmb_texture_new_on_buffer(NmbBuffer *, const struct NmbTextureDescri
 NmbTexture *nmb_texture_new_linear(NmbBuffer *, const struct NmbTextureDescriptor *, uint64_t offset, uint64_t bytes_per_row, uint64_t bytes_per_image);
 /* whole: a view of every level and slice as format; else levels and slices are {start, count} and kind the view's texture type. */
 NmbTexture *nmb_texture_new_view(NmbTexture *, uint64_t format, uint64_t kind, const uint64_t levels[2], const uint64_t slices[2], bool whole);
+/* As nmb_texture_new_view with levels and slices, swizzle replacing the texture's: RGBA bytes (Metal's MTLTextureSwizzle), bit 32 marks an
+   explicit value; zero is the identity. */
+NmbTexture *nmb_texture_new_view_swizzle(NmbTexture *, uint64_t format, uint64_t kind, const uint64_t levels[2], const uint64_t slices[2], uint64_t swizzle);
 /* setPurgeableState: with Metal's raw state; the answer's raw state, 0 where it fails. */
 uint64_t nmb_texture_set_purgeable_state(const NmbTexture *, uint64_t state);
 uint64_t nmb_buffer_set_purgeable_state(const NmbBuffer *, uint64_t state);
