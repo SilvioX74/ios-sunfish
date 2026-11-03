@@ -26,6 +26,7 @@ static volatile int intent_req_acked;
 /* reassembly of a TX_DATA spread over chunks */
 static uint8_t rxbuf[65536];
 static uint32_t rxoff;
+static int rxover;	/* hakios review F: this message overflowed rxbuf, drop it when complete */
 
 static qrtr_cb_t qrtr_cb;
 
@@ -96,7 +97,7 @@ static int rx_one(void)
 		version_done = 1;
 		break;
 	case GLINK_CMD_OPEN: {
-		size_t nl = (p2 + 7) & ~7u;
+		size_t nl = ((size_t)p2 + 7) & ~(size_t)7;
 		if (avail < 8 + nl)
 			return 0;
 		char name[64] = { 0 };
@@ -143,7 +144,7 @@ static int rx_one(void)
 				nrintent++;
 			}
 		}
-		adv = (len + 7) & ~7u;
+		adv = (len + 7) & ~(size_t)7;
 		break;
 	}
 	case GLINK_CMD_RX_DONE:
@@ -164,13 +165,16 @@ static int rx_one(void)
 			}
 		break;
 	case GLINK_CMD_RX_INTENT_REQ:
-		/* we take any data in place, so every request is granted with a fresh intent id */
-		if (p1 == rcid) {
+		/* we take any data in place, so every request up to rxbuf's size is granted with a fresh intent id
+		 * (hakios review F: a larger one could not be reassembled) */
+		if (p1 == rcid && p2 <= sizeof(rxbuf)) {
 			static uint32_t next_iid = 100;
 			uint32_t p[2] = { p2 > INTENT_SIZE ? p2 : INTENT_SIZE, next_iid++ };
 			glink_send(GLINK_CMD_INTENT, LCID, 1, p, sizeof(p));
 			glink_send(GLINK_CMD_RX_INTENT_REQ_ACK, LCID, 1, NULL, 0);
 		} else {
+			if (p1 == rcid)
+				LOG("glink: < RX_INTENT_REQ %u bytes: too big, refused\n", p2);
 			glink_send(GLINK_CMD_RX_INTENT_REQ_ACK, 0, 0, NULL, 0);
 		}
 		break;
@@ -190,21 +194,30 @@ static int rx_one(void)
 		size_t len = 16 + chunk;
 		if (avail < len)
 			return 0;
-		if (rxoff + chunk <= sizeof(rxbuf))
+		if (!rxover && (uint64_t)rxoff + chunk <= sizeof(rxbuf)) {
 			glink_rx_peek(rxbuf + rxoff, 16, chunk);
-		rxoff += chunk;
-		adv = (len + 7) & ~7u;
+			rxoff += chunk;
+		} else {
+			rxover = 1;
+		}
+		adv = (len + 7) & ~(size_t)7;
 		if (p1 != rcid) {
 			LOG("glink: < TX_DATA on rcid %u (%u bytes)\n", p1, chunk);
 			rxoff = 0;
+			rxover = 0;
 			break;
 		}
 		if (!left) {
 			glink_rx_advance(adv);
 			uint32_t n = rxoff;
+			int over = rxover;
 			rxoff = 0;
+			rxover = 0;
 			glink_send(GLINK_CMD_RX_DONE_W_REUSE, LCID, p2, NULL, 0);
-			handle_data(rxbuf, n);
+			if (over)
+				printf("glink: message over %zu bytes dropped\n", sizeof(rxbuf));
+			else
+				handle_data(rxbuf, n);
 			return 1;
 		}
 		break;

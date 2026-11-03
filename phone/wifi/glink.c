@@ -86,6 +86,9 @@ int glink_send(uint16_t cmd, uint16_t p1, uint32_t p2, const void *data, size_t 
 	if (len)
 		memcpy(buf + 8, data, len);
 	uint32_t head = rd32(TX_HEAD), tail = rd32(TX_TAIL);
+	/* hakios review F: the indices are in shared memory; as Linux glink_smem_tx_write, never write outside the FIFO */
+	if (head >= tx_len || tail >= tx_len || (head & 7))
+		return -1;
 	uint32_t avail = tail <= head ? tx_len - head + tail : tail - head;
 	if (avail < padded + 16)
 		return -1;	/* full: the caller polls and retries */
@@ -99,15 +102,22 @@ int glink_send(uint16_t cmd, uint16_t p1, uint32_t p2, const void *data, size_t 
 size_t glink_rx_avail(void)
 {
 	uint32_t head = rd32(RX_HEAD), tail = rd32(RX_TAIL);
+	if (head >= rx_len || tail >= rx_len)	/* hakios review F: as Linux glink_smem_rx_avail */
+		return 0;
 	return head < tail ? rx_len - tail + head : head - tail;
 }
 
 void glink_rx_peek(void *buf, size_t off, size_t len)
 {
-	uint32_t t = rd32(RX_TAIL) + (uint32_t)off;
+	uint8_t *b = buf;
+	uint32_t t = rd32(RX_TAIL);
+	if (t >= rx_len || off >= rx_len) {	/* hakios review F: bad tail (callers check avail first): zeros */
+		memset(b, 0, len);
+		return;
+	}
+	t += (uint32_t)off;
 	if (t >= rx_len)
 		t -= rx_len;
-	uint8_t *b = buf;
 	for (size_t i = 0; i < len; i++) {
 		uint32_t w = rd32(rx_fifo + (t & ~3u));
 		b[i] = (uint8_t)(w >> (8 * (t & 3)));

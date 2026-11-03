@@ -359,7 +359,12 @@ static int qmp_send(const char *msg)
 {
 	if (qmp_open())
 		return -1;
-	uint32_t off = rd32(QMP_RAM + 0x38), buf[16] = { 0 };
+	uint32_t off = rd32(QMP_RAM + 0x38), sz = rd32(QMP_RAM + 0x3c), buf[16] = { 0 };
+	/* hakios review W: the AOP's mailbox offset and size; length word + message must fit the 1 KB message RAM */
+	if ((off & 3) || sz < 4 + sizeof(buf) || (uint64_t)off + sz > 0x400) {
+		fprintf(stderr, "qmp: bad mailbox %#x size %u\n", off, sz);
+		return -1;
+	}
 	strncpy((char *)buf, msg, sizeof(buf) - 1);
 	for (int i = 0; i < 16; i++)
 		wr32(QMP_RAM + off + 4 + 4 * i, buf[i]);

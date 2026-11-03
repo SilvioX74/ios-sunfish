@@ -18,6 +18,7 @@
 
 #define PTABLE		(SMEM_BASE + SMEM_SIZE - 0x1000)
 #define CANARY		0xa5a5
+#define PTABLE_MAX	84	/* entries that fit the 4 KB table */
 
 static struct part {
 	uint64_t pa;
@@ -40,12 +41,15 @@ int smem_init(void)
 		fprintf(stderr, "smem: no partition table (%08x)\n", rd32(PTABLE));
 		return -1;
 	}
+	/* hakios review F: bounds from shared memory as Linux qcom_smem_enumerate_partitions checks them */
 	uint32_t n = rd32(PTABLE + 8);
+	if (n > PTABLE_MAX)
+		n = PTABLE_MAX;
 	for (uint32_t i = 0; i < n && nparts < 32; i++) {
 		uint64_t e = PTABLE + 32 + 48ull * i;
 		uint32_t off = rd32(e), size = rd32(e + 4);
 		uint32_t hosts = rd32(e + 12);
-		if (!off || !size)
+		if (!off || !size || (uint64_t)off + size > SMEM_SIZE)
 			continue;
 		uint16_t h0 = (uint16_t)hosts, h1 = (uint16_t)(hosts >> 16);
 		/*
@@ -62,8 +66,14 @@ int smem_init(void)
 		p->host0 = h0;
 		p->host1 = h1;
 		p->cacheline = rd32(e + 16);
-		if (rd32(p->pa) != 0x54525024)	/* "$PRT" */
+		if (rd32(p->pa) != 0x54525024) {	/* "$PRT" */
 			fprintf(stderr, "smem: partition %u bad magic\n", i);
+			continue;
+		}
+		if (rd32(p->pa + 4) != hosts || rd32(p->pa + 8) != size) {
+			fprintf(stderr, "smem: partition %u header hosts/size mismatch\n", i);
+			continue;
+		}
 		if (p->host0 == SMEM_HOST_GLOBAL && p->host1 == SMEM_HOST_GLOBAL)
 			global_part = (int)nparts;
 		nparts++;
@@ -82,36 +92,61 @@ static struct part *find_part(unsigned host)
 	return NULL;
 }
 
+/*
+ * hakios review W: the partition header and entries are written by the other
+ * hosts. Free offsets and cacheline checked as in Linux qcom_smem_partition_header;
+ * hdr = a cached entry header rounded up to the cacheline. 0 = sane.
+ */
+static int part_bounds(struct part *p, uint32_t *free_unc, uint32_t *free_cac, uint64_t *hdr)
+{
+	*free_unc = rd32(p->pa + 12);
+	*free_cac = rd32(p->pa + 16);
+	uint32_t cl = p->cacheline ? p->cacheline : 64;
+	if (*free_unc > *free_cac || *free_cac > p->size || (cl & (cl - 1)))
+		return -1;
+	*hdr = (16 + (uint64_t)cl - 1) & ~((uint64_t)cl - 1);
+	return 0;
+}
+
 static int part_get(struct part *p, unsigned item, uint64_t *pa, uint32_t *size)
 {
-	uint32_t free_unc = rd32(p->pa + 12), free_cac = rd32(p->pa + 16);
-	/* uncached: from the header up */
-	for (uint64_t e = p->pa + 32; e < p->pa + free_unc;) {
+	uint32_t free_unc, free_cac;
+	uint64_t hdr;
+	if (part_bounds(p, &free_unc, &free_cac, &hdr))
+		return -2;
+	/* uncached: from the header up; entry and item must end below free_unc (Linux qcom_smem_get_private) */
+	uint64_t end = p->pa + free_unc;
+	for (uint64_t e = p->pa + 32; e + 16 <= end;) {
 		if (rd16(e) != CANARY)
 			return -2;
 		uint16_t it = rd16(e + 2);
 		uint32_t sz = rd32(e + 4);
 		uint16_t pad_data = rd16(e + 8), pad_hdr = rd16(e + 10);
+		if (pad_data > sz || e + 16 + pad_hdr + (uint64_t)sz > end)
+			return -2;
 		if (it == item) {
 			*pa = e + 16 + pad_hdr;
 			*size = sz - pad_data;
 			return 0;
 		}
-		e += 16 + pad_hdr + sz;
+		e += 16 + pad_hdr + (uint64_t)sz;
 	}
-	/* cached: from the end down */
-	uint32_t cl = p->cacheline ? p->cacheline : 64;
-	for (uint64_t e = p->pa + p->size - ((16 + cl - 1) & ~(cl - 1)); e > p->pa + free_cac;) {
+	/* cached: from the end down; the item (below its header) must stay above free_cac */
+	end = p->pa + free_cac;
+	for (uint64_t e = p->pa + p->size - hdr; p->size >= hdr && e > end;) {
 		if (rd16(e) != CANARY)
 			return -2;
 		uint16_t it = rd16(e + 2);
 		uint32_t sz = rd32(e + 4);
+		uint16_t pad_data = rd16(e + 8);
+		if (pad_data > sz || sz > e - end)
+			return -2;
 		if (it == item) {
 			*pa = e - sz;
-			*size = sz - rd16(e + 8);
+			*size = sz - pad_data;
 			return 0;
 		}
-		e -= sz + ((16 + cl - 1) & ~(cl - 1));
+		e -= (uint64_t)sz + hdr;
 	}
 	return -1;
 }
@@ -126,8 +161,11 @@ int smem_get(unsigned host, unsigned item, uint64_t *pa, uint32_t *size)
 	/* legacy global table of contents */
 	uint64_t toc = SMEM_BASE + 16 * 4 + 32 * 4 + 16 + 16ull * item;
 	if (item < 512 && rd32(toc)) {
-		*pa = SMEM_BASE + rd32(toc + 4);
-		*size = rd32(toc + 8);
+		uint32_t off = rd32(toc + 4), sz = rd32(toc + 8);
+		if ((uint64_t)off + sz > SMEM_SIZE)	/* hakios review W: as Linux qcom_smem_get_global */
+			return -1;
+		*pa = SMEM_BASE + off;
+		*size = sz;
 		return 0;
 	}
 	return -1;
@@ -156,21 +194,24 @@ int smem_alloc(unsigned host, unsigned item, uint32_t size, uint64_t *pa)
 	struct part *p = find_part(host);
 	if (!p || hwlock())
 		return -1;
-	uint32_t free_unc = rd32(p->pa + 12), free_cac = rd32(p->pa + 16);
-	uint32_t asize = (size + 7) & ~7u;
-	if (free_unc + 16 + asize > free_cac) {
+	uint32_t free_unc, free_cac;
+	uint64_t hdr;
+	uint64_t asize = ((uint64_t)size + 7) & ~7ull;
+	if (part_bounds(p, &free_unc, &free_cac, &hdr) || free_unc + 16 + asize > free_cac) {
 		hwunlock();
 		return -1;
 	}
 	uint64_t e = p->pa + free_unc;
 	wr32(e, CANARY | ((uint32_t)item << 16));
-	wr32(e + 4, asize);
-	wr32(e + 8, (asize - size) | (0u << 16));	/* padding_data, padding_hdr */
+	wr32(e + 4, (uint32_t)asize);
+	wr32(e + 8, (uint32_t)(asize - size) | (0u << 16));	/* padding_data, padding_hdr */
 	wr32(e + 12, 0);
 	for (uint32_t o = 0; o < asize; o += 4)
 		wr32(e + 16 + o, 0);
+#ifdef __aarch64__	/* host test (test_smem.c) builds this file too */
 	__asm__ volatile("dsb sy" ::: "memory");
-	wr32(p->pa + 12, free_unc + 16 + asize);
+#endif
+	wr32(p->pa + 12, (uint32_t)(free_unc + 16 + asize));
 	hwunlock();
 	*pa = e + 16;
 	return 0;
@@ -199,23 +240,31 @@ void smem_list(void)
 		struct part *p = &parts[i];
 		if (p->host0 != SMEM_HOST_APPS && p->host0 != SMEM_HOST_GLOBAL)
 			continue;	/* other hosts' partitions stall the bus */
-		uint32_t free_unc = rd32(p->pa + 12), free_cac = rd32(p->pa + 16);
+		uint32_t free_unc, free_cac;
+		uint64_t hdr;
 		printf("part %u (hosts %u-%u):", i, p->host0, p->host1);
-		for (uint64_t e = p->pa + 32; e < p->pa + free_unc;) {
-			if (rd16(e) != CANARY) {
-				printf(" [bad canary at %llx]", (unsigned long long)e);
+		if (part_bounds(p, &free_unc, &free_cac, &hdr)) {
+			printf(" [bad header]\n");
+			continue;
+		}
+		uint64_t end = p->pa + free_unc;
+		for (uint64_t e = p->pa + 32; e + 16 <= end;) {
+			uint32_t sz = rd32(e + 4);
+			if (rd16(e) != CANARY || rd16(e + 8) > sz || e + 16 + rd16(e + 10) + (uint64_t)sz > end) {
+				printf(" [bad entry at %llx]", (unsigned long long)e);
 				break;
 			}
 			printf(" %u", rd16(e + 2));
-			e += 16 + rd16(e + 10) + rd32(e + 4);
+			e += 16 + rd16(e + 10) + (uint64_t)sz;
 		}
 		printf(" | cached:");
-		uint32_t cl = p->cacheline ? p->cacheline : 64;
-		for (uint64_t e = p->pa + p->size - ((16 + cl - 1) & ~(cl - 1)); e > p->pa + free_cac;) {
-			if (rd16(e) != CANARY)
+		end = p->pa + free_cac;
+		for (uint64_t e = p->pa + p->size - hdr; p->size >= hdr && e > end;) {
+			uint32_t sz = rd32(e + 4);
+			if (rd16(e) != CANARY || rd16(e + 8) > sz || sz > e - end)
 				break;
 			printf(" %u", rd16(e + 2));
-			e -= rd32(e + 4) + ((16 + cl - 1) & ~(cl - 1));
+			e -= (uint64_t)sz + hdr;
 		}
 		printf("\n");
 	}
