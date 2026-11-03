@@ -314,3 +314,6 @@ Reading: baking cuts the conversion ~35 %, but most conversions are of new frame
 path stays the default; next: the CPU path via Accelerate vImage (backboardd 95 % today); later a native
 VkSamplerYcbcrConversion (Turnip samples G8_B8R8_2PLANE_420 directly).
 
+### 2026-11-03 16:30 One GPU fault/hang during the games_fps A/B
+kernel160 boot hevc1, t=2703.671: `SWEET GPU: v2 fence wait: GPU hang or fault (fence 73108, done 73101, smmu fsr 40000002 far 0 fsynr0 2): reset` — between two WebGL runs (the aa=0 page still open), recovered, no backboardd restart. smmu fsr 40000002 = same signature as the 'surface remap' wedge at 3923 s in 20261103-082158.log.
+

@@ -22,6 +22,16 @@ hangs but only 7.4 fps (GPU-bound); HexGL parked (its loader stalls on iOS Safar
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:30 games_fps A/B: MSAA off +20 %, GMEM nothing: the lit shader itself is the cost
+research/notes/webgl-shader-2026-11-03.md: the 57 ms draw is the whole level (1 mesh, 5262 indices, MeshStandardMaterial,
+VSM shadows, ACES) into a 4x MSAA 1125x1905 target (pixel ratio 3), sysmem because Turnip's autotune picks sysmem for
+< 5 draws; plus ~7.7 ms of metal2vulkan's own exact colour resolve (color_resolve.rs; Turnip's hardware AVERAGE
+resolve not used), ~8 ms MSAA clears/depth resolve, 9 ms VSM blur.
+A/B (bundle 2278758, 60 s each, fps median): A baseline 7.8; B `?aa=0` 9.5; C1 TU_DEBUG=gmem for WebKit.GPU only 7.6;
+C2 gmem + aa=0 10.0. GPU busy 92-98 % in all. One GPU hang between B and C1 (`fence wait: GPU hang or fault ... smmu
+fsr 40000002: reset`, recovered). Reading: per-pixel shader cost dominates; MSAA ~20 %, GMEM no help. Moved to Optimize
+(backlog): dump the shader (steps in the note), Turnip's hardware resolve for unorm8 (~10 lines, -6 ms).
+
 ### 2026-11-03 16:00 trace: games_fps is one 57 ms fragment shader on the screen pass
 Bundle 2278758 (SWEET_GPU_TRACE_PROC=com.apple.WebKit.GPU + MESA_GPU_TRACES=print), traces in research/notes/
 webgl-trace-2026-11-03.log (80 s) and -draw- (45 s, TU_SWEET_DRAW_TRACE=1); fps 7.2-7.8 during both.
