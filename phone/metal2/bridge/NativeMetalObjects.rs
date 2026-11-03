@@ -799,6 +799,49 @@ pub extern "C" fn nmb_texture_new_on_surface(buffer: *mut NmbBuffer, descriptor:
     })
 }
 
+// 0128 (G7): the surface's seed for a two-plane YCbCr texture over it, read by the runtime at each use it plans (ycbcr.rs): `seed(context)`
+// is IOSurfaceGetSeed of the surface, `release(context)` runs once the runtime drops it (also when refused). Off: SWEET_YCBCR_SEED=0.
+struct WatchedSeed {
+    seed: unsafe extern "C" fn(*const c_void) -> u32,
+    context: *const c_void,
+    release: Option<unsafe extern "C" fn(*const c_void)>,
+}
+// SAFETY: the context is a retained IOSurfaceRef, whose seed any thread may read.
+unsafe impl Send for WatchedSeed {}
+unsafe impl Sync for WatchedSeed {}
+impl Drop for WatchedSeed {
+    fn drop(&mut self) {
+        if let Some(release) = self.release {
+            // SAFETY: the caller's pair (the header's contract), called once.
+            unsafe { release(self.context) }
+        }
+    }
+}
+
+unsafe extern "C" fn no_seed(_: *const c_void) -> u32 {
+    0
+}
+
+/// 0128: true where the texture converts its planes and now reads its surface's seed through `seed`.
+#[unsafe(no_mangle)]
+pub extern "C" fn nmb_texture_watch_seed(texture: *mut NmbTexture, seed: Option<unsafe extern "C" fn(*const c_void) -> u32>,
+                                         context: *const c_void, release: Option<unsafe extern "C" fn(*const c_void)>) -> bool {
+    let Some(seed) = seed else {
+        drop(WatchedSeed { seed: no_seed, context, release });
+        return false;
+    };
+    let watched = WatchedSeed { seed, context, release };
+    guard(false, || {
+        // SAFETY: the caller's pair, the context live until `release` (the header's contract).
+        // The whole `watched` moves in (not its Copy fields alone), so `release` waits for the closure's drop.
+        let read = move || {
+            let watched = &watched;
+            unsafe { (watched.seed)(watched.context) }
+        };
+        Ok(get(texture)?.0.watch_surface_seed(std::sync::Arc::new(read)))
+    })
+}
+
 /// `newLinearTextureWithDescriptor:offset:bytesPerRow:bytesPerImage:` (Apple SPI).
 #[unsafe(no_mangle)]
 pub extern "C" fn nmb_texture_new_linear(buffer: *mut NmbBuffer, descriptor: *const NmbTextureDescriptor, offset: u64, bytes_per_row: u64,

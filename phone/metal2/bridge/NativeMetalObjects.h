@@ -96,6 +96,9 @@ NmbTexture *nmb_texture_new_on_buffer(NmbBuffer *, const struct NmbTextureDescri
    of OSType pixel_format and width x height; matrix: kIOSurfaceYCbCrMatrix, 0 none, 1 BT.601, 2 BT.709, 3 BT.2020, 4 SMPTE 240M, 5 other. */
 NmbTexture *nmb_texture_new_on_surface(NmbBuffer *, const struct NmbTextureDescriptor *, uint64_t offset, uint64_t bytes_per_row, uint32_t pixel_format,
                                        uint64_t plane, uint64_t width, uint64_t height, uint64_t chroma_offset, uint64_t chroma_bytes_per_row, uint32_t matrix);
+/* 0128 (G7): a two-plane YCbCr texture over a surface reads the surface's seed as seed(context) (IOSurfaceGetSeed) at each use and converts
+   its planes only when it moved; release(context) runs when the texture is gone, or at once when refused (false). Off: SWEET_YCBCR_SEED=0. */
+bool nmb_texture_watch_seed(NmbTexture *, uint32_t (*seed)(const void *), const void *context, void (*release)(const void *));
 NmbTexture *nmb_texture_new_linear(NmbBuffer *, const struct NmbTextureDescriptor *, uint64_t offset, uint64_t bytes_per_row, uint64_t bytes_per_image);
 /* whole: a view of every level and slice as format; else levels and slices are {start, count} and kind the view's texture type. */
 NmbTexture *nmb_texture_new_view(NmbTexture *, uint64_t format, uint64_t kind, const uint64_t levels[2], const uint64_t slices[2], bool whole);

@@ -2469,6 +2469,10 @@ static NBTexture *planeTexture(MTLTextureDescriptor *d,IOSurfaceRef surface,NSUI
   IOSurfaceGetHeight(surface),chromaOffset,chromaRow,matrix);
  noteFormat((uint32_t)descriptor.format,handle!=nullptr);
  if(!handle){*why=lastError();return nil;}
+ // 0128 (G7): a converted two-plane texture reads the surface's seed at each use and converts only when it moved (or a command wrote the
+ // planes), as 0112's planarFill. The runtime holds the retained surface (released with the texture; at once for a plane-alone texture).
+ // Off: SWEET_YCBCR_SEED=0 (in the runtime).
+ if(planes>=2)nmb_texture_watch_seed(handle,(uint32_t (*)(const void *))IOSurfaceGetSeed,CFRetain(surface),(void (*)(const void *))CFRelease);
  NBTexture *texture=[NBTexture new];texture.handle=handle;nmb_texture_describe(handle,&descriptor);texture.descriptor=descriptor;
  texture.buffer=buffer;texture.offset=offset;texture.rowBytes=row;texture.surface=(IOSurfaceRef)CFRetain(surface);
  *why=[NSString stringWithFormat:@"offset %llu row %zu matrix %u",(unsigned long long)offset,row,matrix];
