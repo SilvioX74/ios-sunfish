@@ -48,6 +48,13 @@ from the backup with plistlib.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 18:30 B44/B53 resurvey after today's bridge fixes (bundle 691c87d)
+Flame-shots work/shots/b44-*.png, b50-*, b53-*: Tips banner clean (was black blocks); Mail, Voice Memos clean; Safari tab
+overview thumbnails still black (4 of 5); Maps map area black (B50), Work icon plain; Photos last thumbnail plain blue;
+Music ~60 px white/black noise band above the album tile; TV black bands and duplicated text (persists after 8 s); Notes:
+no note with an attachment. Log during the survey: 0 MISSING, 0 foreign-function; 517 `B29 ... -> shadow` lines (top:
+backboardd 1800x720 RGBA8 row 7200, SpringBoard 787x1705 R32Uint row 3200).
+
 ### 2026-11-03 15:40 App Store (B56): fails on device attestation, not the network
 Kernel160 boot hevc1. First run: Welcome -> Continue, Personalized Ads off, location Don't Allow; then "Cannot Connect to
 App Store", Retry fails; Search tab opens empty. Network: Safari loads apple.com; nettest: DNS/TCP/HTTPS 200 for
