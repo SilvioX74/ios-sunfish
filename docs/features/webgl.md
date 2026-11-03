@@ -11,10 +11,22 @@ the clear colour shows. **Updated:** 2026-11-03.
 - Test page: work/stage0/webgl.html (gitignored; beacons to the PC http.server on 192.168.7.1:8077, see video.md s0).
 
 ## Open
-- Draws: the shader-source path (investigator, 2026-11-03).
+- Draws: newLibraryWithSource: override (implementer, 2026-11-03); WebGL 2 will need argument encoders on NBFunction.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 07:45 Why draws fail (read-only, disassembly): Apple's library, our pipeline refuses it
+- Our device has no `newLibraryWithSource:`, so `_MTLDevice`'s runs: MTLLibraryBuilder -> MTLCompilerService (the
+  boot log shows `exec MTLCompilerService` twice right after the GPU process opened its device) -> an Apple
+  `_MTLLibrary`. ANGLE's link passes on any library (ProgramMtl 0x1ce455804-810), hence LINK_STATUS true.
+- At draw: CreateMslShader 0x1ce412b08 `newFunctionWithName:@"main0" constantValues:error:`, then
+  createRenderPipelineState 0x1ce40e580; our renderDescriptor refuses a non-NBFunction ("foreign function",
+  NativeBridgeMetalFrontend.mm:1881-1883) silently -> nil -> GL_INVALID_OPERATION (0x1ce40e5cc). Inferred, not
+  seen on the phone: that the on-device source compile succeeds.
+- No SPIR-V route in this ANGLE or the shared cache. Route chosen: override newLibraryWithSource:, serialize Apple's
+  library to a metallib, load it through our metallib -> SPIR-V path (implementer, switch SWEET_SRCLIB=0).
+  Fallback: compile ANGLE's source ahead of time in the macOS VM.
 
 ### 2026-11-03 06:55 wg2: feature-set fix: live context, draws fail
 Bundle work/metal2-next 283012f (LC_UUID 4C4C448E-5555-3144-A107-29808E55734D, includes 0125 off), kernel158 boot

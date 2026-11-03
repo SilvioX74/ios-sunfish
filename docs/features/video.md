@@ -75,6 +75,14 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 07:45 Stage 2 step 7 (s7): round 2 out of SMMU banks; leak fixed
+venusctl f0c3847, same boot. research/notes/venus-runs/2026-11-03-s7-session-x10.txt. Round 1 ok (init 7 ms,
+session errors 0, took CB54-57). Round 2: CB58-60, then `smmu: no free SMR/bank (SMR 18, bank -1)`, undone, power
+off 0, no reboot. Cause: a released bank keeps CBAR 0001f000 (the write back to 0 doesn't take), and the free test
+wanted CBAR 0, so every run since v2a used up 4 of the 61 banks (CB14 ... CB60 today). Fix dcf8abc (phone/wifi/smmu.c,
+shared with wland/adspboot, not rebuilt there): an unreferenced, non-translating bank with exactly our CBAR is free.
+Rerun s7b next.
+
 ### 2026-11-03 07:40 Stage 3 v3d: the decoder switches: split mode and queue-only DPBs are right, count is not it
 venusctl f0c3847, same boot. Outputs research/notes/venus-runs/2026-11-03-v3d-{a,b,c,d}.txt (switches passed through a
 scratch copy of the script; tools/sunfish-venus-test.sh now forwards VENUSCTL_* itself).
