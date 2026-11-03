@@ -41,23 +41,23 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 stops phone work, or doubles in rate after a change (then turn that change off first).
 
 ## Phone
-Claude's again (the user handed it back 2026-11-02 21:21; they put it in fastboot, so the next boot starts from there).
+Claude's. Up since the n8 soak boot (2026-11-02 21:31, kernel158 everyday), idle, slider at minimum.
 Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76
 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 82f6b41
 (SweetMetal2 4C4C44A9); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. Done tonight: n8 clean; vd1: stub decoder loads in mediaserverd, firmware on phone, probe read (video.md). venusctl
-   AHB HW_CTL handling done (14dc1b0). venusctl boot/init/ping written (0e4f244). Pre-run review done, 8 fixes in (d0f1da4).
-2. Morning (night flag off): stage 0 Safari video baseline + the WebGL test (about 30 min together; video muted
-   before 5 am): test page + 60 s H.264/HEVC 720p/1080p clips (testsrc2 + 440 Hz tone, muted by default) in
-   work/stage0/ (gitignored), serve with `python3 -m http.server -d work/stage0` on the USB link; vtdecode 1080p: 112 fps.
-3. Then stage 2 on the phone (venusctl 0e4f244, all subcommands written, only probe run): rebuild + install, then
-   `tools/sunfish-venus-test.sh` probe -> power -> pas -> boot -> memtest -> ping (VENUS_PHYS=0xa5100000), stop at
-   the first failure or "LEFT POWERED" (daylight; a reset is logged, then a smaller step). Review fixes in d0f1da4.
-4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
-   (METAL2_VARIANT=next, LC_UUID 4C4C444C-...-BBFD7B88C1E1, 0125 in, not installed), then a 5-boot A/B on settings, cc, home.
+1. Morning (night flag off 2026-11-03 06:06; slider still at minimum from the night): stage 0 Safari video baseline +
+   the WebGL test (~30 min): test page + 60 s H.264/HEVC 720p/1080p clips (testsrc2 + 440 Hz tone, muted by default)
+   in work/stage0/ (gitignored), serve with `python3 -m http.server -d work/stage0` on the USB link. Measure CPU % at
+   30 fps playback, dropped frames, heat. vtdecode software reference: 720p 213 fps, 1080p 112 fps.
+2. Stage 2 on the phone (venusctl d0f1da4 built in work/userland-linux/out, phone has the older 3851cad build: install
+   first): `tools/sunfish-venus-test.sh` probe -> power -> pas -> boot -> memtest -> ping (VENUS_PHYS=0xa5100000),
+   stop at the first failure or "LEFT POWERED". A reset is logged (video.md + journal), then a smaller step.
+3. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
+   (METAL2_VARIANT=next, LC_UUID 4C4C444C-...-BBFD7B88C1E1, not installed), then a 5-boot A/B on settings, cc, home.
+4. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15), Files check (U13), touch while plugged in (U14).
