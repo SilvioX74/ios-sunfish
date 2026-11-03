@@ -1,5 +1,5 @@
 # Video playback and hardware decode
-**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus firmware boots on our kernel and answers HFI (SYS_INIT_DONE, VIDEO.IR.1.2-00053). **Updated:** 2026-11-03.
+**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus firmware boots on our kernel and opens/closes an H.264 decoder session (stage 2 go). **Updated:** 2026-11-03.
 
 ## Facts
 - The iPhone X decodes video in hardware (AppleAVD); the port has no AVD, so iOS falls back to software decoders.
@@ -57,10 +57,23 @@ Open: free memory for queues (0xa5100000-0xbcc00000 looks free, unproven), PMEM_
 whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 
 ## Open
-- Stages 2-5. Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
+- Stages 3-5; stage 2 step 7 (repeat + soak). Stage 2 go 2026-11-03 (v2c). Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 07:00 Stage 2 go (v2c): clean boot, ping, H.264 decoder session open/close
+venusctl ee0ffd4 (sha256 c3ea219f...), boot venusR (06:25:56, kernel158), VENUS_PHYS=0xa5100000. Outputs
+research/notes/venus-runs/2026-11-03-v2c-{boot,ping,session}.txt. All three exit 0 with a clean power off, no reboot.
+- boot: `boot ok, undone -> ok`. Saved vs read per released bank, e.g. `SMR15/CB14 saved vs read: SMR 00000000/00000000
+  S2CR 000200ff/0000000e CBAR 00000000/0001f000 CBA2R 00000000/00000000 SCTLR 2a75810a/2a75810a`: S2CR and CBAR
+  writes back to the saved values don't take (S2CR reads the bank index, CBAR keeps 0001f000); the SMR is invalid, so
+  nothing streams through. Guess: the hypervisor's SMMU emulation keeps its own S2CR/CBAR. SCTLR is restored.
+- ping: not acked, non-fatal; same session-error event (HFI_EVENT_SESSION_ERROR, 0x1004 invalid session ID).
+- session: SYS_INIT_DONE error 0 (75 properties); `SESSION_INIT_DONE session 0x76656e75 error 0, 0 properties`;
+  `SESSION_END_DONE session 0x76656e75 error 0`; pas shutdown 0/0, power off 0.
+- Stage 2 is a go. Left from the spec: step 7 (ten rounds in one boot, then 15 min under GPU load). Stage 3 (first
+  decoded frame, `venusctl decode`) is with the implementer.
 
 ### 2026-11-03 06:50 Stage 2 (v2b): the firmware boots and speaks HFI; ping not answered; reboot after
 Same boot as v2a until the planned everyday reboot at 06:25:56 (tag venusR, 4456 mV). Outputs in

@@ -23,11 +23,11 @@ Only items Claude can move now. User tasks are listed below and never gate work;
 1. ▶ **Hardware video decode** (Snapdragon 730G video engine, "Venus"), in stages, each a go/no-go (video.md):
    0. Done 2026-11-03: all 4 clips play in software, 250-590 % of one core, max 64 C (video.md s0).
    1. Done 2026-11-02: research, staged spec in video.md (PAS ID 9, HFI gen1, plugin slot ExampleIPB.videodecoder).
-   2. Bring-up with `venusctl`: firmware boots and answers SYS_INIT 2026-11-03 (v2b); left: clean teardown, session round trip.
-   3. First frame: a phone tool decodes a raw H.264 file to a YUV buffer, checked against a reference.
+   2. Go 2026-11-03 (v2c): firmware boots, H.264 decoder session opens/closes, clean teardown. Left: step 7 (repeat + soak).
+   3. ▶ First frame: `venusctl decode` (implementer writing it) decodes a raw H.264 file to YUV, checked against ffmpeg.
    4. VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
-2. **3D test**: WebGL in Safari, 15 min. Blocked by B55 (context lost at creation, 2026-11-03): fix that first.
+2. **3D test**: WebGL in Safari, 15 min. B55 (context lost at creation): fix under test 2026-11-03.
 3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
 4. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
 5. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
@@ -41,17 +41,18 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 stops phone work, or doubles in rate after a change (then turn that change off first).
 
 ## Phone
-Claude's. Up since the n8 soak boot (2026-11-02 21:31, kernel158 everyday), idle, slider at minimum.
+Claude's. Up since the everyday boot venusR (2026-11-03 06:25, kernel158), slider at minimum.
 Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76
 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 82f6b41
 (SweetMetal2 4C4C44A9); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. Done 2026-11-03 (s0, video.md): Safari plays all 4 clips in software, 250-590 % CPU, 1080p H.264 drops 5.6 %.
-   WebGL context is lost at creation (B55): investigator running; the 3D test waits on it.
-2. Stage 2: firmware boots, SYS_INIT_DONE (v2b). Implementer: teardown fix + `session` step; then builder, then
-   `tools/sunfish-venus-test.sh session` on the phone.
+1. B55 WebGL: cause found (ANGLE asks supportsFeatureSet: 4, bridge said NO); fix 283012f (SWEET_FEATURESET=0 off)
+   installing + WebGL test on the phone now. Next blocker expected: ANGLE compiles Metal shader *source*
+   (newLibraryWithSource), which the bridge refuses (research/notes/webgl/context-lost-2026-11-03.md).
+2. Stage 3 `venusctl decode`: implementer; then install, `tools/sunfish-venus-test.sh decode`, compare with
+   tools/sunfish-venus-yuvcmp.py. Stage 2 step 7 (10 rounds + 15 min under GPU load) when the phone is free.
 3. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
    (METAL2_VARIANT=next, LC_UUID 4C4C444C-...-BBFD7B88C1E1, not installed), then a 5-boot A/B on settings, cc, home.
 4. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).

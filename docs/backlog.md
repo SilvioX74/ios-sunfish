@@ -5,7 +5,7 @@ next easy item), and when adding something newly broken. Priority items live in 
 history in the feature Logs. Finished items move to [completed.md](completed.md).
 
 ## Broken (cheapest first; [phone] = needs the phone)
-- B55 (2026-11-03 s0, video.md) WebGL in Safari: getContext('webgl') returns an already-lost context (getError 37442, RENDERER null), nothing in oslog. Blocks the 3D test and web games. Investigating (research/notes/webgl/).
+- B55 (2026-11-03 s0, video.md) WebGL in Safari: getContext('webgl') returns an already-lost context (getError 37442, RENDERER null), nothing in oslog. Blocks the 3D test and web games. Cause: ANGLE's IsMetalRendererAvailable asks supportsFeatureSet:4, the bridge said NO (research/notes/webgl/context-lost-2026-11-03.md); fix 283012f under test. Next likely blocker: ANGLE compiles Metal shader source (newLibraryWithSource), which the bridge refuses.
 - B54 [CLOSED 2026-11-02, not a bug] "S1" in CA's pipeline labels is an index, not stencil: S1 pipelines write CA's second colour attachment (c1) and later M1 draws read it back onto c0 (offscreen layer for opacity or masks). CA sends no depth/stencil there; the bridge drops nothing (research/notes/b54-stencil-2026-11-02.md). Any skip rule must look at all colour attachments' write masks, not c0's.
 - B52 (2026-11-02 la) Notes crashed on 1 of 3 cold launches: SIGBUS, far 0x233ac7a68 inside a mapped region 0x232000000-0x234000000 prot 3/3 tag 35 (smoothness.md la). [phone]
 - B53 (2026-11-02 la) Visual: Notes shows a dark rounded rectangle in a note's body (attachment not drawn?), Safari's tab overview thumbnails are black, Maps' Work button has a magenta glitch. Likely B44's family; parked with it for the speed focus. [phone]
