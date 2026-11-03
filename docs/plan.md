@@ -46,11 +46,11 @@ Claude's. Up since the everyday boot venusR (2026-11-03 06:25, kernel158), slide
 Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76
 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 5a76e18
 (SweetMetal2 4C4C4448); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
-TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 sweetgpucap=512 (tag wedge1, 10:53), bundle fcdf6de (vImage), venusd + vtvenus (cfbebf1) installed, venusd from launchd. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
+TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 sweetgpucap=512 (tag lat1, 11:12), bundle fcdf6de (vImage), venusd + vtvenus (cfbebf1) installed, venusd from launchd. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. Video start latency: the first frame comes 7.5-8.7 s after each venusd OPEN (vd4a: 0.6 s); find where (venusd
-   cold allowance? lazy OPEN + resync? warm-up?) and fix. Then HEVC (4e), venusd as everyday default.
+1. Video: start latency fixed (lat1: Interactive launchd job, 0.6 s). Next: wall-clock deadlines in venus_core/pmem
+   waits, HEVC (4e: vtvenus 'hvc1' + venusd HEVC sessions).
 2. Video 4d leftovers: backboardd ~66 % for the CPU conversion (vImage, fcdf6de); the copy into the texture likely
    dominates. G7 GPU path stays off (GPU-bound); later a native VkSamplerYcbcrConversion.
 3. mediaserverd restarts can wedge it (Safari stops loading video; camclk/camid exec loop on restart): install the

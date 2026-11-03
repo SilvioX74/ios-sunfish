@@ -89,6 +89,17 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 13:50 lat1: venusd as an Interactive launchd job: first frame 0.6 s after OPEN (was 7.5-9 s)
+Cause (research/notes/venus-latency-2026-11-03.md): launchd started venusd in its default (throttled) class, so XNU's
+timer coalescing stretched every 1 ms wait ~14x (`CTRL_STATUS ... after 1-2 ms` loop counts instead of 7); the HFI
+exchange was identical. Fix 5a974c8: tools/venusd.plist ProcessType/POSIXSpawnType Interactive (as dropbear).
+Boot lat1 (kernel160, 4455 mV; ../logs/boots/20261103-111247.log): `warm-up done (status 0): 1 frame(s), first frame
+551 ms after the decoder start, 1271 ms in all (bring-up 720 ms)`; `CTRL_STATUS 0x40000001 after 7 ms`.
+- Safari 1080p: 1800 frames, 10 dropped (page counter; vtvenus 0), venusd first frame 647 ms after OPEN, 29.9 fps.
+- Safari 720p: 1800 / 5, first frame 585 ms, 30.0 fps; one few-second stall early (frames 209 -> 216 over 5 s).
+- No reset, crash or GPU hang. Still to do: wall-clock deadlines instead of loop-pass counts (a throttled venusd also
+  stretched every timeout ~14x).
+
 ### 2026-11-03 13:30 wedge1: 5 Safari clips through Venus on a fresh boot, no wedge; venusd recovery works (K=3, K=4)
 Boot wedge1 (kernel160, 4455 mV; ../logs/boots/20261103-105302.log), venusd 73803de2 + vtvenus 34372e4c (cfbebf1),
 bundle vimage. venusd warm-up at boot: first frame 7475 ms. mediaserverd pid 29 the whole time (never restarted).
