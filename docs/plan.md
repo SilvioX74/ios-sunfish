@@ -52,8 +52,8 @@ Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfen
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 sweetgpucap=512 (tag ht2, ~14:40), bundle 691c87d (direct planar conversion), venusd 007f8b1 + vtvenus (hvc1) installed, venusd from launchd. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. Wi-Fi CPU: wland ~68 % of a core at 5.8 MB/s (~10 pmem pread/pwrite + 1 write() per frame): batch ring reads and
-   frame hand-off (implementer), then measure MB/s and CPU.
+1. Wi-Fi CPU: userland batching (356c09a) didn't help (bat, 20:40); the per-frame reads + one /dev/wlan write per frame
+   dominate: a kernel batched input path is the next step (parked behind the items below).
 2. Video CPU (Safari HLS 1080p via Venus ~281 %): network ~71, mediaserverd ~58 (spread), backboardd ~45 (vImage
    direct), venusd ~34 (socket copy per frame → IOSurface hand-off later). Native GPU YCbCr later.
 3. Other launchd jobs without Interactive (camd, hapticd, sensors, btbridge): A/B each (backlog O-launchd).

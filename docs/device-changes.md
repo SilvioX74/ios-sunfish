@@ -54,6 +54,7 @@ output in /var/local.
 ## Log
 (Newest first. One line per on-device change: date, what, where, how, what reproduces it.)
 
+- 2026-11-03 /var/local/bin/wland 356c09a (batch 1 default; old 933ec47e at /var/local/bin/wland.pre-batch) via `tools/sunfish-install-wifi.sh --wland`; /var/local/wland.conf absent.
 - 2026-11-03 /var/local/bin/wland b13a681 (HT20; old binary /var/local/bin/wland.pre-ht) via `tools/sunfish-install-wifi.sh --wland`; /var/local/wland.conf absent (ht=0 there would force legacy 11g).
 - 2026-11-03 wland launchd job org.iosonpixel.wland now ProcessType/POSIXSpawnType Interactive (/System/Library/xpc/launchd.plist; backup /var/local/launchd.plist.pre-wland-interactive): `tools/sunfish-install-wifi.sh --job` (9730bab). Takes effect at boot.
 - 2026-11-03 Metal bundle 691c87d (LC_UUID 4C4C44C2, direct planar conversion; SWEET_PLANAR_DIRECT=0 off) installed from work/metal2-next-direct. venusd 007f8b1 (4 ms tick) via tools/sunfish-install-venusd.sh --tools. PC test server is now tools/sunfish-httpd.py (Range) on :8077.

@@ -19,6 +19,19 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 20:40 bat: batched pmem calls (356c09a) don't help; batch=3 breaks the join
+wland 7b08bed6 (old 933ec47e kept as /var/local/bin/wland.pre-batch). Cloudflare via Wi-Fi, HT20, kernel160:
+| boot | batch | MB/s | wland CPU | pmem/msdu | msdus/pass |
+|---|---|---|---|---|---|
+| bat1 | 1 (default) | ~5.8 | ~65 % | 14.3 / 7.3 | 16.5-19.7 |
+| bat0 | 0 | 5.0-5.5 | 49-52 % | 13.0 / 10.5 | 29 |
+| bat3 | 3 | — never joined (try 1: `AP ended the link, reason 8 (state 2)`, then 9 timeouts in state 2) | | | |
+| bat1b | 1 | 5.63 | 63.7 % | 10.1 | 16.3 |
+pmem calls per MSDU barely changed (the per-frame payload reads and the one write() per frame to /dev/wlan dominate);
+CPU per MB about the same or worse. batch=3 (no attention-word clear) breaks auth/assoc — leave it off. Phone left on
+batch 1 (works). Next idea for wland CPU: the kernel side (batched /dev/wlan input, mbuf chains) or fewer, larger
+payload reads; parked for now.
+
 ### 2026-11-03 20:10 ht1: 802.11n HT20 association: 3.0 -> 5.8 MB/s
 wland b13a681 (sha256 933ec47e; old binary kept as /var/local/bin/wland.pre-ht), installed with
 `tools/sunfish-install-wifi.sh --wland` (now from work/userland-linux/out; the old work/userland/stage was a stale Oct 23
