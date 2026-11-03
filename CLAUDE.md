@@ -124,6 +124,9 @@ This file is the one home for the project's rules (AGENTS.md and the memory note
   any session does once the user says they are up.
 - **Quiet hours** (the user, 2026-10-30): no speaker tests (sound from the phone) between 9:30 pm and 5:00 am EST;
   the USB measurement mic (EM-01) is fine to use outside those hours.
+- **Reuse first** (the user, 2026-11-03): before writing a piece of the Metal/GPU/video stack, check the related
+  projects (tools/upstream.list, incl. metal2vulkan upstream, AdrenoMetal, darlinghq indium/darling-metal) for a
+  proven implementation and pull it in rather than reinventing it; say in the commit what was reused or why not.
 - **Upstream check** (the user, 2026-10-30): related ports (ios-redfin, iOSPlus10, UniXNU, metal2vulkan, hakios-*, ...)
   are listed in `tools/upstream.list`. A daily scheduled task (06:30, "sunfish-upstream-check") runs
   `tools/sunfish-upstream-check.sh`, surveys the new commits with investigators, checks each candidate against our

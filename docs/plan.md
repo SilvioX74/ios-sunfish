@@ -53,9 +53,12 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
 2. Stage 4 spec: VideoToolbox decoder plugin (ExampleIPB.videodecoder slot, loads in mediaserverd) on venusctl's decode
    path as a library; daemon vs in-process, pmem access from mediaserverd, CVPixelBuffer/IOSurface NV12 out (G7).
    Also: stage 3 speed on a long 1080p clip (fps, CPU).
-3. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
+3. Metal→Vulkan prior-art survey (the user, 2026-11-03): we are 821 commits behind metal2vulkan (720ef1ce vs
+   bf3ce381); AdrenoMetal, darlinghq indium/darling-metal, iglunix indium cloned to research/re; two investigators
+   running; decide rebase/cherry-pick before more bridge work. (dipa-studio/ios-extra: not found on GitHub.)
+4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
    (METAL2_VARIANT=next, LC_UUID 4C4C444C-...-BBFD7B88C1E1, not installed), then a 5-boot A/B on settings, cc, home.
-4. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
+5. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15), Files check (U13), touch while plugged in (U14).
