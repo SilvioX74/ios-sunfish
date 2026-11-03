@@ -2103,7 +2103,11 @@ static int alloc_outputs(int count)
 		printf("venus: STOP: no buffer requirement for %s\n", dc.split ? "output/output2" : "output");
 		return -1;
 	}
+	/* v3: after SEQUENCE_CHANGED min drops to 5 but min_host stays 18 and the firmware wants all of them
+	 * ("h264Dec_Continue(224): Not enough output2 buffers!"): take the largest of ours, min and min_host */
 	int n = count > (int)rq[3] ? count : (int)rq[3];
+	if (n < (int)rq[4])
+		n = (int)rq[4];
 	if (getenv("VENUSCTL_NOUT"))
 		n = atoi(getenv("VENUSCTL_NOUT"));
 	if (n < 1 || n > 32)
@@ -2114,6 +2118,8 @@ static int alloc_outputs(int count)
 		       dc.split ? "output2" : "output", rq[1], need, dc.ystride, dc.yscan);
 	if (dc.split) {
 		int nd = count > (int)ro[3] ? count : (int)ro[3];
+		if (nd < (int)ro[4])
+			nd = (int)ro[4];
 		/* set_output_buffers (msm_vidc_common.c:3693-3703): BUFFER_SIZE_MINIMUM, then one buffer each */
 		if (set_prop(P_BUF_SIZE_MIN, B_OUTPUT, ro[1], 0, 2, "dpb size minimum"))
 			return -1;
