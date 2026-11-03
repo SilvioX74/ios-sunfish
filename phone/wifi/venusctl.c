@@ -11,10 +11,24 @@
  *                           its HW_CTL bit goes back if power on cleared it (state in AHB_STATE)
  *   venusctl pas-check [--fw DIR] [--no-shutdown]  needs power on: PAS is_supported(9), init_image(9, venus.mdt
  *                           metadata), shutdown(9). No mem_setup, no auth_and_reset.
+ *   venusctl boot [--fw DIR] [--keep]  needs power on: exact SMRs for SIDs 0x1080/0x10a0/0x10c0/0x10e0 (smmu.c
+ *                           smmu_identity, mask 0), CPU_CGC_DIS/CPU_CLOCK_CONFIG = 0, PAS init_image(9), mem_setup,
+ *                           segments to 0x94800000, auth_and_reset(9), memory protect 0x42000c08, status reads.
+ *                           Without --keep: PAS shutdown(9) and the SMRs go again. What it did: STATE.
+ *   venusctl init [--phys ADDR]  after boot --keep: 3 MB HFI queue block (PMEM_ALLOC32, else only with --phys, 1 MB
+ *                           aligned in 0xa5100000-0xbcc00000) with the queue table, 3 queues and the SFR page, the
+ *                           UC/QTBL/SFR/VMIMSG registers, CTRL_INIT = 1, poll CTRL_STATUS (1 s)
+ *   venusctl ping [--debug MASK]  after init: SYS_INIT -> INIT_DONE, debug to the debug queue, IMAGE_VERSION,
+ *                           SYS_PING -> PING_ACK; polls the message queue (no IRQ), prints every packet
+ *   venusctl shutdown       undoes boot --keep/init from STATE: PAS shutdown(9), queue memory, SMRs. Then power off.
  *   -v                      print every register write (address, old, new, read-back)
- * Writes only: GCC video_ahb/video_axi CBCRs, the videocc PLL0/RCG/GDSC/CBCR registers below, RPMh BCMs MM3/MM2.
- * No SMMU writes. Every videocc access is gated on gcc_video_ahb CLK_OFF = 0, the core read on the GDSCs + clocks.
- * Polls time out after 100 ms and say where they stopped.
+ * Writes only: GCC video_ahb/video_axi CBCRs, the videocc PLL0/RCG/GDSC/CBCR registers below, RPMh BCMs MM3/MM2,
+ * the core registers in allowed() (boot/init/ping), the firmware carveout, the queue block; SMMU writes only through
+ * smmu_identity/smmu_release (one exact SMR + S2CR + translation-off bank per SID, never masked: masked SMRs reset
+ * the phone in camera tests). Every videocc access is gated on gcc_video_ahb CLK_OFF = 0, every core access on the
+ * GDSCs + clocks (core_ok). Polls time out (100 ms; 1 s for the firmware) and say where they stopped.
+ * Off switches: VENUSCTL_SID1=1 (only 0x1080), VENUSCTL_NO_CLKCFG=1 (no CPU_CGC_DIS/CLOCK_CONFIG writes),
+ * VENUSCTL_NO_MEMPROT=1 (no memory protect call).
  * gcc_video_ahb boots enabled but hardware-gated (0x80000003: HW_CTL set, CLK_OFF reads 1 while idle; Linux
  * clk-branch.c skips the halt check in that mode). power on clears HW_CTL first so CLK_OFF can be polled;
  * VENUSCTL_KEEP_HWCTL=1 skips that (old behaviour).
@@ -25,6 +39,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include "pmem.h"
+#include "smmu.h"
 
 #define GCC		0x00100000u
 #define GCC_VIDEO_AHB	(GCC + 0xb004)	/* gcc_video_ahb_clk, GDSC parent (notes table "GDSC parent clock") */
@@ -74,6 +89,53 @@
 
 #define WRAP_HW_VERSION	0x0aae0000u	/* WRAPPER 0xE0000 + 0 (vidc_hfi_io.h) */
 
+/* video stage 2 steps 4-6: core registers (vidc_hfi_io.h, absolute = 0x0aa00000 + offset; notes section 1) */
+#define CORE		0x0aa00000u
+#define CORE_END	0x0aae4000u	/* up to the end of the wrapper (PIL reg 0x0aae0000 + 0x4000); videocc lies above */
+#define CS		(CORE + 0xd2000)	/* VIDC_CPU_CS_BASE_OFFS */
+#define CS_VMIMSG	(CS + 0x34)	/* HFI_DSP_QTBL_ADDR (setup_dsp_uc_memmap_vpu5, venus_hfi.c:4688) */
+#define CS_VMIMSGAG0	(CS + 0x38)	/* HFI_DSP_UC_REGION_ADDR (venus_hfi.c:4690) */
+#define CS_VMIMSGAG1	(CS + 0x3c)	/* HFI_DSP_UC_REGION_SIZE (venus_hfi.c:4692) */
+#define CTRL_INIT	(CS + 0x48)	/* SCIACMD (__boot_firmware, venus_hfi.c:1274) */
+#define CTRL_STATUS	(CS + 0x4c)	/* SCIACMDARG0: read only */
+#define QTBL_INFO	(CS + 0x50)	/* SCIACMDARG1 (__setup_ucregion_memory_map, venus_hfi.c:1888) */
+#define QTBL_ADDR	(CS + 0x54)	/* SCIACMDARG2 (venus_hfi.c:1886) */
+#define VERSION_INFO	(CS + 0x58)	/* SCIACMDARG3: read only */
+#define SFR_ADDR	(CS + 0x5c)	/* SCIBCMD (venus_hfi.c:1890) */
+#define UC_ADDR		(CS + 0x64)	/* SCIBARG1 (venus_hfi.c:1883) */
+#define UC_SIZE		(CS + 0x68)	/* SCIBARG2 (venus_hfi.c:1885) */
+#define IC_SOFTINT	(CORE + 0xdf018)	/* VIDC_CPU_IC_SOFTINT, bit 15 = H2A (__iface_cmdq_write doorbell) */
+#define SOFTINT_H2A	(1u << 15)
+#define WRAP_INTR_STATUS (CORE + 0xe000c)	/* read only */
+#define WRAP_CPU_CLKCFG	(CORE + 0xe2000)	/* clock_config_on_enable_vpu5 (venus_hfi.c:4706) */
+#define WRAP_CPU_CGCDIS	(CORE + 0xe2010)	/* clock_config_on_enable_vpu5 (venus_hfi.c:4705) */
+#define WRAP_CPU_STATUS	(CORE + 0xe2014)	/* read only */
+#define ST_INIT		1u		/* CTRL_STATUS bit 0 */
+#define ST_ERROR	0xfeu		/* CTRL_STATUS 7:1, 4 = bad UC region (venus_hfi.c:1277) */
+
+#define FW_PA		0x94800000ull	/* pil_video_region (live.dts 23729-23733) */
+#define FW_SIZE		0x00500000ull
+#define SCM_MP_VIDEO_VAR 0x42000c08ull	/* SCM_SIP_FNID(SCM_SVC_MP 0xc, TZBSP_MEM_PROTECT_VIDEO_VAR 8) */
+/* __protect_cp_mem (venus_hfi.c:4347-4390): cp_size = venus_ns start, non-pixel = venus_sec_non_pixel range */
+#define CP_SIZE		0x25800000u
+#define CP_NP_START	0x01000000u
+#define CP_NP_SIZE	0x24800000u
+#define STATE		"/var/tmp/venusctl.state"
+static const uint16_t venus_sids[] = { 0x1080, 0x10a0, 0x10c0, 0x10e0 };	/* venus_ns 0x1080 mask 0x60 (live.dts 9974) */
+
+/* HFI shared memory (venus_hfi.h:36-113): 3 MB block = table 0x1c8 + 3 queues of 0xc8000; queues get
+ * SHARED_QSIZE - SFR - QDSS = 0x2fe000 (venus_hfi.c:1916), the SFR page follows them, inside the UC region */
+#define QSHARED		0x300000u
+#define QTBL_SIZE	0x1c8u
+#define QHDR0		0x120u		/* sizeof(struct hfi_queue_table_header) */
+#define QHDR_SIZE	0x38u
+#define QSIZE		0xc8000u	/* 1024 x 50 x 16 */
+#define QWORDS		(QSIZE / 4)
+#define SFR_OFF		0x2fe000u
+#define SFR_SIZE	0x1000u
+#define FIXED_LO	0xa5100000ull	/* free below 4 GB per the notes (section 2 "Memory"; unproven) */
+#define FIXED_HI	0xbcc00000ull
+
 #define PAS_VENUS	9
 #define SCM_PIL(cmd)	(0x42000000ull | (2u << 8) | (cmd))
 #define MDT_RELOC	(1u << 27)
@@ -116,9 +178,43 @@ static uint32_t vrd(uint32_t pa)
 	return rd32(pa);
 }
 
+/* every core access (0x0aa00000-0x0aae4000): AHB, gcc_video_axi, GDSCs mvsc + mvs0 and the branches all on */
+static int core_ok(void)
+{
+	int ok = ahb_on() && !(rd32(GCC_VIDEO_AXI) & CLK_OFF) && (vrd(GDSC_MVSC) & PWR_ON) && (vrd(GDSC_MVS0) & PWR_ON);
+	for (unsigned i = 0; i < NBR && ok; i++)
+		if (!branches[i].cvp || cvp)
+			ok = !(vrd(branches[i].pa) & CLK_OFF);
+	return ok;
+}
+
+static void core_gate(uint32_t pa, const char *what)
+{
+	if (pa >= CORE && pa < CORE_END && !core_ok()) {
+		printf("venus: STOP at %s (%#x): a video clock or GDSC is off, core not touched"
+		       " (venusctl shutdown, then power off)\n", what, pa);
+		exit(1);
+	}
+}
+
+static uint32_t crd(uint32_t pa)
+{
+	core_gate(pa, "read");
+	return rd32(pa);
+}
+
 static int allowed(uint32_t pa)
 {
 	if (pa == GCC_VIDEO_AHB || pa == GCC_VIDEO_AXI)
+		return 1;
+	/* stage 2 steps 4-6, each from its downstream line (defines above) */
+	if (pa == WRAP_CPU_CGCDIS || pa == WRAP_CPU_CLKCFG)	/* boot: clock_config_on_enable_vpu5 */
+		return 1;
+	if (pa == UC_ADDR || pa == UC_SIZE || pa == QTBL_ADDR || pa == QTBL_INFO || pa == SFR_ADDR)	/* init */
+		return 1;
+	if (pa == CS_VMIMSG || pa == CS_VMIMSGAG0 || pa == CS_VMIMSGAG1 || pa == CTRL_INIT)	/* init */
+		return 1;
+	if (pa == IC_SOFTINT)	/* ping: doorbell */
 		return 1;
 	if ((pa >= PLL0 && pa <= PLL_FRAC) || pa == IRIS_RCG || pa == IRIS_CFG)
 		return 1;
@@ -137,6 +233,7 @@ static void wr(uint32_t pa, uint32_t v, const char *why)
 		exit(1);
 	}
 	vcc_gate(pa, why);
+	core_gate(pa, why);
 	uint32_t old = rd32(pa);
 	wr32(pa, v);
 	if (verbose)
@@ -532,11 +629,7 @@ static int power_on(void)
 		if ((!branches[i].cvp || cvp) && branch_on(branches[i].pa, branches[i].name))
 			return power_off(), 1;
 	/* the core read: only with everything above on, checked once more */
-	int ok = ahb_on() && !(rd32(GCC_VIDEO_AXI) & CLK_OFF) && (vrd(GDSC_MVSC) & PWR_ON) && (vrd(GDSC_MVS0) & PWR_ON);
-	for (unsigned i = 0; i < NBR; i++)
-		if (!branches[i].cvp || cvp)
-			ok = ok && !(vrd(branches[i].pa) & CLK_OFF);
-	if (!ok) {
+	if (!core_ok()) {
 		printf("venus: STOP: a clock or GDSC dropped before the HW version read\n");
 		return power_off(), 1;
 	}
@@ -602,17 +695,20 @@ static uint8_t *slurp(const char *path, size_t *len)
 	return b;
 }
 
-static int pas_check(const char *fw, int no_shutdown)
+/* venus.mdt and its metadata (ELF header + phdrs + hash segment), shared by pas-check and boot */
+struct fwimg {
+	uint8_t *mdt, *meta;
+	size_t mlen, meta_len;
+	struct phdr *ph;
+	uint32_t phnum;
+	int hash;
+};
+
+static int fw_meta(const char *fw, struct fwimg *f)
 {
-	if (!ahb_on() || !(vrd(GDSC_MVSC) & PWR_ON) || !(vrd(GDSC_MVS0) & PWR_ON)) {
-		printf("venus: refused: power is off (gcc_video_ahb %#010x%s): run 'venusctl power on' first\n",
-		       rd32(GCC_VIDEO_AHB), ahb_on() ? ", or gdsc mvsc/mvs0 off" : "");
-		return 1;
-	}
 	char path[256];
-	size_t mlen;
 	snprintf(path, sizeof(path), "%s/venus.mdt", fw);
-	uint8_t *mdt = slurp(path, &mlen);
+	uint8_t *mdt = slurp(path, &f->mlen);
 	if (!mdt) {
 		fprintf(stderr, "venus: no %s\n", path);
 		return 1;
@@ -620,7 +716,7 @@ static int pas_check(const char *fw, int no_shutdown)
 	uint32_t phoff, phnum = 0;
 	memcpy(&phoff, mdt + 0x1c, 4);
 	memcpy(&phnum, mdt + 0x2c, 2);
-	if (memcmp(mdt, "\177ELF", 4) || phoff + 32ull * phnum > mlen) {
+	if (memcmp(mdt, "\177ELF", 4) || phoff + 32ull * phnum > f->mlen) {
 		fprintf(stderr, "venus: %s is not an ELF32 image\n", path);
 		return 1;
 	}
@@ -638,7 +734,7 @@ static int pas_check(const char *fw, int no_shutdown)
 	size_t ehsz = phoff + 32ull * phnum, meta_len = ehsz + ph[hash].filesz;
 	uint8_t *meta = calloc(1, meta_len + 4);
 	memcpy(meta, mdt, ehsz);
-	if (ph[hash].offset + ph[hash].filesz <= mlen) {
+	if (ph[hash].offset + ph[hash].filesz <= f->mlen) {
 		memcpy(meta + ehsz, mdt + ph[hash].offset, ph[hash].filesz);
 	} else {
 		size_t hl;
@@ -653,6 +749,23 @@ static int pas_check(const char *fw, int no_shutdown)
 	}
 	printf("venus: %s/venus.mdt: %u phdrs, hash seg %d (%u bytes), metadata %zu bytes\n", fw, phnum, hash,
 	       ph[hash].filesz, meta_len);
+	*f = (struct fwimg){ .mdt = mdt, .meta = meta, .mlen = f->mlen, .meta_len = meta_len, .ph = ph,
+		.phnum = phnum, .hash = hash };
+	return 0;
+}
+
+static int pas_check(const char *fw, int no_shutdown)
+{
+	if (!ahb_on() || !(vrd(GDSC_MVSC) & PWR_ON) || !(vrd(GDSC_MVS0) & PWR_ON)) {
+		printf("venus: refused: power is off (gcc_video_ahb %#010x%s): run 'venusctl power on' first\n",
+		       rd32(GCC_VIDEO_AHB), ahb_on() ? ", or gdsc mvsc/mvs0 off" : "");
+		return 1;
+	}
+	struct fwimg f;
+	if (fw_meta(fw, &f))
+		return 1;
+	size_t meta_len = f.meta_len;
+	uint8_t *meta = f.meta;
 
 	uint64_t r1 = 0;
 	int64_t rc = scm(7, 1, PAS_VENUS, 0, 0, &r1);
@@ -678,10 +791,603 @@ static int pas_check(const char *fw, int no_shutdown)
 	return rc || r1 ? 1 : 0;
 }
 
+/* ---- stage 2 steps 4-6: state shared by boot --keep, init, ping and shutdown (separate runs) ---- */
+
+struct vstate {
+	int pas;		/* init_image accepted: PAS shutdown(9) owed */
+	int nsmr;
+	struct smmu_saved smr[4];	/* what smmu_identity wrote, for smmu_release */
+	uint64_t q;		/* HFI block (QSHARED) */
+	int qkind;		/* 1 PMEM_ALLOC32 (pm_free), 2 --phys region */
+	int init, sysinit;
+};
+
+static void state_save(const struct vstate *v)
+{
+	FILE *f = fopen(STATE ".new", "w");
+	if (!f) {
+		printf("venus: can't write %s: shutdown won't know what to undo\n", STATE);
+		return;
+	}
+	fprintf(f, "pas %d\nq %#llx %d\ninit %d\nsysinit %d\n", v->pas, (unsigned long long)v->q, v->qkind, v->init,
+		v->sysinit);
+	for (int i = 0; i < v->nsmr; i++) {
+		const struct smmu_saved *m = &v->smr[i];
+		fprintf(f, "smr %d %d %#llx %#llx %#x %#x %#x %#x %#x\n", m->slot, m->cb, (unsigned long long)m->cbp,
+			(unsigned long long)m->gr1, m->smr, m->s2cr, m->cbar, m->cba2r, m->sctlr);
+	}
+	fclose(f);
+	rename(STATE ".new", STATE);
+}
+
+static int state_load(struct vstate *v)
+{
+	memset(v, 0, sizeof(*v));
+	FILE *f = fopen(STATE, "r");
+	if (!f)
+		return -1;
+	char line[256];
+	while (fgets(line, sizeof(line), f)) {
+		unsigned long long a, b;
+		struct smmu_saved m;
+		if (sscanf(line, "pas %d", &v->pas) == 1 || sscanf(line, "init %d", &v->init) == 1 ||
+		    sscanf(line, "sysinit %d", &v->sysinit) == 1)
+			continue;
+		if (sscanf(line, "q %llx %d", &a, &v->qkind) == 2) {
+			v->q = a;
+			continue;
+		}
+		if (v->nsmr < 4 && sscanf(line, "smr %d %d %llx %llx %x %x %x %x %x", &m.slot, &m.cb, &a, &b, &m.smr,
+					  &m.s2cr, &m.cbar, &m.cba2r, &m.sctlr) == 9) {
+			m.cbp = a;
+			m.gr1 = b;
+			v->smr[v->nsmr++] = m;
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
+static int64_t pas(uint32_t cmd, const char *what)
+{
+	uint64_t r1 = 0;
+	printf("venus: pas %s(%d)...\n", what, PAS_VENUS);
+	int64_t rc = scm(cmd, 1, PAS_VENUS, 0, 0, &r1);
+	printf("venus: pas %s -> %lld/%llx\n", what, (long long)rc, (unsigned long long)r1);
+	return rc ? rc : (int64_t)r1;
+}
+
+static void print_sfr(uint64_t q)
+{
+	char s[SFR_SIZE + 1];
+	uint32_t sz = rd32(q + SFR_OFF);
+	memset(s, 0, sizeof(s));
+	pm_rd(q + SFR_OFF + 4, s, SFR_SIZE - 4);
+	for (unsigned i = 0; i < SFR_SIZE - 4 && s[i]; i++)
+		if (s[i] < 0x20 || s[i] > 0x7e)
+			s[i] = '.';
+	printf("venus: SFR %#llx bufSize %u: \"%s\"\n", (unsigned long long)(q + SFR_OFF), sz, s);
+}
+
+/* the undo for boot/init, in reverse: PAS shutdown (only powered: TZ touches the core), queue memory, SMRs */
+static int teardown(struct vstate *v)
+{
+	if (v->pas) {
+		if (!core_ok()) {
+			printf("venus: STOP: PAS shutdown needs the power on (a clock or GDSC is off): nothing undone,"
+			       " state kept in %s\n", STATE);
+			return 1;
+		}
+		if (pas(6, "shutdown")) {
+			printf("venus: STOP: PAS shutdown failed: queue memory and SMRs kept (the firmware may still run),"
+			       " state kept in %s\n", STATE);
+			return 1;
+		}
+		v->pas = 0;
+		v->init = v->sysinit = 0;
+		state_save(v);
+	}
+	if (v->q) {
+		if (v->qkind == 1 && pm_free(v->q))
+			printf("venus: pm_free %#llx failed\n", (unsigned long long)v->q);
+		else
+			printf("venus: queue block %#llx %s\n", (unsigned long long)v->q, v->qkind == 1 ? "freed" :
+			       "(--phys region) given up");
+		v->q = 0;
+		state_save(v);
+	}
+	int rc = 0;
+	while (v->nsmr > 0) {
+		smmu_last = v->smr[--v->nsmr];
+		rc |= smmu_release("venus");
+		state_save(v);
+	}
+	unlink(STATE);
+	return rc ? 1 : 0;
+}
+
+static void core_status(const char *when)
+{
+	uint32_t st = crd(CTRL_STATUS);
+	printf("venus: %s: CTRL_STATUS %#010x (init %u error %#x pc_ready %u) VERSION_INFO %#010x HW_VERSION %#010x"
+	       " CPU_STATUS %#010x INTR_STATUS %#010x\n", when, st, st & ST_INIT, st & ST_ERROR, (st >> 8) & 1,
+	       crd(VERSION_INFO), crd(WRAP_HW_VERSION), crd(WRAP_CPU_STATUS), crd(WRAP_INTR_STATUS));
+}
+
+static int boot_fail(struct vstate *v)
+{
+	printf("venus: boot failed, undoing\n");
+	teardown(v);
+	return 1;
+}
+
+static int boot(const char *fw, int keep)
+{
+	struct vstate v;
+	if (state_load(&v) == 0) {
+		printf("venus: refused: %s exists (a boot --keep is active): venusctl shutdown first\n", STATE);
+		return 1;
+	}
+	if (!core_ok()) {
+		printf("venus: refused: power is off (a video clock or GDSC is off): run 'venusctl power on' first\n");
+		return 1;
+	}
+	uint32_t vote = rd32(GCC_TBU_SF_VOTE);
+	if (!(vote & PWR_ON)) {	/* SIDs 0x1000-0x13ff go through mnoc_sf_0_tbu (camera-sid-cc0.md) */
+		printf("venus: refused: mnoc_sf_0_tbu vote %#x = %#010x has no PWR_ON\n", GCC_TBU_SF_VOTE, vote);
+		return 1;
+	}
+	struct fwimg f;
+	if (fw_meta(fw, &f))
+		return 1;
+	/* load segments: span and relocation as adspboot boot() */
+	uint64_t lo = ~0ull, hi = 0;
+	int reloc = 0;
+	for (uint32_t i = 0; i < f.phnum; i++) {
+		if ((int)i == f.hash || f.ph[i].type != 1 || !f.ph[i].memsz)
+			continue;
+		reloc |= !!(f.ph[i].flags & MDT_RELOC);
+		if (f.ph[i].paddr < lo)
+			lo = f.ph[i].paddr;
+		if (f.ph[i].paddr + f.ph[i].memsz > hi)
+			hi = f.ph[i].paddr + f.ph[i].memsz;
+	}
+	uint64_t base = reloc ? FW_PA : lo;
+	if (lo > hi || base < FW_PA || base + (hi - lo) > FW_PA + FW_SIZE) {
+		printf("venus: refused: image %llx-%llx (reloc %d) does not fit %llx+%llx\n", (unsigned long long)lo,
+		       (unsigned long long)hi, reloc, FW_PA, FW_SIZE);
+		return 1;
+	}
+	printf("venus: image linked %llx-%llx, %s to %llx\n", (unsigned long long)lo, (unsigned long long)hi,
+	       reloc ? "relocated" : "fixed", (unsigned long long)base);
+
+	/* exact SMRs only; refuse if any SMR already matches one of the SIDs (not ours to change) */
+	unsigned nsid = getenv("VENUSCTL_SID1") ? 1 : 4;
+	uint64_t sm = 0x15000000ull;
+	uint32_t nsmr = rd32(sm + 0x20) & 0xff;
+	for (uint32_t i = 0; i < nsmr && i < 128; i++) {
+		uint32_t smr = rd32(sm + 0x800 + 4 * i);
+		for (unsigned k = 0; k < nsid && (smr >> 31); k++)
+			if (sid_match(smr, venus_sids[k])) {
+				printf("venus: refused: SMR%u %08x already matches SID %#x\n", i, smr, venus_sids[k]);
+				return 1;
+			}
+	}
+	for (unsigned k = 0; k < nsid; k++) {
+		smmu_last.slot = -1;	/* a failed call leaves smmu_last alone: don't record the previous SID twice */
+		int bad = smmu_identity("venus", venus_sids[k], 0);
+		if (smmu_last.slot >= 0) {
+			v.smr[v.nsmr++] = smmu_last;
+			state_save(&v);
+			printf("venus: SID %#x: SMR%d + CB%d added\n", venus_sids[k], smmu_last.slot, smmu_last.cb);
+		}
+		if (bad)
+			return boot_fail(&v);
+	}
+
+	/* clock_config_on_enable_vpu5 (venus_hfi.c:4703-4707), part of downstream __venus_power_on before the PIL load */
+	if (!getenv("VENUSCTL_NO_CLKCFG")) {
+		wr(WRAP_CPU_CGCDIS, 0, "CPU_CGC_DIS");
+		wr(WRAP_CPU_CLKCFG, 0, "CPU_CLOCK_CONFIG");
+		printf("venus: CPU_CGC_DIS %#010x CPU_CLOCK_CONFIG %#010x\n", crd(WRAP_CPU_CGCDIS), crd(WRAP_CPU_CLKCFG));
+	}
+
+	uint64_t r1 = 0;
+	int64_t rc = scm(7, 1, PAS_VENUS, 0, 0, &r1);
+	printf("venus: pas supported(%d) -> %lld/%llx\n", PAS_VENUS, (long long)rc, (unsigned long long)r1);
+	uint64_t meta_pa = pm_alloc(f.meta_len, 0x1000);
+	if (!meta_pa)
+		return boot_fail(&v);
+	pm_wr(meta_pa, f.meta, (f.meta_len + 3) & ~(size_t)3);
+	printf("venus: pas init_image(%d, %llx)...\n", PAS_VENUS, (unsigned long long)meta_pa);
+	rc = scm(1, 2 | (2u << 6), PAS_VENUS, meta_pa, 0, &r1);
+	printf("venus: pas init_image -> %lld/%llx\n", (long long)rc, (unsigned long long)r1);
+	pm_free(meta_pa);
+	if (rc || r1)
+		return boot_fail(&v);	/* nothing in TZ: no shutdown (adspboot adsp3) */
+	v.pas = 1;
+	state_save(&v);
+	if (reloc) {
+		rc = scm(2, 3, PAS_VENUS, FW_PA, FW_SIZE, &r1);
+		printf("venus: pas mem_setup %llx+%llx -> %lld/%llx\n", FW_PA, FW_SIZE, (long long)rc,
+		       (unsigned long long)r1);
+		if (rc || r1)
+			return boot_fail(&v);
+	}
+	static uint8_t zeros[0x10000];
+	uint64_t total = 0;
+	for (uint32_t i = 0; i < f.phnum; i++) {
+		if ((int)i == f.hash || f.ph[i].type != 1 || !f.ph[i].memsz)
+			continue;
+		uint64_t pa = base + (f.ph[i].paddr - lo);
+		if (f.ph[i].filesz) {
+			char path[256];
+			size_t sl;
+			snprintf(path, sizeof(path), "%s/venus.b%02u", fw, i);
+			uint8_t *seg = slurp(path, &sl);
+			if (!seg || sl < f.ph[i].filesz) {
+				printf("venus: %s missing or short\n", path);
+				return boot_fail(&v);
+			}
+			if (pm_wr(pa, seg, (f.ph[i].filesz + 3) & ~3u))
+				return boot_fail(&v);
+			free(seg);
+			total += f.ph[i].filesz;
+		}
+		for (uint64_t o = (f.ph[i].filesz + 3) & ~3ull; o < f.ph[i].memsz; o += sizeof(zeros)) {
+			uint64_t n = f.ph[i].memsz - o < sizeof(zeros) ? f.ph[i].memsz - o : sizeof(zeros);
+			if (pm_wr(pa + o, zeros, (n + 3) & ~3ull))
+				return boot_fail(&v);
+		}
+		printf("venus: seg %u -> %llx (%u file, %u mem)\n", i, (unsigned long long)pa, f.ph[i].filesz,
+		       f.ph[i].memsz);
+	}
+	printf("venus: loaded %llu bytes\n", (unsigned long long)total);
+	if (!core_ok()) {	/* auth_and_reset unpowered resets the phone (notes section 5) */
+		printf("venus: STOP: a clock or GDSC dropped before auth_and_reset\n");
+		return boot_fail(&v);
+	}
+	if (pas(5, "auth_and_reset"))
+		return boot_fail(&v);
+	if (!getenv("VENUSCTL_NO_MEMPROT")) {
+		uint64_t x[8] = { SCM_MP_VIDEO_VAR, 4, 0, CP_SIZE, CP_NP_START, CP_NP_SIZE, 0, 0 };
+		printf("venus: mem protect video var (0, %#x, %#x, %#x)...\n", CP_SIZE, CP_NP_START, CP_NP_SIZE);
+		pm_smc(x);
+		printf("venus: mem protect -> %lld/%llx\n", (long long)x[0], (unsigned long long)x[1]);
+		if (x[0])
+			return boot_fail(&v);
+	}
+	core_status("after auth");
+	if (keep) {
+		printf("venus: boot ok, kept (state %s): next venusctl init, or venusctl shutdown\n", STATE);
+		return 0;
+	}
+	int r = teardown(&v);
+	printf("venus: boot ok, undone -> %s\n", r ? "teardown FAILED" : "ok");
+	return r;
+}
+
+/* ---- HFI queues (downstream __write_queue / __read_queue on the uncached block) ---- */
+
+static uint64_t qb;	/* the block, from STATE */
+
+static uint64_t qhdr(unsigned i)
+{
+	return qb + QHDR0 + QHDR_SIZE * i;
+}
+
+static uint64_t qstart(unsigned i)
+{
+	return qb + QTBL_SIZE + (uint64_t)QSIZE * i;
+}
+
+/* qhdr fields (struct hfi_queue_header) */
+#define QH_RX_REQ	0x20
+#define QH_TX_REQ	0x24
+#define QH_READ		0x30
+#define QH_WRITE	0x34
+
+static int q_write(const uint32_t *w)
+{
+	uint32_t n = w[0] / 4, rd = rd32(qhdr(0) + QH_READ), wi = rd32(qhdr(0) + QH_WRITE);
+	if (!n || rd >= QWORDS || wi >= QWORDS) {
+		printf("venus: STOP: cmdq bad (size %u, read %u, write %u)\n", w[0], rd, wi);
+		return -1;
+	}
+	uint32_t empty = wi >= rd ? QWORDS - (wi - rd) : rd - wi;
+	if (empty <= n) {
+		wr32(qhdr(0) + QH_TX_REQ, 1);
+		printf("venus: STOP: cmdq full (%u words free, %u needed)\n", empty, n);
+		return -1;
+	}
+	wr32(qhdr(0) + QH_TX_REQ, 0);
+	uint32_t first = n < QWORDS - wi ? n : QWORDS - wi;
+	pm_wr(qstart(0) + 4ull * wi, w, 4 * first);
+	if (first < n)
+		pm_wr(qstart(0), w + first, 4 * (n - first));
+	wr32(qhdr(0) + QH_WRITE, (wi + n) % QWORDS);
+	uint32_t rx = rd32(qhdr(0) + QH_RX_REQ);
+	printf("venus: cmd %#x size %u at %u, rx_req %u%s\n", w[1], w[0], wi, rx, rx == 1 ? ", doorbell" : "");
+	if (rx == 1)	/* __iface_cmdq_write: interrupt only if the firmware asked for one */
+		wr(IC_SOFTINT, SOFTINT_H2A, "doorbell");
+	return 0;
+}
+
+static uint32_t pkt[3072];	/* VIDC_IFACEQ_VAR_HUGE_PKT_SIZE */
+
+/* one packet from queue i (1 msg, 2 debug) into pkt: words, 0 = empty, -1 = bad */
+static int q_read(unsigned i)
+{
+	uint32_t rd = rd32(qhdr(i) + QH_READ), wi = rd32(qhdr(i) + QH_WRITE), want_rx = i == 1;
+	if (rd == wi) {
+		wr32(qhdr(i) + QH_RX_REQ, want_rx);
+		return 0;
+	}
+	if (rd >= QWORDS || wi >= QWORDS) {
+		printf("venus: STOP: queue %u bad indexes (read %u, write %u)\n", i, rd, wi);
+		return -1;
+	}
+	uint32_t size = rd32(qstart(i) + 4ull * rd), n = size / 4, nr;
+	int got = (int)n;
+	if (!n) {
+		printf("venus: queue %u: zero packet size at %u\n", i, rd);
+		return -1;
+	}
+	if (size <= sizeof(pkt)) {
+		uint32_t first = n < QWORDS - rd ? n : QWORDS - rd;
+		pm_rd(qstart(i) + 4ull * rd, pkt, 4 * first);
+		if (first < n)
+			pm_rd(qstart(i), pkt + first, 4 * (n - first));
+		nr = (rd + n) % QWORDS;
+	} else {
+		printf("venus: queue %u: bad packet size %u at %u, dropped to the write index\n", i, size, rd);
+		nr = wi;
+		got = -1;
+	}
+	wr32(qhdr(i) + QH_RX_REQ, nr != wi ? 0 : want_rx);
+	wr32(qhdr(i) + QH_READ, nr);
+	return got;
+}
+
+static void print_pkt(unsigned q, int n)
+{
+	printf("venus: %s pkt type %#x size %u:", q == 1 ? "msgq" : "dbgq", pkt[1], pkt[0]);
+	for (int k = 0; k < n && k < 8; k++)
+		printf(" %08x", pkt[k]);
+	printf("\n");
+	if (pkt[1] == 0x20004 && n > 6) {	/* HFI_MSG_SYS_DEBUG: msg_type, msg_size, timestamp, text */
+		char s[sizeof(pkt)];
+		size_t len = 4u * (unsigned)n - 24;
+		if (pkt[3] < len)
+			len = pkt[3];
+		memcpy(s, pkt + 6, len);
+		s[len] = 0;
+		for (size_t k = 0; k < len && s[k]; k++)
+			if (s[k] < 0x20 || s[k] > 0x7e)
+				s[k] = ' ';
+		printf("venus: fw [%#x]: %s\n", pkt[2], s);
+	}
+}
+
+/* drain the debug queue, then the message queue until a packet of type want (0 = just drain); 0 = got it */
+static int wait_msg(uint32_t want, unsigned ms)
+{
+	for (unsigned t = 0; t <= ms; t++) {
+		int n;
+		while ((n = q_read(2)) > 0)
+			print_pkt(2, n);
+		while ((n = q_read(1)) > 0) {
+			print_pkt(1, n);
+			if (pkt[1] == 0x21001 && n > 3 && pkt[3] == 1) {	/* EVENT_NOTIFY, HFI_EVENT_SYS_ERROR */
+				printf("venus: STOP: firmware sys error (data %#x %#x)\n", pkt[4], pkt[5]);
+				print_sfr(qb);
+				return -1;
+			}
+			if (want && pkt[1] == want)
+				return 0;
+		}
+		if (n < 0)
+			return -1;
+		if (t < ms)
+			delay_ms(1);
+	}
+	if (!want)
+		return 0;
+	printf("venus: STOP: no %#x after %u ms\n", want, ms);
+	core_status("timeout");
+	print_sfr(qb);
+	return -1;
+}
+
+static int init(uint64_t phys)
+{
+	struct vstate v;
+	if (state_load(&v) || !v.pas) {
+		printf("venus: refused: no running boot (venusctl boot --keep first)\n");
+		return 1;
+	}
+	if (v.q) {
+		printf("venus: refused: queues already set up at %#llx (venusctl shutdown first)\n",
+		       (unsigned long long)v.q);
+		return 1;
+	}
+	if (!core_ok()) {
+		printf("venus: refused: a video clock or GDSC is off\n");
+		return 1;
+	}
+	core_status("before init");
+	uint64_t q;
+	if (phys) {
+		if ((phys & 0xfffff) || phys < FIXED_LO || phys + QSHARED > FIXED_HI) {
+			printf("venus: refused: --phys %#llx: 1 MB aligned, %#llx-%#llx\n", (unsigned long long)phys,
+			       FIXED_LO, FIXED_HI);
+			return 1;
+		}
+		q = phys;
+		v.qkind = 2;
+	} else {
+		q = pm_alloc32(QSHARED, 0x100000);	/* UC region address is bits 31:20 (vidc_hfi_io.h HFI_DSP_UC_REGION_ADDR) */
+		if (!q) {
+			printf("venus: STOP: PMEM_ALLOC32 failed: rerun with --phys ADDR (1 MB aligned, %#llx-%#llx)\n",
+			       FIXED_LO, FIXED_HI);
+			return 1;
+		}
+		v.qkind = 1;
+	}
+	v.q = q;
+	state_save(&v);
+	/* device addresses are physical (identity bank) and 32-bit; below CP_SIZE is the content-protected range */
+	if (q < CP_SIZE || q + QSHARED > 0x100000000ull) {
+		printf("venus: STOP: queue block %#llx outside %#x-4 GB\n", (unsigned long long)q, CP_SIZE);
+		return 1;
+	}
+	qb = q;
+	static uint8_t zeros[0x10000];
+	for (uint32_t o = 0; o < QSHARED; o += sizeof(zeros))
+		if (pm_wr(q + o, zeros, sizeof(zeros)))
+			return 1;
+	/* __interface_queues_init (venus_hfi.c:1898-2052) */
+	uint32_t t[QTBL_SIZE / 4];
+	memset(t, 0, sizeof(t));
+	t[0] = 0;		/* qtbl_version */
+	t[1] = QTBL_SIZE;
+	t[2] = QHDR0;
+	t[3] = QHDR_SIZE;
+	t[4] = 3;		/* num_q */
+	t[5] = 3;		/* num_active_q */
+	/* t[6..7] device_addr: a host pointer downstream, 0 here */
+	memcpy(&t[8], "msm_v4l2_vidc", 14);
+	for (unsigned i = 0; i < 3; i++) {
+		uint32_t *h = &t[(QHDR0 + QHDR_SIZE * i) / 4];	/* __set_queue_hdr_defaults */
+		h[0] = 1;				/* status */
+		h[1] = (uint32_t)qstart(i);		/* start_addr = device address */
+		h[2] = 0x01010000u | i;			/* VIDC_IFACEQ_DFLT_QHDR | queue id */
+		h[3] = QSIZE / 4;
+		h[6] = 1;				/* rx_wm */
+		h[7] = 1;				/* tx_wm */
+		h[8] = i == 2 ? 0 : 1;			/* rx_req: 0 on the debug queue */
+	}
+	pm_wr(q, t, sizeof(t));
+	wr32(q + SFR_OFF, SFR_SIZE);	/* hfi_sfr_struct bufSize */
+	printf("venus: queue block %#llx (%s): table %#x, cmdq %#llx msgq %#llx dbgq %#llx, SFR %#llx\n",
+	       (unsigned long long)q, v.qkind == 1 ? "PMEM_ALLOC32" : "--phys", QTBL_SIZE, (unsigned long long)qstart(0),
+	       (unsigned long long)qstart(1), (unsigned long long)qstart(2), (unsigned long long)(q + SFR_OFF));
+	/* __setup_ucregion_memory_map (venus_hfi.c:1881-1896) + setup_dsp_uc_memmap_vpu5 (4685-4692); no QDSS */
+	wr(UC_ADDR, (uint32_t)q, "UC_REGION_ADDR");
+	wr(UC_SIZE, QSHARED, "UC_REGION_SIZE");
+	wr(QTBL_ADDR, (uint32_t)q, "QTBL_ADDR");
+	wr(QTBL_INFO, 1, "QTBL_INFO");
+	wr(SFR_ADDR, (uint32_t)(q + SFR_OFF), "SFR_ADDR");
+	wr(CS_VMIMSG, (uint32_t)q, "DSP_QTBL_ADDR");
+	wr(CS_VMIMSGAG0, (uint32_t)q, "DSP_UC_REGION_ADDR");
+	wr(CS_VMIMSGAG1, QSHARED, "DSP_UC_REGION_SIZE");
+	/* __boot_firmware (venus_hfi.c:1265-1290): CTRL_INIT = 1 (no CVP domain in the DT), wait for a status */
+	wr(CTRL_INIT, 1, "CTRL_INIT");
+	uint32_t st = 0;
+	unsigned ms;
+	for (ms = 0; ms <= 1000; ms++) {
+		st = crd(CTRL_STATUS);
+		if (st & (ST_INIT | ST_ERROR))
+			break;
+		delay_ms(1);
+	}
+	v.init = (st & ST_INIT) && !(st & ST_ERROR);
+	state_save(&v);
+	printf("venus: CTRL_STATUS %#010x after %u ms: init %u, error %#x%s\n", st, ms, st & ST_INIT, st & ST_ERROR,
+	       (st & ST_ERROR) == 4 ? " (invalid UC_REGION)" : "");
+	core_status("after init");
+	if (!v.init) {
+		printf("venus: STOP: %s\n", st & ST_ERROR ? "firmware reports an error" : "no init status after 1 s");
+		print_sfr(q);
+		return 1;
+	}
+	printf("venus: init ok: next venusctl ping, or venusctl shutdown\n");
+	return 0;
+}
+
+static int ping(uint32_t debug)
+{
+	struct vstate v;
+	if (state_load(&v) || !v.init || !v.q) {
+		printf("venus: refused: no initialised firmware (venusctl boot --keep, then init)\n");
+		return 1;
+	}
+	if (!core_ok()) {
+		printf("venus: refused: a video clock or GDSC is off\n");
+		return 1;
+	}
+	qb = v.q;
+	core_status("before ping");
+	if (wait_msg(0, 0))
+		return 1;
+	if (v.sysinit) {
+		printf("venus: SYS_INIT already sent in an earlier run, skipped\n");
+	} else {
+		uint32_t sys_init[3] = { 12, 0x10001, 1 };	/* HFI_CMD_SYS_INIT, HFI_VIDEO_ARCH_OX */
+		if (q_write(sys_init) || wait_msg(0x20001, 1000))
+			return 1;
+		printf("venus: SYS_INIT_DONE error %#x, %u properties\n", pkt[2], pkt[3]);
+		if (pkt[2]) {
+			printf("venus: STOP: SYS_INIT_DONE with an error\n");
+			return 1;
+		}
+		v.sysinit = 1;
+		state_save(&v);
+	}
+	/* create_pkt_cmd_sys_debug_config: SYS_SET_PROPERTY, SYS_DEBUG_CONFIG {mask, HFI_DEBUG_MODE_QUEUE} + pad */
+	uint32_t dbg[7] = { 28, 0x10005, 1, 0x1, debug, 1, 0 };
+	if (q_write(dbg) || wait_msg(0, 100))
+		return 1;
+	/* create_pkt_cmd_sys_image_version: SYS_GET_PROPERTY IMAGE_VERSION -> SYS_PROPERTY_INFO 0x2000a */
+	uint32_t ver[4] = { 16, 0x10006, 1, 0x6 };
+	if (q_write(ver) || wait_msg(0x2000a, 1000))
+		return 1;
+	if (pkt[0] >= 16 + 128 && pkt[3] == 0x6) {	/* hfi_process_sys_get_prop_image_version: 128 bytes at word 4 */
+		char s[129];
+		memcpy(s, pkt + 4, 128);
+		for (int k = 0; k < 128; k++)
+			if (s[k] < 0x20 || s[k] > 0x7e)
+				s[k] = ' ';
+		s[128] = 0;
+		printf("venus: firmware image version: %s\n", s);
+	} else {
+		printf("venus: property info without an image version (size %u, property %#x)\n", pkt[0], pkt[3]);
+	}
+	uint32_t pg[3] = { 12, 0x210002, 0x76656e75 };	/* HFI_CMD_SYS_PING; client_data: our own cookie */
+	if (q_write(pg) || wait_msg(0x220002, 1000))
+		return 1;
+	printf("venus: PING_ACK client_data %#x%s\n", pkt[2], pkt[2] == pg[2] ? "" : " (not our cookie)");
+	wait_msg(0, 50);
+	core_status("after ping");
+	printf("venus: ping ok (stage 2 go): venusctl shutdown, then power off\n");
+	return 0;
+}
+
+static int shutdown_cmd(void)
+{
+	struct vstate v;
+	if (state_load(&v)) {
+		printf("venus: no %s: nothing to undo\n", STATE);
+		return 0;
+	}
+	printf("venus: state: pas %d, %d SMRs, queues %#llx (kind %d), init %d, sysinit %d\n", v.pas, v.nsmr,
+	       (unsigned long long)v.q, v.qkind, v.init, v.sysinit);
+	if (v.q && v.pas && core_ok()) {
+		qb = v.q;
+		wait_msg(0, 0);	/* last firmware words */
+		core_status("before shutdown");
+	}
+	int r = teardown(&v);
+	printf("venus: shutdown %s: next venusctl power off\n", r ? "FAILED" : "ok");
+	return r;
+}
+
 int main(int argc, char **argv)
 {
 	const char *fw = NULL, *cmd = NULL, *arg = NULL;
-	int no_shutdown = 0;
+	int no_shutdown = 0, keep = 0;
+	uint64_t phys = 0;
+	uint32_t debug = 0x18;	/* HFI_DEBUG_MSG_ERROR | FATAL (guess: msm_vidc_debug.c's default is not in our source copy) */
 	setvbuf(stdout, NULL, _IOLBF, 0);	/* a hang shows the last line */
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-v"))
@@ -690,8 +1396,14 @@ int main(int argc, char **argv)
 			cvp = 1;
 		else if (!strcmp(argv[i], "--no-shutdown"))
 			no_shutdown = 1;
+		else if (!strcmp(argv[i], "--keep"))
+			keep = 1;
 		else if (!strcmp(argv[i], "--fw") && i + 1 < argc)
 			fw = argv[++i];
+		else if (!strcmp(argv[i], "--phys") && i + 1 < argc)
+			phys = strtoull(argv[++i], NULL, 0);
+		else if (!strcmp(argv[i], "--debug") && i + 1 < argc)
+			debug = (uint32_t)strtoul(argv[++i], NULL, 0);
 		else if (!cmd)
 			cmd = argv[i];
 		else if (!arg)
@@ -701,6 +1413,10 @@ int main(int argc, char **argv)
 	}
 	if (!cmd)
 		goto usage;
+	if (!fw) {	/* the vendor partition's copy, else a copy under /var/local (out of git) */
+		struct stat st;
+		fw = stat("/vendor/firmware/venus.mdt", &st) == 0 ? "/vendor/firmware" : "/var/local/fw/venus";
+	}
 	pm_init();
 	if (!strcmp(cmd, "probe") && !arg)
 		return probe();
@@ -708,13 +1424,18 @@ int main(int argc, char **argv)
 		return power_on();
 	if (!strcmp(cmd, "power") && arg && !strcmp(arg, "off"))
 		return power_off();
-	if (!strcmp(cmd, "pas-check") && !arg) {
-		struct stat st;
-		if (!fw)	/* the vendor partition's copy, else a copy under /var/local (out of git) */
-			fw = stat("/vendor/firmware/venus.mdt", &st) == 0 ? "/vendor/firmware" : "/var/local/fw/venus";
+	if (!strcmp(cmd, "pas-check") && !arg)
 		return pas_check(fw, no_shutdown);
-	}
+	if (!strcmp(cmd, "boot") && !arg)
+		return boot(fw, keep);
+	if (!strcmp(cmd, "init") && !arg)
+		return init(phys);
+	if (!strcmp(cmd, "ping") && !arg)
+		return ping(debug);
+	if (!strcmp(cmd, "shutdown") && !arg)
+		return shutdown_cmd();
 usage:
-	fprintf(stderr, "usage: venusctl [-v] probe | power on|off [--cvp] | pas-check [--fw DIR] [--no-shutdown]\n");
+	fprintf(stderr, "usage: venusctl [-v] probe | power on|off [--cvp] | pas-check [--fw DIR] [--no-shutdown]\n"
+		"       | boot [--fw DIR] [--keep] | init [--phys ADDR] | ping [--debug MASK] | shutdown\n");
 	return 2;
 }

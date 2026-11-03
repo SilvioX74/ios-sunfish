@@ -60,6 +60,21 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 23:00 venusctl: boot, init, ping, shutdown written (stage 2 steps 4-6), not run yet
+- phone/wifi/venusctl.c: `boot [--fw DIR] [--keep]` (exact SMRs via smmu.c smmu_identity mask 0 for 0x1080/0x10a0/
+  0x10c0/0x10e0, one translation-off bank each; refuses if any SMR already matches; CPU_CGC_DIS/CPU_CLOCK_CONFIG = 0;
+  PAS init_image/mem_setup/load to 0x94800000/auth_and_reset(9); memory protect 0x42000c08 (0, 0x25800000,
+  0x1000000, 0x24800000); status reads), `init [--phys ADDR]` (3 MB block from PMEM_ALLOC32, else only an explicit
+  1 MB-aligned address in 0xa5100000-0xbcc00000; table/queues as downstream, SFR at +0x2fe000; UC/QTBL/SFR/VMIMSG
+  registers, CTRL_INIT = 1, 1 s poll), `ping [--debug MASK]` (SYS_INIT, debug config, IMAGE_VERSION, SYS_PING, message
+  queue polled), `shutdown` (PAS shutdown, queue memory, SMRs from /var/tmp/venusctl.state). Every core access gated on
+  the clocks/GDSCs. Off switches: VENUSCTL_SID1=1, VENUSCTL_NO_CLKCFG=1, VENUSCTL_NO_MEMPROT=1.
+- Guesses: SFR inside the UC region at +0x2fe000 (downstream allocates it right after the 0x2fe000 queue block);
+  debug mask 0x18 (ERROR|FATAL; downstream default not in our source copy); doorbell only when cmdq rx_req = 1 (as
+  downstream); ping client_data is our cookie; interrupt_init_vpu5 (INTR_MASK) left out (we poll).
+- tools/sunfish-venus-test.sh probe|power|pas|boot|ping: the venusctl sequence per step over sunfish-ssh, always ending
+  with shutdown + power off (probe excepted: read-only).
+
 ### 2026-11-02 22:50 venusctl: AHB HW_CTL handling
 - Seen in vd1 `venusctl probe`: gcc_video_ahb 0x10b004 = 0x80000003 (CLK_ENABLE 1, HW_CTL 1, CLK_OFF 1), gcc_video_axi
   0x10b01c = 0x80000000, gcc_video_xo 0x10b028 = 0x80000000. The "AHB on" gate (CLK_OFF = 0) never passed.

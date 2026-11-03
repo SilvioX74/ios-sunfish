@@ -7,7 +7,7 @@ mkdir -p out
 ../../tools/linux-ios-sign out/wland 2>/dev/null
 ../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/adspboot adspboot.c fastrpc.c smem.c pmem.c glink.c smmu.c pdmapper.c qmi.c geni_i2c.c cs35l41.c ../sensors/sns_run.c ../sensors/dm_fusion.c ../sensors/sensor.c ../sensors/sns.c ../sensors/pb.c ../sensors/sns_link.c -lm
 ../../tools/linux-ios-sign out/adspboot 2>/dev/null
-../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/venusctl venusctl.c pmem.c	# video stage 2
+../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/venusctl venusctl.c pmem.c smmu.c	# video stage 2
 ../../tools/linux-ios-sign out/venusctl 2>/dev/null
 ../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/af_feed af_feed.c -lm	# sp23: test feeder for --audio-fifo
 ../../tools/linux-ios-sign out/af_feed 2>/dev/null
