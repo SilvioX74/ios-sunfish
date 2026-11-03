@@ -91,6 +91,11 @@ NmbTexture *nmb_heap_new_texture(const NmbHeap *, const struct NmbTextureDescrip
 NmbTexture *nmb_texture_new(NmbDevice *, const struct NmbTextureDescriptor *);
 /* A linear texture over a buffer's bytes; iosurface marks the buffer as standing for a surface without planes (Metal's IOSurface rules). */
 NmbTexture *nmb_texture_new_on_buffer(NmbBuffer *, const struct NmbTextureDescriptor *, uint64_t offset, uint64_t bytes_per_row, bool iosurface);
+/* 0127 (G7, after UniXNU/AdrenoMetal 243d63c, MIT): a texture over one plane of a planar surface (offset, bytes_per_row: that plane's).
+   chroma_bytes_per_row non-zero: a two-plane format (YCbCr 500-530, 540-545; XR10 550/551) reading plane 1 at chroma_offset, over a surface
+   of OSType pixel_format and width x height; matrix: kIOSurfaceYCbCrMatrix, 0 none, 1 BT.601, 2 BT.709, 3 BT.2020, 4 SMPTE 240M, 5 other. */
+NmbTexture *nmb_texture_new_on_surface(NmbBuffer *, const struct NmbTextureDescriptor *, uint64_t offset, uint64_t bytes_per_row, uint32_t pixel_format,
+                                       uint64_t plane, uint64_t width, uint64_t height, uint64_t chroma_offset, uint64_t chroma_bytes_per_row, uint32_t matrix);
 NmbTexture *nmb_texture_new_linear(NmbBuffer *, const struct NmbTextureDescriptor *, uint64_t offset, uint64_t bytes_per_row, uint64_t bytes_per_image);
 /* whole: a view of every level and slice as format; else levels and slices are {start, count} and kind the view's texture type. */
 NmbTexture *nmb_texture_new_view(NmbTexture *, uint64_t format, uint64_t kind, const uint64_t levels[2], const uint64_t slices[2], bool whole);

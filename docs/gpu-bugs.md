@@ -26,6 +26,8 @@ each of its runs to "Bench runs" below; add the counts by hand after each soak.
 Failed recoveries leave `device refused: OutOfMemory(Device)` and CPU drawing until reboot (G1). CPU drawing can reach
 60 swaps/s on some screens, so a good speed number alone doesn't prove the GPU ran. Silent resets are backlog B4.
 
+G7 facts (2026-11-03): seen from Maps (`420f fmt 540 plane 0`, boot 20261103-062614, s7c UI soak). Frontend/bridge 0127 (not yet on the phone) sends planar surfaces to the runtime's GPU YCbCr path first, with 0112's CPU copy as fallback (off: `SWEET_YCBCR_GPU=0`); bridge 0126 skips the two-plane zero-fill (off: `SWEET_M2V_TWO_PLANE_ZERO=1`). The log line to count becomes `SWEET YCBCR: ... -> refused`.
+
 ## 2026-11-01: G1 rate with SWEET_CULL=2
 G1 by setup since df5: mode 2 or 3 without cull: 2 in about 500 k submits (df5, rows2 excluded: 3 more at 1248 MHz); with SWEET_CULL=2: 3 in about 143 k (cu1, ni1, br1; sy1-style runs excluded). All no-fault, recovery failed. That is more than double: by the rule, cull went off the everyday setup. Update 10:15: a76r (cull on) 1 more; lo0 and lo2 (cull off) 2 in about 34 k. Overnight mode 3 without cull had 0 in about 250 k, all at DCS 33-36 (minimum). So brightness or daytime state may matter as much as cull: confounded. G1 now voids benches often, so it qualifies for fixing.
 

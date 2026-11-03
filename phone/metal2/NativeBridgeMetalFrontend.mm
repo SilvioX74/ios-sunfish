@@ -2355,13 +2355,18 @@ static char sweetMemoryOwnerKey;
 // 0112 (camera preview): textures over planar IOSurfaces, after ios-redfin (MIT). YCBCR8_420_2P(_sRGB) (500/501) over a 420v/420f surface
 // becomes an RGBA8(_sRGB) copy converted on the CPU (BT.601, video or full range by the fourcc); RGB10A8_2P_XR10(_sRGB) (550/551) a
 // BGRA8(_sRGB) copy (XR10 colour from plane 0, alpha from plane 1). Filled again when the surface's seed moved on (checked at every bind).
-// Every other planar kind is refused and logged once. Off: M2V_PLANAR=0 (all planar surfaces refused, as before).
+// Since 0127 the fallback of the GPU path below. Off: M2V_PLANAR=0 (all planar surfaces refused, as before).
 static bool planarOn() {static const bool on=[]{const char *p=getenv("M2V_PLANAR");return !p||strcmp(p,"0");}();return on;}
-static void planarRefused(OSType fourcc,NSUInteger format,NSUInteger plane) {
+// 0127 (G7): one line per new kind (OSType, format, plane, outcome; at most 128 kinds a process), as SWEET YCBCR: <fourcc> fmt N plane P WxH
+// -> gpu|cpu|refused (why). It replaces 0112's "planar iosurface refused" line.
+static void ycbcrNote(IOSurfaceRef surface,MTLTextureDescriptor *d,NSUInteger plane,unsigned outcome,NSString *why) {
+ static const char *const names[]={"gpu","cpu","refused"};
  static std::mutex lock;static std::vector<uint64_t> seen;
- const uint64_t key=((uint64_t)fourcc<<32)|((uint64_t)format<<4)|(plane&15);
- {std::lock_guard<std::mutex> hold(lock);if(std::find(seen.begin(),seen.end(),key)!=seen.end())return;seen.push_back(key);}
- NBLOG(@"native-metal: planar iosurface refused: %c%c%c%c fmt %lu plane %lu",(char)(fourcc>>24),(char)(fourcc>>16),(char)(fourcc>>8),(char)fourcc,(unsigned long)format,(unsigned long)plane);
+ const OSType fourcc=IOSurfaceGetPixelFormat(surface);const NSUInteger format=d.pixelFormat;
+ const uint64_t key=((uint64_t)fourcc<<32)|((uint64_t)(format&0xffffff)<<8)|((plane&15)<<4)|(outcome&3);
+ {std::lock_guard<std::mutex> hold(lock);if(seen.size()>=128 || std::find(seen.begin(),seen.end(),key)!=seen.end())return;seen.push_back(key);}
+ NBLOG(@"SWEET YCBCR: %c%c%c%c fmt %lu plane %lu %lux%lu -> %s%@",(char)(fourcc>>24),(char)(fourcc>>16),(char)(fourcc>>8),(char)fourcc,(unsigned long)format,
+  (unsigned long)plane,(unsigned long)d.width,(unsigned long)d.height,names[outcome<3?outcome:2],why.length?[NSString stringWithFormat:@" (%@)",why]:@"");
 }
 static inline uint8_t clamp8(int v) {return (uint8_t)(v<0?0:v>255?255:v);}
 static void planarFill(NBTexture *t) {
@@ -2402,23 +2407,71 @@ static void planarFill(NBTexture *t) {
  [t replaceRegion:MTLRegionMake2D(0,0,w,h) mipmapLevel:0 withBytes:out.data() bytesPerRow:w*4];
  t.planarSeed=seed;
 }
+// 0127 (G7): textures over planar IOSurfaces on the runtime's own GPU path (ycbcr.rs, texture/surface_two_planes.rs). The whole surface is
+// imported once without a copy and the texture starts at the asked plane's address and rows. Over a two-plane surface the runtime also gets
+// the surface's OSType, size, plane 1 and kIOSurfaceYCbCrMatrix: a two-plane YCbCr format (500-510, 520-530, 540-545) or XR10 (550/551) is
+// converted on the GPU at each use, and a plane read alone (CVMetalTextureCache and decoders: R8Unorm plane 0, RG8Unorm plane 1) is a plain
+// texture over that plane. Ported from UniXNU/AdrenoMetal 243d63c NativeBridgeMetalFrontend.mm:1290-1302 (textureOnSurface) and :4174-4196
+// (newTextureWithDescriptor:iosurface:plane:) (MIT); the matrix is ours. A refusal falls back to 0112's CPU copy where it has one.
+// Off: SWEET_YCBCR_GPU=0 (0112 alone, as before).
+static bool ycbcrGpuOn() {static const bool on=[]{const char *p=getenv("SWEET_YCBCR_GPU");return !p||strcmp(p,"0");}();return on;}
+extern "C" const CFStringRef kIOSurfaceYCbCrMatrix __attribute__((weak_import));   // exported by IOSurface.framework, not in the SDK's headers
+// The surface's matrix as nmb_texture_new_on_surface takes it: 0 none (or not a string), 1 BT.601, 2 BT.709, 3 BT.2020, 4 SMPTE 240M, 5 another.
+static uint32_t surfaceMatrix(IOSurfaceRef surface) {
+ if(!&kIOSurfaceYCbCrMatrix || !kIOSurfaceYCbCrMatrix)return 0;
+ CFTypeRef value=IOSurfaceCopyValue(surface,kIOSurfaceYCbCrMatrix);if(!value)return 0;
+ uint32_t matrix=0;
+ if(CFGetTypeID(value)==CFStringGetTypeID()){
+  NSString *name=(__bridge NSString *)value;
+  matrix=[name isEqualToString:@"ITU_R_601_4"]?1:[name isEqualToString:@"ITU_R_709_2"]?2:[name isEqualToString:@"ITU_R_2020"]?3:[name isEqualToString:@"SMPTE_240M_1995"]?4:5;
+ }
+ CFRelease(value);return matrix;
+}
+static NBTexture *planeTexture(MTLTextureDescriptor *d,IOSurfaceRef surface,NSUInteger plane,NSString **why) {
+ const size_t planes=IOSurfaceGetPlaneCount(surface);
+ if(plane>=planes){*why=[NSString stringWithFormat:@"the surface has %zu planes",planes];return nil;}
+ void *base=IOSurfaceGetBaseAddress(surface);const size_t page=(size_t)getpagesize(),allocation=IOSurfaceGetAllocSize(surface);
+ if(!page || (page&(page-1)) || !base || ((uintptr_t)base&(page-1)) || !allocation || allocation>SIZE_MAX-(page-1)){*why=@"base or allocation not page-sized";return nil;}
+ const uintptr_t start=(uintptr_t)IOSurfaceGetBaseAddressOfPlane(surface,plane);const size_t row=IOSurfaceGetBytesPerRowOfPlane(surface,plane);
+ if(start<(uintptr_t)base || start-(uintptr_t)base>=allocation || !row){*why=@"plane outside the allocation or without rows";return nil;}
+ NBBuffer *buffer=surfaceBuffer(surface,base,(allocation+page-1)&~(page-1));if(!buffer){*why=@"surface import";return nil;}
+ NmbTextureDescriptor descriptor;if(!textureDescriptor(d,&descriptor)){*why=@"descriptor";return nil;}
+ const uint64_t offset=start-(uintptr_t)base;
+ const uintptr_t chroma=planes>=2?(uintptr_t)IOSurfaceGetBaseAddressOfPlane(surface,1):0;
+ const uint64_t chromaOffset=chroma>=(uintptr_t)base?chroma-(uintptr_t)base:0,chromaRow=planes>=2?IOSurfaceGetBytesPerRowOfPlane(surface,1):0;
+ const uint32_t matrix=surfaceMatrix(surface);
+ NmbTexture *handle=nmb_texture_new_on_surface(buffer.handle,&descriptor,offset,row,IOSurfaceGetPixelFormat(surface),plane,IOSurfaceGetWidth(surface),
+  IOSurfaceGetHeight(surface),chromaOffset,chromaRow,matrix);
+ noteFormat((uint32_t)descriptor.format,handle!=nullptr);
+ if(!handle){*why=lastError();return nil;}
+ NBTexture *texture=[NBTexture new];texture.handle=handle;nmb_texture_describe(handle,&descriptor);texture.descriptor=descriptor;
+ texture.buffer=buffer;texture.offset=offset;texture.rowBytes=row;texture.surface=(IOSurfaceRef)CFRetain(surface);
+ *why=[NSString stringWithFormat:@"offset %llu row %zu matrix %u",(unsigned long long)offset,row,matrix];
+ return texture;
+}
 // The surface's pages are the texels: its mapping in this process is imported without a copy (pinned by the kernel, mapped into the GPU's
 // 4 KiB context by Turnip), so every process that imports the surface renders and samples the same memory.
 - (id<MTLTexture>)newTextureWithDescriptor:(MTLTextureDescriptor *)d iosurface:(IOSurfaceRef)surface plane:(NSUInteger)plane {
  if(!surface || !d)return nil;
  if(IOSurfaceGetPlaneCount(surface)){
   const OSType fourcc=IOSurfaceGetPixelFormat(surface);const NSUInteger f=d.pixelFormat;
+  NSString *gpuWhy=planarOn()?@"SWEET_YCBCR_GPU=0":@"M2V_PLANAR=0";
+  if(planarOn() && ycbcrGpuOn()){   // 0127: the GPU path first
+   NBTexture *texture=planeTexture(d,surface,plane,&gpuWhy);
+   if(texture){ycbcrNote(surface,d,plane,0,gpuWhy);return (id<MTLTexture>)texture;}
+   gpuWhy=[@"gpu: " stringByAppendingString:gpuWhy?:@"?"];
+  }
   const bool yuv=(f==500 || f==501) && (fourcc=='420v' || fourcc=='420f'),xr=(f==550 || f==551);
-  if(!planarOn() || plane || (!yuv && !xr) || IOSurfaceGetPlaneCount(surface)<2 || d.textureType!=MTLTextureType2D){planarRefused(fourcc,f,plane);return nil;}
+  if(!planarOn() || plane || (!yuv && !xr) || IOSurfaceGetPlaneCount(surface)<2 || d.textureType!=MTLTextureType2D){ycbcrNote(surface,d,plane,2,gpuWhy);return nil;}
   if(b44On())b44Desc("iosurfacePlanar",d,IOSurfaceGetBytesPerRowOfPlane(surface,0),[NSString stringWithFormat:@"surface %c%c%c%c %zux%zu planes %zu",
    (char)(fourcc>>24),(char)(fourcc>>16),(char)(fourcc>>8),(char)fourcc,IOSurfaceGetWidth(surface),IOSurfaceGetHeight(surface),IOSurfaceGetPlaneCount(surface)]);
   MTLTextureDescriptor *own=[d copy];
   own.pixelFormat=yuv?(f==501?MTLPixelFormatRGBA8Unorm_sRGB:MTLPixelFormatRGBA8Unorm):(f==551?MTLPixelFormatBGRA8Unorm_sRGB:MTLPixelFormatBGRA8Unorm);
   own.storageMode=MTLStorageModeShared;own.usage=MTLTextureUsageShaderRead;own.mipmapLevelCount=1;
   NBTexture *texture=(NBTexture *)[(id<MTLDevice>)self newTextureWithDescriptor:own];
-  if(!texture){planarRefused(fourcc,f,plane);return nil;}
+  if(!texture){ycbcrNote(surface,d,plane,2,gpuWhy);return nil;}
   texture.planarSurface=(IOSurfaceRef)CFRetain(surface);texture.planarSeed=IOSurfaceGetSeed(surface)-1;planarFill(texture);
-  return (id<MTLTexture>)texture;
+  ycbcrNote(surface,d,plane,1,gpuWhy);return (id<MTLTexture>)texture;
  }
  if(plane)return nil;
  void *base=IOSurfaceGetBaseAddress(surface);const size_t page=(size_t)getpagesize(),allocation=IOSurfaceGetAllocSize(surface);
