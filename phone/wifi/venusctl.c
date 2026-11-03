@@ -1843,6 +1843,16 @@ static void frame_out(uint32_t pa, const uint32_t *f)
 		dc.fbuf_len = dc.fbuf ? need : 0;
 	}
 	double c0 = now_s();
+	static int nocopy = -1;	/* v4a0: VENUSCTL_NOCOPY=1 skips the copy-out (pure decode speed; OUT gets nothing) */
+	if (nocopy < 0)
+		nocopy = getenv("VENUSCTL_NOCOPY") && atoi(getenv("VENUSCTL_NOCOPY"));
+	if (nocopy && dc.fbuf) {
+		if (!dc.frames)
+			dc.t_first = c0;
+		dc.t_last = c0;
+		dc.frames++;
+		return;
+	}
 	int rd = !dc.fbuf || big_io(pa, dc.fbuf, need, 0);
 	double c1 = now_s();
 	dc.cp_sum += c1 - c0;
