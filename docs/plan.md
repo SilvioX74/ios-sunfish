@@ -52,11 +52,12 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
    being written; then a real WebGL game for 15 min (the 3D target) and WebGL 2.
 2. Stage 4 (video.md "Stage 4 spec"): 4a0 kernel patch giving the pmem Venus window 0233's write-combined mapping,
    measure MB/s; then 4a `venusd` + test client (fps on a 60 s 1080p clip).
-3. Metal→Vulkan prior-art survey (the user, 2026-11-03): we are 821 commits behind metal2vulkan (720ef1ce vs
-   bf3ce381); AdrenoMetal, darlinghq indium/darling-metal, iglunix indium cloned to research/re; two investigators
-   running; decide rebase/cherry-pick before more bridge work. (dipa-studio/ios-extra: not found on GitHub.)
-4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
-   (METAL2_VARIANT=next, LC_UUID 4C4C444C-...-BBFD7B88C1E1, not installed), then a 5-boot A/B on settings, cc, home.
+3. Metal→Vulkan survey done (research/notes/upstream-2026-11-03-metal2vulkan-survey.md, upstream-2026-11-03-metal.md):
+   STAY on metal2vulkan 720ef1ce + cherry-pick (upstream e35bf78b deleted the zero-copy host-page images our B29 work
+   needs; rebase 4-6 days). Next, in order: G7 YCbCr planes via the pin's ycbcr.rs (port AdrenoMetal bridge 1125-1136,
+   2-3 h; video 4d), WebGL 2 argument encoders (pin has argument_encoder.rs; 4-6 h), cherry-pick bf3ce381 (1-2 h).
+   darling indium/darling-metal/iglunix indium: nothing better than ours.
+4. Bridge 0125 pass cache: = upstream 86b5d6fa; A/B dropped, revisit only with 86b5d6fa (survey item 5).
 5. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
