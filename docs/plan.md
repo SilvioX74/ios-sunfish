@@ -45,11 +45,11 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 stops phone work, or doubles in rate after a change (then turn that change off first).
 
 ## Phone
-Claude's. Up since the everyday boot venusR (2026-11-03 06:25, kernel158), slider at minimum.
-Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76
-1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 5a76e18
-(SweetMetal2 4C4C4448); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
-TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 sweetgpucap=512 (tag ht2, ~14:40), bundle 691c87d (direct planar conversion), venusd 007f8b1 + vtvenus (hvc1) installed, venusd from launchd. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
+Claude's. On kernel161 (= kernel158 + xnu 0277 WC/0278 cached Venus window + 0279 RPMh fix) since 15:32 (tag rpmh1),
+bundle 691c87d (direct planar conversion), venusd f461433 (Interactive launchd job) + vtvenus (avc1/hvc1), wland 356c09a
+(HT20, Interactive). Everyday boot: `tools/sunfish-test.sh -k 161 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6
+sweetampreset=1 sweetpmemwc=2 sweetgpucap=512`. /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20,
+SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1.
 
 ## Next (in this order)
 1. Wi-Fi CPU: userland batching (356c09a) didn't help (bat, 20:40); the per-frame reads + one /dev/wlan write per frame
@@ -59,7 +59,8 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
 3. Other launchd jobs without Interactive (camd, hapticd, sensors, btbridge): A/B each (backlog O-launchd).
 4. GPU: suspect link Venus session start → GPU fault (2 of ~5 hangs today); B53 render-server snapshots intermittently
    empty; B50 Maps; WebGL speed (Optimize).
-5. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
+5. Tonight: night soak n9 on kernel161 with the everyday args above (`tools/sunfish-nightsoak.sh n9`; it sets
+   work/night at 21:30): watch for RPMh timeouts (0279's new lines) and GPU hangs.
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15), Files check (U13), touch while plugged in (U14).
