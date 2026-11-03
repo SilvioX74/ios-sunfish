@@ -1,5 +1,5 @@
 # Video playback and hardware decode
-**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, engine bring-up under way. **Updated:** 2026-11-03.
+**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus firmware boots on our kernel and answers HFI (SYS_INIT_DONE, VIDEO.IR.1.2-00053). **Updated:** 2026-11-03.
 
 ## Facts
 - The iPhone X decodes video in hardware (AppleAVD); the port has no AVD, so iOS falls back to software decoders.
@@ -59,6 +59,25 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 06:50 Stage 2 (v2b): the firmware boots and speaks HFI; ping not answered; reboot after
+Same boot as v2a until the planned everyday reboot at 06:25:56 (tag venusR, 4456 mV). Outputs in
+research/notes/venus-runs/2026-11-03-{boot-v,memtest,ping}.txt (gitignored). VENUS_PHYS=0xa5100000.
+- boot (VENUS_V=1) FAIL again only in teardown. smmu_identity: SIDs 0x1080/0x10a0/0x10c0/0x10e0 -> CB19-22 via
+  SMR15-18 (`SMR 80001080 S2CR 00000013 SCTLR 000000e0 CBAR 0001f000 -> ok`). Release: SMRs read 00000000, S2CR
+  0000000e, SCTLR a different random-looking value per bank (e.g. 20438118), "NOT as saved". Bank numbers move
+  between runs (CB23-26 in ping).
+- memtest PASS: 0 of 787456 words changed in 60 s (0xa5100000+0x301000).
+- ping: PAS loads 1101228 bytes at 0x94800000, auth 0/0; queues at 0xa5100000 (cmdq +0x1c8, msgq 0xa51c81c8,
+  dbgq 0xa52901c8, SFR 0xa53fe000); **CTRL_STATUS 0x40000001 after 7 ms (init 1, error 0)**, VERSION_INFO 5,
+  **SYS_INIT_DONE error 0, 75 properties**, firmware log `QC_IMAGE_VERSION_STRING=VIDEO.IR.1.2-00053-PROD-1`, BUILD_TIME
+  May 24 2021. SYS_PING (0x210002) is not acked: firmware logs `HostDriver_GetSessionIdx fail, ID 76656E75 not find`
+  and sends type 0x21001 `0000001c 00021001 76656e75 00000002 00001004 00000000 00000001` (reads word 2 as a session
+  ID). STOP after 1000 ms; pas shutdown 0/0, then the SMMU release check fails -> LEFT POWERED -> everyday reboot.
+- Observed: the Venus core runs Qualcomm's firmware under our kernel and answers HFI over the shared queues. Stage 2's
+  goal (alive and talking) is reached except the ping reply.
+- Next (implementer): release counts as done when the SMR reads invalid (warn on the rest, print saved vs found);
+  ping non-fatal; new `session` step (SYS_SESSION_INIT H.264 decoder + SESSION_END) as the real round trip.
 
 ### 2026-11-03 06:35 Stage 2 on the phone (v2a): probe, power, pas pass; firmware authenticates; boot teardown check fails
 venusctl d0f1da4 (sha256 93726b46...) installed; /var/local/fw/venus: b00 212, b01 6808, b02 1060680, b03 40516,

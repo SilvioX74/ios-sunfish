@@ -23,7 +23,7 @@ Only items Claude can move now. User tasks are listed below and never gate work;
 1. ▶ **Hardware video decode** (Snapdragon 730G video engine, "Venus"), in stages, each a go/no-go (video.md):
    0. Done 2026-11-03: all 4 clips play in software, 250-590 % of one core, max 64 C (video.md s0).
    1. Done 2026-11-02: research, staged spec in video.md (PAS ID 9, HFI gen1, plugin slot ExampleIPB.videodecoder).
-   2. Bring-up with a userland `venusctl` on /dev/pmem (video.md spec): probe, power, pas-check, boot, init, ping.
+   2. Bring-up with `venusctl`: firmware boots and answers SYS_INIT 2026-11-03 (v2b); left: clean teardown, session round trip.
    3. First frame: a phone tool decodes a raw H.264 file to a YUV buffer, checked against a reference.
    4. VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
@@ -50,9 +50,8 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
 ## Next (in this order)
 1. Done 2026-11-03 (s0, video.md): Safari plays all 4 clips in software, 250-590 % CPU, 1080p H.264 drops 5.6 %.
    WebGL context is lost at creation (B55): investigator running; the 3D test waits on it.
-2. Stage 2 on the phone (venusctl d0f1da4 built in work/userland-linux/out, phone has the older 3851cad build: install
-   first): `tools/sunfish-venus-test.sh` probe -> power -> pas -> boot -> memtest -> ping (VENUS_PHYS=0xa5100000),
-   stop at the first failure or "LEFT POWERED". A reset is logged (video.md + journal), then a smaller step.
+2. Stage 2: firmware boots, SYS_INIT_DONE (v2b). Implementer: teardown fix + `session` step; then builder, then
+   `tools/sunfish-venus-test.sh session` on the phone.
 3. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
    (METAL2_VARIANT=next, LC_UUID 4C4C444C-...-BBFD7B88C1E1, not installed), then a 5-boot A/B on settings, cc, home.
 4. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).

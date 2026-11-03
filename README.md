@@ -32,7 +32,7 @@ plan is [docs/plan.md](docs/plan.md).
 | [USB network](docs/features/usb-network.md) | ✅ | Ethernet 192.168.7.2, live kernel log; boot to SSH 16-18 s |
 | [SSH](docs/features/ssh.md) | ✅ | dropbear + dash + toybox; boot to SSH 16-18 s |
 | [Display](docs/features/display.md) | ✅ | 1080x2340, GPU-composited (Metal → Turnip), vsync-paced; apps rotate to landscape and back on command (`R 3`/`R 1`), touch follows; auto-rotate waits for sensors |
-| [Video](docs/features/video.md) | 🟡 | Safari plays H.264 and HEVC 720p/1080p in software (250-590 % CPU, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads in mediaserverd, engine bring-up under way (2026-11-03) |
+| [Video](docs/features/video.md) | 🟡 | Safari plays H.264 and HEVC 720p/1080p in software (250-590 % CPU, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads in mediaserverd, the Venus engine boots Qualcomm's firmware and answers HFI (2026-11-03) |
 | [Smoothness](docs/features/smoothness.md) | 🟡 | Safari 60, Settings 57 (p95 19.3 ms, no low launches since kernel157's vsync phase, 2026-11-02), Home about 53, Control Center 43.8 swaps/s (TU_FETCH_GMEM_MIN_DRAWS=20 and the cover cull SWEET_CULL=3, 2026-11-02), full resolution, defaults since 2026-11-02: luma boost off, was env SWEET_DEADFILL=3 M2V_SHADOW_CACHE=1 SWEET_U0011..14=1 + tools/sunfish-install-ccscale.sh (2026-11-01, kernel139, not default yet); target 60 |
 | [Haptics](docs/features/haptics.md) | ✅ | iOS haptics work: switch taps pulse the motor (DRV2624 via hapticd, launchd job, `HAPTICS=1` boot); feel check by the user open |
 | [Brightness](docs/features/brightness.md) | ✅ | Control Center slider drives the panel brightness (DCS 0x51, `sweetbl=2`) |
