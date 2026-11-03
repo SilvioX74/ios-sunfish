@@ -54,8 +54,8 @@ SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh); backboardd en
 ## Next (in this order)
 1. Wi-Fi CPU: userland batching (356c09a) didn't help (bat, 20:40); the per-frame reads + one /dev/wlan write per frame
    dominate: a kernel batched input path is the next step (parked behind the items below).
-2. Video CPU: credit path done (mediaserverd 55 -> 20, venusd 32 -> 10, 0 drops). Left: backboardd ~45 (vImage
-   conversion), network ~40, the first-session "error -60 at frame 17" resync.
+2. Video CPU: credit path done (mediaserverd 55 -> 20, venusd 32 -> 10, 0 drops). Left: backboardd ~45 (vImage; bridge 0131
+   fast GPU conversion built, to test with SWEET_YCBCR_GPU=1), network ~40, the first-session "error -60 at frame 17" resync.
 3. Done: launchd Interactive A/B: camd (open 5.7 -> 0.7 s, 30 fps) and hapticd kept; sensors, btbridge cost CPU, reverted.
 4. GPU: suspect link Venus session start → GPU fault (2 of ~5 hangs today); B53 render-server snapshots intermittently
    empty; B50 Maps; WebGL speed (Optimize).

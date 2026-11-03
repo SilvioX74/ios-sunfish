@@ -89,6 +89,14 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 18:46 Bridge 0131 SWEET_YCBCR_FAST (9509b3a): in-place YCbCr conversion, bit-exact, not yet on the phone
+Compute pass kept (RGBA16F output unchanged), but it reads the planes through an R8G8_UINT uniform texel buffer over the
+surface's VkBuffer (binding taken from upstream cdf59197 bind/ycbcr_in_place.rs): no staging copy; one invocation per
+chroma pair writes 2x2 texels (11 fetches per 4 texels vs 18 SSBO word loads per texel); old integer maths, bit-exact
+(tests vs the old kernel over sizes 1x1..40x24, all range/matrix pairs, sRGB). Not the YCbCr sampler (a1f16771): our pin
+doesn't enable samplerYcbcrConversion and upstream still copies into an optimal image. Falls back to the old path on
+other layouts. Build work/metal2-next-ycbcrfast, LC_UUID 4C4C4448. Test needs SWEET_YCBCR_GPU=1; guess 3-8 ms GPU/frame.
+
 ### 2026-11-03 18:40 Credit path on all stage-0 clips (spC, kernel162): all right; a seek stalls (-60)
 40 s each, % of one core over 30 s, links tapped (openapp URL never navigates: Code=4; links added to work/stage0/index.html):
 | clip | frames/dropped | credited/socket/handed back | mediaserverd | venusd |
