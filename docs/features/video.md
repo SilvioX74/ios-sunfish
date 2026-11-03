@@ -89,6 +89,17 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 11:15 stall A-C: the first-use stall does not reproduce in 3 fresh boots
+venusctl f191422 with VENUSCTL_TS=1 (per-line stamps on the phone); first decode of each boot ~60 s after SSH, venusd
+idle (launchd respawns it; /var/local/venus-off kept it from opening Venus). Files research/notes/venus-runs/
+2026-11-03-stall-stall{A,B,C}-{1,2}.txt. 1080p 10 frames:
+- A (pmemwc=2, 160 MB): 0.21 s decode (0.80 s to SESSION_END), twice. B (pmemwc=1): 0.48 s, twice (the copy-out).
+  C (pmemwc=2, 64 MB): `STOP: dpb: 0x302000 bytes don't fit the buffer window` (64 MB is too small for 1080p), then
+  160 MB 0.21 s. Largest gap in any run 0.13 s (firmware boot to SYS_INIT); buffer allocation ~50-60 ms.
+- Not reproduced: the 13 s (v4a1) and the vdboot failure. Differences: vdboot's first decode came through venusd/vtvenus
+  from Safari, and venusd logged `Venus up in 1520 ms` (normally ~150 ms): the system was busy right after boot (guess).
+  The plugin's cold-start timeouts/reconnect (being written) cover it either way.
+
 ### 2026-11-03 11:00 vdboot: venusd from launchd works; the first Safari video after boot fails on the first-use stall
 Bundle a458398 (G7 GPU path default off; SWEET_YCBCR_GPU=0 line removed from mtl2-env). tools/sunfish-install-venusd.sh
 added job org.iosonpixel.venusd to /System/Library/xpc/launchd.plist (backup launchd.plist.pre-venusd). Boot vdboot
