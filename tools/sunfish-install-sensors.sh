@@ -12,7 +12,9 @@
 # read at the job's start, so it takes a reboot). The file's content, if a number like -20, is --amp-db; else -102, silent.
 # Needs sweetampreset=1 on the boot line, or the job logs "amp not ready" and runs the sensors alone.
 # Backup /System/Library/xpc/launchd.plist.pre-sensors (first run only). Idempotent. Reboot to apply.
-#   tools/sunfish-install-sensors.sh [--undo]    --undo: remove the job from launchd.plist (files left)
+#   tools/sunfish-install-sensors.sh [--undo | --job]    --undo: remove the job from launchd.plist (files left)
+#   --job: only rewrite the launchd job (no binaries, wrapper or files; reboot to apply). SENSORS_INTERACTIVE=1 adds
+#     ProcessType/POSIXSpawnType Interactive (backlog O-launchd A/B); default off
 set -euo pipefail
 cd "$(dirname "$0")/.."
 F() { python3 -I tools/flame-files.py "$@"; }
@@ -20,7 +22,7 @@ U=work/userland O=work/userland-linux/out
 KEY=/System/Library/LaunchDaemons/org.iosonpixel.sensors.plist
 mkdir -p $U
 F get /System/Library/xpc/launchd.plist $U/launchd.plist.cur >/dev/null
-if [ "${1:-}" != --undo ]; then
+if [ "${1:-}" != --undo ] && [ "${1:-}" != --job ]; then
 	[ -s $O/adspboot ] || { echo "missing $O/adspboot: run tools/build-userland-linux.sh"; exit 1; }
 	F put $O/adspboot /var/local/bin/adspboot 755 >/dev/null
 	cat >$U/sensors-start.sh <<'SH'
@@ -56,7 +58,7 @@ SH
 	fi
 fi
 python3 -I - "$U/launchd.plist.cur" "$U/launchd.plist.new" "$KEY" "${1:-}" <<'PY'
-import plistlib, sys
+import os, plistlib, sys
 p = plistlib.load(open(sys.argv[1], 'rb'))
 jobs = p['LaunchDaemons']
 if sys.argv[4] == '--undo':
@@ -68,10 +70,13 @@ else:
         'RunAtLoad': True, 'KeepAlive': False, 'UserName': 'root',
         'EnvironmentVariables': {'PATH': '/var/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'},
     }
+    if os.environ.get('SENSORS_INTERACTIVE') == '1':
+        jobs[sys.argv[3]].update({'ProcessType': 'Interactive', 'POSIXSpawnType': 'Interactive'})
 plistlib.dump(p, open(sys.argv[2], 'wb'), fmt=plistlib.FMT_BINARY)
 print('launchd jobs:', len(jobs))
 PY
 F put $U/launchd.plist.new /System/Library/xpc/launchd.plist 644 >/dev/null
 python3 -I tools/flame-cmd.py sync >/dev/null 2>&1 || true
+[ "${1:-}" = --job ] && { echo "org.iosonpixel.sensors rewritten (SENSORS_INTERACTIVE=${SENSORS_INTERACTIVE:-0}); reboot to apply"; exit 0; }
 [ "${1:-}" = --undo ] && echo "org.iosonpixel.sensors removed (files left); reboot to apply" ||
 	echo "installed: org.iosonpixel.sensors; reboot (with sweetmotion=0x37): rotation feed starts ~25 s after boot"

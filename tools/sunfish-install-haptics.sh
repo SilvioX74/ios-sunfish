@@ -9,7 +9,9 @@
 # Needs SunfishAudio.driver with the Actuator FIFO (tools/sunfish-install-audio.sh) first.
 # Off: touch /var/local/haptics.off (hapticd exits 0 at start, launchd leaves it stopped); do that and
 # kill hapticd (launchd restarts it, it sees the flag and exits 0) before other SE9 tools (adspboot amp, camid, i2cprobe, sunfish-cam-rx.sh).
-#   tools/sunfish-install-haptics.sh [--undo | --check]
+#   tools/sunfish-install-haptics.sh [--undo | --check | --job]
+#   --job: only rewrite the launchd job (reboot to apply). HAPTICD_INTERACTIVE=1 adds ProcessType/POSIXSpawnType
+#     Interactive (backlog O-launchd A/B; timer coalescing stretched 1 ms naps ~10x); default off
 #   --undo: job removed, MobileGestalt cache restored from .pre-haptics if present (tools left); boot without HAPTICS=1
 #   --check: prints the state of all of the above, no writes
 set -euo pipefail
@@ -29,7 +31,7 @@ mkdir -p $U/haptics
 # job in/out of the launchd.plist cache (cur -> new); --check: print it
 job() {
 	python3 -I - "$U/haptics/launchd.plist.cur" "$U/haptics/launchd.plist.new" "$KEY" "$1" <<'PY'
-import plistlib, sys
+import os, plistlib, sys
 p = plistlib.load(open(sys.argv[1], 'rb'))
 jobs = p['LaunchDaemons']
 if sys.argv[4] == '--check':
@@ -43,6 +45,8 @@ else:
         'ProgramArguments': ['/bin/sh', '-c', '/var/local/bin/hapticd-start.sh'],
         'RunAtLoad': True, 'KeepAlive': {'SuccessfulExit': False}, 'ThrottleInterval': 10, 'UserName': 'root',
     }
+    if os.environ.get('HAPTICD_INTERACTIVE') == '1':
+        jobs[sys.argv[3]].update({'ProcessType': 'Interactive', 'POSIXSpawnType': 'Interactive'})
 plistlib.dump(p, open(sys.argv[2], 'wb'), fmt=plistlib.FMT_BINARY)
 print('launchd jobs:', len(jobs))
 PY
@@ -68,7 +72,13 @@ sync 2>/dev/null || true"
 	echo "boot WITHOUT HAPTICS=1 next (tools left in /var/local/bin)"
 	exit 0
 fi
-[ -z "$MODE" ] || { echo "usage: $0 [--undo | --check]"; exit 1; }
+if [ "$MODE" = --job ]; then
+	job install
+	F put $U/haptics/launchd.plist.new $LP 644 >/dev/null
+	echo "org.iosonpixel.hapticd rewritten (HAPTICD_INTERACTIVE=${HAPTICD_INTERACTIVE:-0}); reboot to apply"
+	exit 0
+fi
+[ -z "$MODE" ] || { echo "usage: $0 [--undo | --check | --job]"; exit 1; }
 
 # 1. SunfishAudio.driver (Actuator FIFO)
 if ! S "[ -d $DRV ]"; then

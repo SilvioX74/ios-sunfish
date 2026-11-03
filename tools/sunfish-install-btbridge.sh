@@ -7,7 +7,9 @@
 #     xnu 0226, boot-arg btbridge=1; ios-redfin 1015's string at our baud), BT_BAUDRATE=115200;
 #     job org.iosonpixel.btbridge (RunAtLoad, root; log /var/local/btbridge.log, off: /var/local/btbridge.off)
 # Idempotent. Needs a kernel with xnu 0226 booted with btbridge=1 (btbridge opens /dev/btbridge). Needs btup's firmware in /var/local/fw/bt (tools/sunfish-install-bt.sh). Reboot to apply.
-#   tools/sunfish-install-btbridge.sh [--undo]    --undo: put the .pre-btbridge launchd.plist back
+#   tools/sunfish-install-btbridge.sh [--undo | --job]    --undo: put the .pre-btbridge launchd.plist back
+#   --job: only rewrite launchd.plist (no binaries; the BlueTool/bluetoothd edits are idempotent; reboot to apply).
+#     BTBRIDGE_INTERACTIVE=1 adds ProcessType/POSIXSpawnType Interactive to org.iosonpixel.btbridge (O-launchd A/B); default off
 set -euo pipefail
 cd "$(dirname "$0")/.."
 F() { python3 -I tools/flame-files.py "$@"; }
@@ -20,7 +22,7 @@ if [ "${1:-}" = --undo ]; then
 	echo "launchd.plist restored from .pre-btbridge (binaries left in /var/local/bin); reboot to apply"
 	exit 0
 fi
-for b in btbridge bluetool-stub; do
+[ "${1:-}" = --job ] || for b in btbridge bluetool-stub; do
 	[ -s $O/$b ] || { echo "missing $O/$b: run tools/build-userland-linux.sh"; exit 1; }
 	F put $O/$b /var/local/bin/$b 755 >/dev/null
 done
@@ -31,7 +33,7 @@ if ! F get /System/Library/xpc/launchd.plist.pre-btbridge $U/launchd.plist.pre-b
 	echo "backup: /System/Library/xpc/launchd.plist.pre-btbridge"
 fi
 python3 -I - "$U/launchd.plist.cur" "$U/launchd.plist.new" <<'PY'
-import plistlib, sys
+import os, plistlib, sys
 p = plistlib.load(open(sys.argv[1], 'rb'))
 jobs = p['LaunchDaemons']
 by_label = {v.get('Label'): v for v in jobs.values() if isinstance(v, dict)}
@@ -46,15 +48,18 @@ if d is None:
     sys.exit('no com.apple.bluetoothd job in launchd.plist')
 d.setdefault('EnvironmentVariables', {}).update({'BT_HCI_TRANSPORT': 'H4BC:POSIX:com.apple.uart.bluetooth,115200', 'BT_BAUDRATE': '115200'})
 print('com.apple.bluetoothd env:', d['EnvironmentVariables'])
-jobs['/System/Library/LaunchDaemons/org.iosonpixel.btbridge.plist'] = {
+bb = jobs['/System/Library/LaunchDaemons/org.iosonpixel.btbridge.plist'] = {
     'Label': 'org.iosonpixel.btbridge',
     'ProgramArguments': ['/var/local/bin/btbridge'],
     'RunAtLoad': True, 'UserName': 'root',
     'EnvironmentVariables': {'PATH': '/var/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'},
 }
+if os.environ.get('BTBRIDGE_INTERACTIVE') == '1':
+    bb.update({'ProcessType': 'Interactive', 'POSIXSpawnType': 'Interactive'})
 plistlib.dump(p, open(sys.argv[2], 'wb'), fmt=plistlib.FMT_BINARY)
 print('launchd jobs:', len(jobs))
 PY
 F put $U/launchd.plist.new /System/Library/xpc/launchd.plist 644 >/dev/null
 python3 -I tools/flame-cmd.py sync >/dev/null 2>&1 || true
-echo "installed btbridge + bluetool-stub; reboot to apply"
+[ "${1:-}" = --job ] && echo "org.iosonpixel.btbridge rewritten (BTBRIDGE_INTERACTIVE=${BTBRIDGE_INTERACTIVE:-0}); reboot to apply" ||
+	echo "installed btbridge + bluetool-stub; reboot to apply"
