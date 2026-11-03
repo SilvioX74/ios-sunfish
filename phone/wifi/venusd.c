@@ -943,6 +943,10 @@ static int sock_create(void)	/* camd's sock_create */
 	return s;
 }
 
+/* libsystem_kernel: jetsam control (root may change its own limits), as wland's auto_up() */
+int memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void *buffer, size_t size);
+struct memlimit_properties { int32_t active; uint32_t active_attr; int32_t inactive; uint32_t inactive_attr; };
+
 int main(int argc, char **argv)
 {
 	const char *logp = "/var/local/venusd.log";
@@ -995,6 +999,16 @@ int main(int argc, char **argv)
 	test_arm(getenv("VENUSD_TEST_CLKOFF"), "VENUSD_TEST_CLKOFF");
 	struct stat sb;
 	fw = stat("/vendor/firmware/venus.mdt", &sb) == 0 ? "/vendor/firmware" : "/var/local/fw/venus";	/* venusctl's */
+	/* Each credited IOSurface lookup maps the whole surface and charges it to our footprint (iokit_mapped): launchd's
+	 * daemon limit killed the first one (crA/crD: jetsam reason 7); JetsamProperties in the job is ignored, as for
+	 * wland. 512 MB covers 16 surfaces at 4K. VENUSD_MEM_MB=0 leaves launchd's limit. */
+	int mem_mb = getenv("VENUSD_MEM_MB") ? atoi(getenv("VENUSD_MEM_MB")) : 512;
+	if (mem_mb > 0) {
+		struct memlimit_properties old = { 0 }, ml = { mem_mb, 1, mem_mb, 1 };	/* MB, fatal */
+		memorystatus_control(8, getpid(), 0, &old, sizeof(old));	/* GET_MEMLIMIT_PROPERTIES */
+		int mrc = memorystatus_control(7, getpid(), 0, &ml, sizeof(ml));	/* SET_MEMLIMIT_PROPERTIES */
+		note("venusd: memory limit %d/%d MB -> %d MB: %d", old.active, old.inactive, mem_mb, mrc);
+	}
 	au = malloc(VENUSD_MAX_AU);
 	if (!au)
 		return 1;
