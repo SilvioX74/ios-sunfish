@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 19:49 rcp: render CPU: VkRenderPass made per pass every frame (cache it, ~0.25 ms); binds already deduped (read-only)
+- research/notes/render-cpu-2026-11-02.md (source metal2vulkan 720ef1ce + bridge 0001..0124, Mesa 85fda3b3640; samples from work/heat/bbd-settings-raw.txt, 0.056 ms per sample per frame). end_pass -> final_pass -> create -> vkCreateRenderPass2 for every pass every frame (render.rs:3693, render_target.rs:715, :1064, creation.rs:83), destroyed with the command buffer; only all-LOAD/STORE compatible passes are kept (render_target.rs:655-711). tu_CreateRenderPass2 4 samples (0.22 ms). Framebuffers 0 samples; pipeline layouts 0; descriptor writes 0.11 ms.
+- Pipeline binds are deduped already (render.rs:7899-7902, render/bound.rs:97-105); tu_CmdBindPipeline's 0.56 ms is real changes plus a 390-byte struct copy per bind (tu_cmd_buffer.cc:5499). Allocation churn: ~40 allocating sites in draw_resident, none over ~2 samples (1.28 ms of alloc/copy leaves in all).
+- Next: bridge 0125 SWEET_M2V_PASS_CACHE (key: PassShape + colour/depth/stencil/resolve ops + resolving; cap 256; device-lifetime), being written; A/B in the morning (not on tonight's soak bundle).
+
 ### 2026-11-02 19:44 sb: the Settings slowdown in the da runs was not the bundle; Settings back to 56.4
 - Bundle A/B on the phone (`tools/sunfish-metal2-install.sh --undo` for OLD fe75b25 / 4C4C44B8, reinstall for NEW 82f6b41 / 4C4C44A9; md5 checked after each switch), kernel158 everyday env, settings,cc, MAXSTART=75, 2 boots each: OLD settings 56.35 (p95 21.6), 55.41 (29.2) / NEW 56.29 (21.3), 56.45 (20.3); cc OLD 42.94, 43.34 / NEW 43.18, 43.33. Start 76-77 C both. 0 G1/G2/G4.
 - So the da runs' Settings 53.7 / p95 31 was a passing state of the phone, cause unknown; NEW stays installed. The open question in the da entry is closed.
