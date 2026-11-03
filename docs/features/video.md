@@ -89,6 +89,12 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:45 The network process cost is general (B57), not video
+work/stage0/dl.html (random 46 MB file from the PC, no video): paced 0.75 MB/s -> Networking 32 % of a core; flat out only
+1.20 MB/s -> 39 % (kernel_task 5-6 %; the USB link is the xnu ECM/NCM driver, no userland bridge). ~3-4 % per 100 KB/s,
+matching the 52-93 % during HLS. Network throughput itself is low (backlog B57). For video CPU, the next fix is
+backboardd's conversion (vImage into a temp buffer, then an 8 MB replaceRegion copy per frame).
+
 ### 2026-11-03 17:30 HLS (as real sites stream): 0 dropped; total 315-383 % of a core
 work/stage0/hls-{h264,hevc}-1080p (ffmpeg -c copy, fmp4 segments ~8 s), index.html `#hls-<clip>`. 30 s window, % of one core:
 | clip | WebContent | Networking | GPU proc | backboardd | mediaserverd | venusd | kernel_task | total | frames/dropped |
