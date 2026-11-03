@@ -28,7 +28,7 @@ Only items Claude can move now. User tasks are listed below and never gate work;
    4. ▶ Done 2026-11-03: 4a venusd, 4b VT plugin, 4c Safari H.264 via Venus, venusd at boot + recovery. Next: ~8 s start
       latency, 4d conversion cost, 4e HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
-2. **3D test**: WebGL 1 incl. MSAA works (wg4, wgaa2). Left: HexGL renders white; a real game 15 min; WebGL 2.
+2. **3D**: done 2026-11-03: three.js games_fps (WebGL 2) 15 min, 0 hangs (7.4 fps). Left: speed.
 3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
 4. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
 5. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
@@ -55,8 +55,8 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
    dominates. G7 GPU path stays off (GPU-bound); later a native VkSamplerYcbcrConversion.
 3. mediaserverd restarts can wedge it (Safari stops loading video; camclk/camid exec loop on restart): install the
    plugin with a reboot, and find out why mediaserverd runs camclk/camid.
-4. WebGL: 15 min with a simpler WebGL game (HexGL parked: its launch.js stalls before the menu on iOS Safari);
-   WebGL 2 (argument encoders). Maps B50 is not the GPU cap.
+4. WebGL: 3D target met (three.js games_fps, WebGL 2, 15 min, 0 hangs, 7.4 fps). Next: why so slow (GPU-bound);
+   argument encoders for WebGL 2 pages that use them. Maps B50 is not the GPU cap.
 5. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)

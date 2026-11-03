@@ -1,6 +1,6 @@
 # WebGL (Safari)
-**State:** 🟡 WebGL 1 draws in Safari, antialiased too (400 cubes: 24 fps, 18 fps with MSAA; 0 hangs); HexGL loads but
-renders white; WebGL 2 untested. **Updated:** 2026-11-03.
+**State:** ✅ WebGL 1 and 2 draw in Safari: 400 cubes 24 fps (18 with MSAA), three.js games_fps (WebGL 2) 15 min with 0
+hangs but only 7.4 fps (GPU-bound); HexGL parked (its loader stalls on iOS Safari). **Updated:** 2026-11-03.
 
 ## Facts
 - WebKit's GPU process runs ANGLE on Metal (iOS 16: WebKit 615.8.1.10.3, Metal 306.6.6). ANGLE first asks
@@ -21,6 +21,18 @@ renders white; WebGL 2 untested. **Updated:** 2026-11-03.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 14:40 tfps: three.js games_fps (WebGL 2) runs 15 min clean — the 3D target
+three.js examples/games_fps.html (MIT, sparse clone in work/webgl-games/threejs, gitignored; error/fps hook added),
+bundle fcdf6de, kernel160 boot lat1, 11:28:54-11:44 (15.4 min).
+- WebGL 2 scene drawn (3 canvases, 1125x1905): the textured grid level with walls and stairs, shadows; tapped spheres
+  appear (webcam f15m.jpg, checked by Claude). All modules + collision-world.glb loaded.
+- 0 hangs, 0 backboardd restarts, 0 CRASH, no context loss; 10 shader compiles via SWEET SRC (0.7-0.8 s each, 4.4 s
+  total, 0 fails); 0 MISSING (no argument encoder needed here), 0 foreign-function, 0 refusals.
+- fps median 7.4 (6.1-7.8): GPU-bound, busy 91-99 %, ~240 submits per 5 s, mean ~20 ms, longest ~104 ms. Max 67.4 C,
+  no THERM cap. Page errors: requestPointerLock missing on touch (the demo's), .ogg audio decode (Safari).
+- flame-shot came out white (the shot tool doesn't capture this layer); the webcam shows the scene.
+- Next: why 7 fps (profile one frame: shadow maps? MSAA? draw count), WebGL 2 features with argument buffers.
 
 ### 2026-11-03 14:15 HexGL parked
 ?v=10 with the fixed hook: index.html loaded (subresources from Safari's cache, so no GETs), the hook's ticks report
