@@ -89,6 +89,23 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 10:30 vd4d: the drops are the G7 GPU YCbCr path; with the CPU conversion, Venus playback drops 63/1800
+Same boot; H.264 1080p, one fresh tab (SafariTabs.db* moved to /var/local/safari-tabs-bak/), start < 60 C.
+| run | YCbCr GPU | decode | dropped | backboardd | WebKit (2 busiest) | mediaserverd | venusd | max temp |
+|---|---|---|---|---|---|---|---|---|
+| 1 | on | sw | 1212 | 15 % | 124 / 19 | 199 % | - | 72.2 C |
+| 2 | off | sw | 82 | 96 % | 147 / 21 | 262 % | - | 79.0 C |
+| 3 | off | hw | **63** | 96 % | 148 / 21 | **72 %** | 43 % | 78.3 C |
+| 4 | on | hw | 1187 | 16 % | 129 / 18 | 59 % | 38 % | 71.6 C |
+- Observed: the GPU YCbCr path (bridge 0127, fe2d169) loses ~2/3 of the frames on both decode paths with backboardd
+  nearly idle (15 %): presentation stalls, it isn't busy. With the CPU conversion (0112) hardware decode drops 63 and
+  saves ~190 % of a core in mediaserverd vs software, but backboardd spends ~96 % converting (the 4d item).
+- venusd: 1799/1799 frames, 29.8 fps, copy-out 2.42 ms mean, error 0.
+- Webcam at 30 s with the CPU path (runs 2, 3): the video area looks washed-out white with faint pink/green where the
+  bars should be (checked by Claude, frame_103.jpg), while the beacons say it plays: picture not confirmed. With the
+  GPU path (run 4): faint pink/green tint. Next: phone-side screenshots (`shot`) to see the real pixels.
+- Left SWEET_YCBCR_GPU=0 in /var/local/mtl2-env.
+
 ### 2026-11-03 10:10 Stage 4c (vd4c): Safari plays H.264 through Venus; display drops ~2/3 of frames on both paths
 Plugin + venusd (by hand) as in vt4b; bundle 4da54f0 with SWEET_YCBCR_GPU on (G7 GPU path); kernel160 maps512 boot;
 per-boot log ../logs/boots/20261103-082158.log. CPU as s0 (psx, 30 s window, % of one core).

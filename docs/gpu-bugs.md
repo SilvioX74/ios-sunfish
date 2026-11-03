@@ -291,3 +291,8 @@ Bundle a1f3952 (function stitching refused with an error; SWEET_STITCH=1 off), S
 - Observed: the cap starves Maps of render targets at 256 MB, but lifting it does not bring the map back, so B50 is
   something else. Phone left on kernel160 + sweetpmemwc=2 + sweetgpucap=512 with bundle a1f3952.
 
+### 2026-11-03 10:30 G7 GPU path drops ~2/3 of video frames (vd4d)
+With SWEET_YCBCR_GPU on, Safari 1080p30 drops 1187-1212 of 1800 frames (82 / 63 with the CPU conversion) with
+backboardd at 15 % CPU: the presenter stalls. Default set back to SWEET_YCBCR_GPU=0 on the phone; the fe2d169 default
+(GPU on) must change in the frontend before the next bundle (or the stall fixed). video.md vd4d.
+
