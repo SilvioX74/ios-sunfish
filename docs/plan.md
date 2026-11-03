@@ -1,4 +1,4 @@
-# Plan (2026-10-31, updated 2026-11-02 16:35): speed and heat
+# Plan (2026-10-31, updated 2026-11-02 19:56): speed and heat
 
 Rules: CLAUDE.md ("How to work"). Old plan: `docs/plans/2026-10-31-mixed-priorities.md`. One line per item;
 details and history in the feature Logs (`docs/features/<name>.md`).
@@ -33,12 +33,12 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `sweetsmmutcr=3` (stock SMMU walks and ACTLR), default in kernel153. Watch it in the next soaks. A CX cycle doesn't recover a real G1 (the GDSC refuses, n6), so off. Silent reset n1, n5: not seen in n7; pet crumb on in soaks (gpu.md).
 
 ## Phone
-Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted ev4 (kernel158 everyday setup).
+THE USER'S since 2026-11-02 19:56 ("boot it into a state I can play with"): no phone work until the user hands it back. Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted `play` at 19:56 (kernel158 everyday setup, bundle 82f6b41 = SweetMetal2 4C4C44A9, lock screen OK on the webcam).
 
 ## Next (in this order)
-1. Tonight's soak (n8) at 21:30: `tools/sunfish-nightsoak.sh n8` (kernel158 everyday + `sweetwdtcrumb=1`; mtl2-env has SWEET_SURF_FLUSH=1 and SWEET_CULL=3: watch G1).
-2. Render CPU: bridge 0125 SWEET_M2V_PASS_CACHE (VkRenderPass cache, ~0.25 ms/frame guess): build, then a pstack check (tu_CreateRenderPass2 samples -> 0) and a 5-boot A/B on settings, cc, home.
-3. Control Center (43.8 -> 45): all cheap levers tried today (smoothness.md 2026-11-02); left: quarter-size Home in close/drag frames (days), cull of c1 writers needs a pinned fetch reader. Consider pausing Control Center for the next priority (real-use hitches, render CPU).
+1. Phone is the user's: wait until they hand it back. Night soak n8 did NOT run on 2026-11-02 (the user took the phone at 19:55): run it the next night (`tools/sunfish-nightsoak.sh n8`; mtl2-env now has SWEET_SURF_FLUSH=1 and SWEET_CULL=3: watch G1).
+2. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms/frame guess): its build was stopped half way, so rebuild first (`METAL2_VARIANT=next tools/build-metal2-linux.sh`; work/metal2-next may hold a partial build: don't install it before rebuilding). Then a pstack check (tu_CreateRenderPass2 samples -> 0) and a 5-boot A/B on settings, cc, home.
+3. Control Center (43.8 -> 45): cheap levers all tried on 2026-11-02 (smoothness.md); left: quarter-size Home in close/drag frames (days). Consider the next priority instead (real-use hitches).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15),
