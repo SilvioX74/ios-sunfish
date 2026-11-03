@@ -75,6 +75,17 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 07:40 Stage 3 v3d: the decoder switches: split mode and queue-only DPBs are right, count is not it
+venusctl f0c3847, same boot. Outputs research/notes/venus-runs/2026-11-03-v3d-{a,b,c,d}.txt (switches passed through a
+scratch copy of the script; tools/sunfish-venus-test.sh now forwards VENUSCTL_* itself).
+- a VENUSCTL_PRIMARY=1: FRAME_SIZE on OUTPUT refused: `h264Dec_SetIntProperty(390): Unsupported buffer type in frame
+  size set property!`, session error 0x1008. Split mode (OUTPUT2) is required on this firmware.
+- b VENUSCTL_DPB_SETBUF=1: the internal buffers are acked, all 18 DPBs refused: `vDec_SetBuffers(1882):
+  Dec_SetBuffers, Invalid 2 buffer`, session error 0x1010 per DPB. DPBs go by FTB only (as the default does).
+- c both: as a.
+- d VENUSCTL_NOUT=24: min_host follows to 24, 24 output2 queued, CONTINUE -> same `Not enough output2 buffers!`.
+- All four: 0 frames, clean power off, no reboot. Investigator on the reconfig packets vs msm_vidc.
+
 ### 2026-11-03 07:30 Stage 3 v3c: buffers queued before CONTINUE, same firmware error
 venusctl f0c3847 (sha256 686bf9f5...), same boot. Output research/notes/venus-runs/2026-11-03-v3c-decode-320.txt.
 - Order now: FLUSH output (36 back, filled 0), FRAME_SIZE OUTPUT2 320x240, requirements (output/output2 min 5,

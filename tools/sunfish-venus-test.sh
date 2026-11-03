@@ -19,6 +19,7 @@
 # Pre-run review (research/notes/venus-stage1-2026-11-02.md 8.5): every power on/off gets --cvp (mvs1 domain on,
 # as downstream); a timed-out command (exit 124) or a failed shutdown stops the run with no power off
 # ("LEFT POWERED: reboot needed"): a GDSC/clock collapse under live firmware hangs the bus.
+# VENUSCTL_* in the environment (the decoder switches) are passed to every venusctl on the phone.
 # Env: VENUS_V=1 adds -v (every register write); VENUS_PHYS=ADDR passes init --phys ADDR (when PMEM_ALLOC32 fails);
 # VENUS_T=SECONDS per-command ssh timeout (60); VENUS_MT="ADDR SIZE" memtest region (0xa5100000 0x301000).
 # Needs /var/local/bin/venusctl and /var/local/fw/venus on the phone.
@@ -31,8 +32,9 @@ mt=${VENUS_MT:-0xa5100000 0x301000}
 rc=0
 
 run() {	# one venusctl command per ssh call, so a hang or reset shows its last line
-	echo "=== venusctl $v $*"
-	timeout "$t" tools/sunfish-ssh "venusctl $v $*" 2>&1
+	ve=$(env | grep -E '^VENUSCTL_[A-Z0-9_]+=[A-Za-z0-9_.x-]*$' | tr '\n' ' ')	# the decoder's switches, passed to the phone
+	echo "=== ${ve}venusctl $v $*"
+	timeout "$t" tools/sunfish-ssh "${ve}venusctl $v $*" 2>&1
 	r=$?
 	echo "=== exit $r"
 	if [ $r = 124 ]; then	# a blocked SMC keeps the pmem lock: anything after it queues behind (review 8.5.2)
