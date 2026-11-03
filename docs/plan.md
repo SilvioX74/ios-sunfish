@@ -49,12 +49,12 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
 
 ## Next (in this order)
 1. Done tonight: n8 clean; vd1: stub decoder loads in mediaserverd, firmware on phone, probe read (video.md). venusctl
-   AHB HW_CTL handling done (14dc1b0). venusctl boot/init/ping written (0e4f244). Overnight: free-memory check + review of it (investigator).
+   AHB HW_CTL handling done (14dc1b0). venusctl boot/init/ping written (0e4f244). Pre-run review done, 8 fixes in (d0f1da4).
 2. Morning (night flag off): stage 0 Safari video baseline + the WebGL test (about 30 min together; video muted
    before 5 am).
 3. Then stage 2 on the phone (venusctl 0e4f244, all subcommands written, only probe run): rebuild + install, then
-   `tools/sunfish-venus-test.sh` probe -> power -> pas -> boot -> ping, stop at the first failure (daylight; a reset
-   is logged, then a smaller step). init needs memory below 4 GB: `VENUS_PHYS=` only after the region check.
+   `tools/sunfish-venus-test.sh` probe -> power -> pas -> boot -> memtest -> ping (VENUS_PHYS=0xa5100000), stop at
+   the first failure or "LEFT POWERED" (daylight; a reset is logged, then a smaller step). Review fixes in d0f1da4.
 4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
    (METAL2_VARIANT=next, LC_UUID 4C4C444C-...-BBFD7B88C1E1, 0125 in, not installed), then a 5-boot A/B on settings, cc, home.
 
