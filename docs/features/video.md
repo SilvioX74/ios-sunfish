@@ -89,6 +89,16 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 12:10 The WPT line is harmless; venusd died on a transient clock-off reading (read-only analysis)
+research/notes/venus-wpt-2026-11-03.md. The `VFW_F ... h264HWProgVpp(1035): WPT wrap-around` ring lies inside scratch_1
+(1080p: 0x19800 into 0xa5df7000, 816 x 400 B; 720p: 560 x 400 B); our scratch_1 sizes equal the firmware's
+requirements (15847936 / 8411904 B), set again per session; the same line at the same address appears in 6 sessions
+that decoded all 1799 frames: content-dependent and harmless. 0x1204004 = CONFIG_VDEC_ENTROPY (1 CAVLC, 2 CABAC).
+venusd's exit came from core_gate's clock/GDSC check (exit(1)); the relaunched venusd passed core_ok() without
+powering anything, so the reading was transient (inferred). Fix being written: re-read and name the register, a
+failure hook so venusd recovers (VD_ERROR to the client, clean teardown, bring-up on the next OPEN) instead of exiting,
+vtvenus reconnect retries for up to 20 s, frame numbers on firmware debug lines.
+
 ### 2026-11-03 11:55 vdcold: cold-start fixes (68ebbab); a firmware fatal kills the session and venusd exits
 venusd 6d0b2c94 + vtvenus 1c30d842 (68ebbab: cold timeouts, reconnect, lazy OPEN, resync, venusd warm-up), boot vdcold
 (kernel160, 4454 mV); logs pulled to research/notes/venus-runs/2026-11-03-vdcold-{venusd,vtvenus}.log.
