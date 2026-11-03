@@ -89,6 +89,18 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:13 Upper bound of the copy saving: -58 % of a core (npA, kernel161, venusd/vtvenus 836d076)
+HLS H.264 1080p, 30 s windows, % of one core (WebKit roles guessed by CPU level):
+| run | WebContent | Networking | GPU | backboardd | mediaserverd | venusd | kernel_task | total | frames/dropped |
+| A1 | 6.3 | 43.2 | 14.2 | 46.6 | 52.5 | 32.7 | 16.8 | 238.8 | 1196/0 |
+| A2 | 6.5 | 44.1 | 14.4 | 46.0 | 53.0 | 32.3 | 16.9 | 244.3 | 1196/0 |
+| B1 nopayload | 6.2 | 38.6 | 13.7 | 45.4 | 20.0 | 9.9 | 15.2 | 179.2 | 1197/1 |
+| B2 nopayload | 6.0 | 39.0 | 13.4 | 45.1 | 20.1 | 9.8 | 15.3 | 182.9 | 1198/0 |
+| A3 (file removed) | 6.1 | 39.3 | 15.4 | 45.0 | 53.0 | 32.0 | 16.6 | 237.4 | 1195/0 |
+B-A: mediaserverd -32.9, venusd -22.5 (copy 1 still done in B: the socket write dominates venusd), kernel_task -1.7,
+total -58.4. B picture solid green as expected; A3 right. No hang. Note: A is ~241 % on kernel161/a71ea11 (was 383 at
+17:30 on kernel160). Next: the credit path (vtvenus hands pool IOSurface IDs, venusd preads into them).
+
 ### 2026-11-03 17:00 Per-frame copy path at 1080p (read-only study): 4 copies, ~12.5 MB/frame
 1 venusd pread Venus window -> fbuf 3.13 MB (measured 1.5-2.1 ms); 2 venusd write -> AF_UNIX (guess 2-3 ms); 3 mediaserverd
 read -> rx (guess 1.5-2.5 ms); 4 vtvenus row memcpy -> VT pool IOSurface (guess 1.5-2 ms). Copies 2-4 can go with "credits":
