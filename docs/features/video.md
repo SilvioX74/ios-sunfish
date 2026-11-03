@@ -89,6 +89,20 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 12:55 Careful installs (no reset); vImage; the clock-off STOP happens in normal use
+Boot stopR (kernel160). One step at a time, venusd idle between.
+- A/B: bundle fcdf6de (CPU YCbCr via Accelerate vImage): Safari 1080p via Venus (old venusd) 1800 frames, 0 dropped,
+  backboardd 66.3 %, `SWEET YCBCR: cpu conversion via vImage (fmt 70, matrix BT.601, range video)`, bars right; with
+  SWEET_VIMAGE=0: backboardd 68.5 % (the copy into the texture likely dominates; vImage helps little).
+- During the SWEET_VIMAGE=0 run the OLD venusd hit `STOP at doorbell (0xaadf018): a video clock or GDSC is off` at
+  frame 1591 and exited; vtvenus: `FRAME 1591: send failed ... (Broken pipe)`, reconnect refused, gave up. So the
+  transient clock-off is real in normal playback (the cfbebf1 recovery is the fix).
+- New venusd 73803de2 installed via temp + rename (7caeb4d), restarted with Venus down: `warm-up 1, recover 1`, warm-up
+  first frame 10378 ms, bring-up 246 ms.
+- vtvenus 34372e4c installed without --restart; `psx -k mediaserverd` with Venus down: survived. The mediaserverd
+  restart execs camclk/camid repeatedly (785-807 s) — no reset this time.
+- After that, Safari video did not start at all (frames 0, w 0; nothing in vtvenus.log): diagnosing.
+
 ### 2026-11-03 12:35 RESET during the vdstop install (mediaserverd restart + venusd kill at once)
 Boot vdcold (kernel160). Steps: `tools/sunfish-install-venusd.sh` (printed installed; but /var/local/bin/venusd stayed
 the old 6d0b2c94: the PUT over the running binary did not take), `tools/sunfish-install-vtvenus.sh install --restart`
