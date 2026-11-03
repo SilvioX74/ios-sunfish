@@ -95,6 +95,8 @@ research/notes/venus-runs/2026-11-03-v4a1-*.
 - 1080p 10 frames: bit-exact (all 10 luma 2073600/2073600, PSNR inf, crc 2a544a75). This first run after boot took
   13.08 s for 10 frames (copy-out itself 2.86 ms mean): a one-time cost on first use, cause not known yet (mapping the
   160 MB window cacheable? first touch?). Must be understood before =2 becomes the default.
+  Rerun later in the same boot: 10/10 in 0.21 s (copy-out 1.77 ms, 55.5 fps). The 13 s sat between frame 0 and 9
+  while each copy took ~3 ms, so it is a one-time decode stall after boot, not the copy (cause open; venusd boots once).
 - 1080p 300 frames to /dev/null, twice: `copy-out 300 frames: mean 1.54 ms, max 3.86 ms ... frame 0 -> 299: 5.68 s =
   52.6 fps` and `mean 1.54 ms, max 3.39 ms ... 52.4 fps`. Per CPU: A55 1.56-1.72 ms, A76 0.97-1.06 ms (was 29.3 / 3.5 ms
   on the WC mapping, v4a0d).
