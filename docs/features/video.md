@@ -75,6 +75,17 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 07:20 Stage 3 v3b: 18 output2 buffers set, still 0 frames: CONTINUE went before the buffers
+venusctl 1ace6d0 (sha256 0da2f602...), same boot. Output research/notes/venus-runs/2026-11-03-v3b-decode-320.txt.
+- Before the event: output/output2 min 18, min_host 0; 18 DPBs + 18 output2 set; START_DONE 0. After SEQUENCE_CHANGED
+  (properties 0x1005 = 32 16, 0x1003007 = 2 0, 0x1003009 = 1, 0x100300a = 0, 0x1204004 = 1; 0x700000e not parsed):
+  output/output2 min 5, min_host 18, actual 18; the tool set 18 + 18 this time.
+- Order in the log: FLUSH output (all 36 come back filled 0), FRAME_SIZE, requirements, counts, then `cmd 0x21100d`
+  (CONTINUE), then the 36 FTBs. Firmware again: `h264Dec_Continue(224): Not enough output2 buffers!`. 0 of 10 frames
+  in 3.19 s; close all error 0, clean power off, no reboot.
+- Reading: the firmware counts the output2 buffers it holds when CONTINUE arrives, which was none after the flush.
+  Fix f0c3847: FTB first, then CONTINUE. Run v3c next.
+
 ### 2026-11-03 07:10 Stage 3 first decode (v3): session runs to START, 0 frames: too few output2 buffers
 venusctl 3d06aae (sha256 3ac87217...), boot venusR (06:26, kernel158). Outputs research/notes/venus-runs/
 2026-11-03-v3-{install,memtest-buf,decode-320}.txt. Input work/stage3/in-320x240.h264 (16681 bytes, 10 frames).
