@@ -29,10 +29,12 @@ Only items Claude can move now. User tasks are listed below and never gate work;
       latency, 4d conversion cost, 4e HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
 2. **3D**: done 2026-11-03: three.js games_fps (WebGL 2) 15 min, 0 hangs (7.4 fps). Left: speed.
-3. **App Store access**: blocked on device attestation (B56: FairPlay/Anisette fail, media token 401); waiting for the
+3. **Wi-Fi throughput** (B57, 2026-11-03): internet downloads 0.5 MB/s vs 25 MB/s on the PC: gates streaming apps;
+   investigating wland's data path.
+4. **App Store access**: blocked on device attestation (B56: FairPlay/Anisette fail, media token 401); waiting for the
    user's decision (Questions). Meanwhile: WebGL speed (games_fps 7 fps, GPU-bound).
-4. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
-5. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
+5. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
+6. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
 
 After these: small Metal test apps built here (textured cube with depth, compute), then Crossy Road (Unity), Instagram,
 Minecraft. Likely needed on the way: YUV surfaces in the bridge (G7 "planar iosurface refused"), louder speaker (B16),
