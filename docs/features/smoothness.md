@@ -95,6 +95,10 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 19:44 sb: the Settings slowdown in the da runs was not the bundle; Settings back to 56.4
+- Bundle A/B on the phone (`tools/sunfish-metal2-install.sh --undo` for OLD fe75b25 / 4C4C44B8, reinstall for NEW 82f6b41 / 4C4C44A9; md5 checked after each switch), kernel158 everyday env, settings,cc, MAXSTART=75, 2 boots each: OLD settings 56.35 (p95 21.6), 55.41 (29.2) / NEW 56.29 (21.3), 56.45 (20.3); cc OLD 42.94, 43.34 / NEW 43.18, 43.33. Start 76-77 C both. 0 G1/G2/G4.
+- So the da runs' Settings 53.7 / p95 31 was a passing state of the phone, cause unknown; NEW stays installed. The open question in the da entry is closed.
+
 ### 2026-11-02 19:29 da: SWEET_CULL_DEADATT barely fires (10 draws per run): no gain, off; Settings slower on both sides tonight (open)
 - Bundle 82f6b41 (SweetMetal2 4C4C44A9), kernel158 everyday + SWEET_CULL=3, check run dax0 with telemetry: `DF3 ... deadatt` reached only 10 in the whole run (screenshots normal; cc 44.0, home 53.6). A/B 5 boots a side (daa def, dab +SWEET_CULL_DEADATT=1), 4453-4455 mV, 0 G1/G2/G4: cc 42.25 / 42.53, home 52.34 / 53.66 (5 of 5 pairs, but the cull drops ~nothing, so not caused by it), settings 53.68 / 53.67. Stays off.
 - Open: in all 10 da runs Settings read 52.7-54.5 swaps/s with p95 29-32 ms and skip2 5.4-6.9 %, against 56.3-57.2, p95 ~19.5-20.6, skip2 3.2-4.5 in the gm runs an hour earlier (same kernel, env, bench; bundle 4C4C44B8 then, 4C4C44A9 now: the new code only copies two fields per draw with the flag off). cc also lower (42.25 against 43.15, p95 38 against 35). Start temperature 77-81 against 74-77 C; A76 1939 in both; dax0 (first run on the new bundle) was fine on cc. Cause not found; check in the morning with a cold phone, current bundle against the previous (/var/local SweetMetal2.bundle.prev).

@@ -37,7 +37,7 @@ Claude's (the user is up; `work/night` removed 2026-11-02 06:24). Everyday setup
 
 ## Next (in this order)
 1. Tonight's soak (n8) at 21:30: `tools/sunfish-nightsoak.sh n8` (kernel158 everyday + `sweetwdtcrumb=1`; mtl2-env has SWEET_SURF_FLUSH=1 and SWEET_CULL=3: watch G1).
-2. Morning: Settings regression check (da entry): cold phone, Settings bench on the current bundle (82f6b41) against the previous one (fe75b25, SweetMetal2.bundle.prev on the phone), 2 boots each.
+2. Render CPU (Priority 4): Turnip redundant binds / per-frame VkRenderPass, allocation churn (investigator reading; rc entry).
 3. Control Center (43.8 -> 45): all cheap levers tried today (smoothness.md 2026-11-02); left: quarter-size Home in close/drag frames (days), cull of c1 writers needs a pinned fetch reader. Consider pausing Control Center for the next priority (real-use hitches, render CPU).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
