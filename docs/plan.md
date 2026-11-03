@@ -29,7 +29,8 @@ Only items Claude can move now. User tasks are listed below and never gate work;
       latency, 4d conversion cost, 4e HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
 2. **3D**: done 2026-11-03: three.js games_fps (WebGL 2) 15 min, 0 hangs (7.4 fps). Left: speed.
-3. **App Store access**: the app runs but shows "Cannot Connect to App Store" (B56, 2026-11-03): diagnosing.
+3. **App Store access**: blocked on device attestation (B56: FairPlay/Anisette fail, media token 401); waiting for the
+   user's decision (Questions). Meanwhile: WebGL speed (games_fps 7 fps, GPU-bound).
 4. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
 5. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
 
@@ -75,6 +76,10 @@ Finished items: [completed.md](completed.md) (not auto-loaded).
 - Driver review reports (230762c, 5429d38, 1800069; 2-3 h read-only): SMEM padding underflow found in phone/wifi/smem.c.
 
 ## Questions for you (Claude took the recommended path meanwhile)
+- App Store (B56): it fails on Apple's device attestation (FairPlay hardware info -42184, Anisette -45061, media token
+  401), not on the network. Getting past it means making the phone present an Apple device identity to Apple's
+  servers (spoofing FairPlay/Anisette data), which circumvents Apple's DRM/attestation and is likely against Apple's
+  terms. Claude has not started on it. Do you want this pursued, and if so within what limits? (Parked meanwhile.)
 - PowerLog and CoreDuet databases on the phone were moved aside (not deleted) to /var/local/idlefix-db, to stop the idle
   CPU burn; `tools/sunfish-idlefix-db.sh --undo` restores them. OK to delete them later? (Kept for now.)
 

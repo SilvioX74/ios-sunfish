@@ -48,6 +48,16 @@ from the backup with plistlib.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 15:40 App Store (B56): fails on device attestation, not the network
+Kernel160 boot hevc1. First run: Welcome -> Continue, Personalized Ads off, location Don't Allow; then "Cannot Connect to
+App Store", Retry fails; Search tab opens empty. Network: Safari loads apple.com; nettest: DNS/TCP/HTTPS 200 for
+init.itunes.apple.com and bag.itunes.apple.com; clock right. oslog (research/notes/appstore-oslog-2026-11-03.txt):
+the bag loads (`AMSBagNetworkTask: Successfully loaded the bag data`, TLS trust ok); then `AMSFairPlayGetDeviceType:
+Failed to get device type: -42184`, `AMSAnisette: Failed to generate Anisette (type: 2) headers. error = -45061`,
+`AMSFairPlayGetHardwareInfo: ... Error = -42184`, `AMSMescalFairPlay: Init failed`, `Mescal Failed`, `AMSDevice: Failed
+to obtain hardware platform: 0`; the media-token request gets HTTP 401. No crash. Next step would be presenting Apple
+device identity data to Apple's servers: parked for the user's decision (plan Questions).
+
 ### 2026-10-31 03:50 u1: xnu 0252 (use counts, kernel133): clock still stale; Tips and Photos clean this run
 - `CAMERA=1 tools/sunfish-test.sh -k work/kernel133/kernel.development.sweet u1 sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweettrace=1 sweetcpusample=1`, boot 20261031-032917.log, 4454 mV, no reset. sweet_surf_use_max 2.
 - Clock in Settings: stale 8 of 13, same as before: 3:30, 3:31, 3:35 images return. So use counts aren't B49's cause.
