@@ -296,3 +296,11 @@ With SWEET_YCBCR_GPU on, Safari 1080p30 drops 1187-1212 of 1800 frames (82 / 63 
 backboardd at 15 % CPU: the presenter stalls. Default set back to SWEET_YCBCR_GPU=0 on the phone; the fe2d169 default
 (GPU on) must change in the frontend before the next bundle (or the stall fixed). video.md vd4d.
 
+### 2026-11-03 11:00 G7 GPU path cost explained (research/notes/g7-gpu-stall-2026-11-03.md)
+Not a CPU stall: GPU saturated. Every encoder that samples the on-surface YCbCr texture re-runs a full-frame
+YCbCr->RGBA16F compute conversion (runtime ycbcr.rs:46-52, record :538-573), ~2 per CA frame at ~45 ms GPU each;
+backboardd submits 88-95 ms mean, GPU busy 98-101 %, SWEET FB 9-12 fps; SHADOW copies 98-117 per 5 s. The CPU path
+converts once per IOSurface seed. Fix being written: seed-gated conversion + cheaper 8-bit kernel.
+Also: a GPU wedge "surface remap" (smmu fsr 40000002) at t=3923.034 in ../logs/boots/20261103-082158.log, 4 s after a
+backboardd restart with the GPU path off (vd4d test; G4-like).
+

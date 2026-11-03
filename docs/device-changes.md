@@ -54,6 +54,7 @@ output in /var/local.
 ## Log
 (Newest first. One line per on-device change: date, what, where, how, what reproduces it.)
 
+- 2026-11-03 venusd launchd job org.iosonpixel.venusd added to /System/Library/xpc/launchd.plist (backup /System/Library/xpc/launchd.plist.pre-venusd) + /var/local/bin/{venusd,venusc,venusctl}: `tools/sunfish-install-venusd.sh` (normal mode). Bundle a458398 (LC_UUID 4C4C4429) from work/metal2-next-ycbcroff; SWEET_YCBCR_GPU=0 line removed (now the code default).
 - 2026-11-03 Test only: Safari's saved tabs (SafariTabs.db*) moved to /var/local/safari-tabs-bak/ (restore by moving back with Safari killed); /var/local/mtl2-env `SWEET_YCBCR_GPU=0` again (the GPU YCbCr path drops 2/3 of video frames).
 - 2026-11-03 Metal bundle 4da54f0 (LC_UUID 4C4C44B9, resolve textures passed through) installed from work/metal2-next-resolve. Video (unfinished, log only): vtvenus.dylib 3405244 into /System/Library/VideoDecoders/ExampleIPB.videodecoder (tools/sunfish-install-vtvenus.sh install; `remove` restores vtstub), /var/local/bin/vtdecode 3405244.
 - 2026-11-03 Video (unfinished, log only): /var/local/bin/{venusctl,venusd,venusc} a2752c1 via `tools/sunfish-install-venusd.sh --tools` (launchd job not installed; venusd runs by hand from tools/sunfish-venusd-test.sh).

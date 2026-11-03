@@ -89,6 +89,18 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 11:00 vdboot: venusd from launchd works; the first Safari video after boot fails on the first-use stall
+Bundle a458398 (G7 GPU path default off; SWEET_YCBCR_GPU=0 line removed from mtl2-env). tools/sunfish-install-venusd.sh
+added job org.iosonpixel.venusd to /System/Library/xpc/launchd.plist (backup launchd.plist.pre-venusd). Boot vdboot
+(kernel160, sweetpmemwc=2 sweetgpucap=512, 4455 mV): venusd pid 37 from launchd, socket present, Venus off.
+- First Safari 1080p clip after boot: `Venus up in 1520 ms`; vtvenus's 1-frame probe session: no EOS_DONE in 2017 ms,
+  no CLOSE answer in 2000 ms; real session opened 4918 ms later; `FRAME 2: send failed (Resource temporarily
+  unavailable): decoder unusable`; venusd: client gone, 1 AU in, 0 frames. Nothing played (flame-shot: page, no video).
+- Before the reboot, warm: 1150 frames at 29.7 fps, first frame 641 ms after OPEN.
+- Reading: the one-time first-decode stall (v4a1, up to 13 s) outlasts vtvenus's 2 s timeouts and the plugin then stays
+  dead. Next (running): stall timing with VENUSCTL_TS=1 over 3 boots (pmemwc 2/1, buffers 160/64 MB); vtvenus/venusd
+  cold-start timeouts + reconnect + no probe session + an optional venusd warm-up at start.
+
 ### 2026-11-03 10:45 vd4e: framebuffer shots: the Safari picture is right on the hardware path
 tools/flame-shot during H.264 1080p playback at ~20 s: work/shots/vd4e-{cpu-hw,gpu-hw,cpu-sw}.png. All three show the six
 testsrc2 bars fully saturated (RGB samples e.g. (254,0,0) (0,255,1) (255,255,0) (0,0,255) (255,0,254) (1,255,255)), the
