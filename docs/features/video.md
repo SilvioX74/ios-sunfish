@@ -89,6 +89,19 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 12:35 RESET during the vdstop install (mediaserverd restart + venusd kill at once)
+Boot vdcold (kernel160). Steps: `tools/sunfish-install-venusd.sh` (printed installed; but /var/local/bin/venusd stayed
+the old 6d0b2c94: the PUT over the running binary did not take), `tools/sunfish-install-vtvenus.sh install --restart`
+("killed 29 mediaserverd", restarted), then `psx -k venusd` ("killed 345 venusd"). Within seconds: SSH and ping gone,
+phone in fastboot (hard reset, no panic/CRASH/watchdog line). Last lines of ../logs/boots/20261103-095610.log:
+`[1432.607] exec camclk`, `[1432.718] exec camid`, SWEET FB lines, end at 1432.762. Back up with stopR (kernel160,
+4436 mV; log 20261103-102209.log); old binaries still installed.
+Guess (not proven): the camera clock tools started by the mediaserverd restart (camclk/camid) and venusd's shutdown of
+Venus (GDSC/clock/MMCX votes) at the same moment collided (shared MMCX rail / RPMh votes / GCC). Earlier
+`install --restart` runs (vt4b) did not reset, but venusd was not being killed then. Next, smaller steps: install with
+venusd idle and Venus down, never restart mediaserverd while venusd is powering Venus up or down, one step at a time
+with a wait between; check what runs camclk/camid on a mediaserverd restart.
+
 ### 2026-11-03 12:10 The WPT line is harmless; venusd died on a transient clock-off reading (read-only analysis)
 research/notes/venus-wpt-2026-11-03.md. The `VFW_F ... h264HWProgVpp(1035): WPT wrap-around` ring lies inside scratch_1
 (1080p: 0x19800 into 0xa5df7000, 816 x 400 B; 720p: 560 x 400 B); our scratch_1 sizes equal the firmware's
