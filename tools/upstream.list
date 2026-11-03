@@ -12,3 +12,4 @@ hakios-metal   research/upstream/hakios-metal  https://github.com/oosexgang/haki
 hakios-xnu     research/upstream/hakios-xnu    https://github.com/oosexgang/hakios-xnu-kernel      -           96ffbc5
 ios-fajita     research/upstream/ios-fajita    https://github.com/edi194/ios-fajita                -           0ecd69c
 ios-sweet-build research/upstream/ios-sweet-build https://github.com/frokfrdk/ios-sweet-build      -           81a354b
+AdrenoMetal    research/re/adrenometal         https://github.com/UniXNU/AdrenoMetal                -           -
