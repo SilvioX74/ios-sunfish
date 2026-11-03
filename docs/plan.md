@@ -24,8 +24,8 @@ Only items Claude can move now. User tasks are listed below and never gate work;
    0. Done 2026-11-03: all 4 clips play in software, 250-590 % of one core, max 64 C (video.md s0).
    1. Done 2026-11-02: research, staged spec in video.md (PAS ID 9, HFI gen1, plugin slot ExampleIPB.videodecoder).
    2. Done 2026-11-03: firmware boots, H.264 session opens/closes; 10/10 rounds idle, 29/29 under 15 min UI load (s7c).
-   3. ▶ First frame: `venusctl decode` (implementer writing it) decodes a raw H.264 file to YUV, checked against ffmpeg.
-   4. VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
+   3. Done 2026-11-03 (v3e): `venusctl decode` bit-exact vs ffmpeg at 320x240 and 1280x720. Left: speed on a long clip.
+   4. ▶ VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
 2. **3D test**: WebGL in Safari, 15 min. Context works (wg2); draws fail: shader-source compile (webgl.md).
 3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
@@ -50,8 +50,9 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
 ## Next (in this order)
 1. WebGL (webgl.md): context fixed (283012f, wg2), frames run, draws fail (GL_INVALID_OPERATION; shader source
    path). Investigator on the failing point and fix routes; then pick a route (likely days: hard item).
-2. Stage 3 `venusctl decode` (3d06aae): first phone run now (memtest of 0xa5500000+64 MB first); then `tools/sunfish-venus-test.sh decode`, compare with
-   tools/sunfish-venus-yuvcmp.py. Stage 2 step 7 (10 rounds + 15 min under GPU load) when the phone is free.
+2. Stage 4 spec: VideoToolbox decoder plugin (ExampleIPB.videodecoder slot, loads in mediaserverd) on venusctl's decode
+   path as a library; daemon vs in-process, pmem access from mediaserverd, CVPixelBuffer/IOSurface NV12 out (G7).
+   Also: stage 3 speed on a long 1080p clip (fps, CPU).
 3. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
    (METAL2_VARIANT=next, LC_UUID 4C4C444C-...-BBFD7B88C1E1, not installed), then a 5-boot A/B on settings, cc, home.
 4. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).

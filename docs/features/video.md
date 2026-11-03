@@ -1,5 +1,5 @@
 # Video playback and hardware decode
-**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus firmware boots on our kernel and opens/closes an H.264 decoder session (stage 2 go). **Updated:** 2026-11-03.
+**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus engine decodes H.264 bit-exact from a phone tool (stage 3 go, 720p). **Updated:** 2026-11-03.
 
 ## Facts
 - The iPhone X decodes video in hardware (AppleAVD); the port has no AVD, so iOS falls back to software decoders.
@@ -70,10 +70,23 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VENUSCTL_ROUTE, VENUSCTL_NOUT, VENUSCTL_YSTRIDE/YSCAN.
 
 ## Open
-- Stages 3-5. Stage 2 complete 2026-11-03 (s7b 10/10 idle, s7c 29/29 under UI load). Stage 2 go 2026-11-03 (v2c). Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
+- Stages 4-5; stage 3 speed numbers. Stage 3 go 2026-11-03 (v3e, bit-exact). Stage 2 complete 2026-11-03 (s7b 10/10 idle, s7c 29/29 under UI load). Stage 2 go 2026-11-03 (v2c). Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 08:20 Stage 3 GO (v3e): Venus decodes H.264 bit-exact, 320x240 and 1280x720
+venusctl dba0c44 (sha256 2432c900...), boot venusR (kernel158). Outputs research/notes/venus-runs/2026-11-03-v3e-
+{decode-320,decode-720}.txt and the decoded .nv12 files. With BUFFER_SIZE_MINIMUM sent for OUTPUT2:
+- 320x240 (10 frames x264 baseline): `SEQUENCE_CHANGED sufficient`, `decoded 10 of 10 frames, EOS in 0.15 s`; frame 0
+  `FBD flags 0x30 filled 147456 ts 0 us, 320x240 at 0,0, pic type 0x1, luma crc32 aba7ae5c` (= ffmpeg's). yuvcmp:
+  all 10 frames luma exact 76800/76800, Y and CbCr PSNR inf.
+- 1280x720: 10 of 10, EOS in 0.97 s (includes session setup), filled 1413120 per frame; yuvcmp all 10 luma exact
+  921600/921600, PSNR inf, frame 0 crc bff84fb8 = ffmpeg's.
+- Both: exit 0, clean close, shutdown, power off; no reboot. No firmware error lines.
+- Observed: Qualcomm's video engine decodes H.264 on our kernel with output identical to ffmpeg. Not yet measured:
+  steady-state speed (fps on a long clip), CPU and power. Next: stage 4, a VideoToolbox decoder plugin in the slot that
+  already loads in mediaserverd (ExampleIPB.videodecoder), with venusctl's decode path as a library.
 
 ### 2026-11-03 08:05 Stage 2 step 7 part 2 (s7c): 29/29 rounds under 15 min of UI load; stage 2 complete
 venusctl dcf8abc, boot venusR (kernel158). research/notes/venus-runs/2026-11-03-s7c-{session,uisoak}.txt. One
