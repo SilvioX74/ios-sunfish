@@ -56,6 +56,9 @@ Upstream survey 2026-11-01 (research/notes/upstream-2026-11-01.md; their numbers
 - Upstream 2026-11-01, reviews, LATER: hakios-xnu 230762c, 5429d38, 1800069. Spot check: GLINK wrap absent (phone/wifi/link.c:131,190-193), SMEM padding underflow present (phone/wifi/smem.c:97,111), the rest unchecked. Robustness only, 2-3 h read-only.
 
 ## Optimize (last)
+- O19 (2026-11-02, plan change) Control Center 43.8 -> 45 swaps/s: cheap levers all tried (smoothness.md 2026-11-02); left: draw Home at reduced size in Control Center's open/close frames (days; dl6b, gt1b).
+- O20 (2026-11-02 rcp) Render CPU: bridge 0125 SWEET_M2V_PASS_CACHE (VkRenderPass cache, ~0.25 ms) written, rebuild + A/B (plan Next 4); Turnip per-bind state copy (0.1-0.2 ms, 3 h, low confidence); allocation reuse in draw_resident (0.3-0.6 ms, ~1 day).
+- O21 (2026-11-02) Settings 58 swaps/s target: the bench's swipe gaps cap it near 57; p95 target met. Home ~53 swaps/s unprofiled.
 - O18 (2026-11-02 idN3, cpu.md) adspboot costs 3-6 ms of CPU per edge_loop pass (50-90 ms wall per pass) with the screen on, ~3-4 % of a core, whatever the sleep length: profile one pass with pstack (which poll blocks or burns). A longer sleep didn't help (reverted).
 - O17 (2026-11-02 io, cpu.md) Idle Home presents 10 full frames/s for the Clock icon's second hand (~7.7 ms backboardd CPU + a full-screen GPU frame each; 23 CPU s per 5 min). Real iPhones redraw only the icon's rect. Options: dirty-rect presents in the bridge/kernel, or a cheaper idle frame. Quick A/B: move Clock off the first Home page.
 Upstream survey 2026-11-01 (research/notes/upstream-2026-11-01.md; verdicts checked against our code, nothing measured on the phone):

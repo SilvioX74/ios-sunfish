@@ -1,53 +1,69 @@
-# Plan (2026-10-31, updated 2026-11-02 19:56): speed and heat
+# Plan (2026-11-02): hardware video decode, apps and games
 
-Rules: CLAUDE.md ("How to work"). Old plan: `docs/plans/2026-10-31-mixed-priorities.md`. One line per item;
+Rules: CLAUDE.md ("How to work"). Old plan: `docs/plans/2026-11-02-speed-and-heat.md`. One line per item;
 details and history in the feature Logs (`docs/features/<name>.md`).
 
-## Focus (the user, 2026-10-31)
-Make the phone fast and smooth first, stability later, and stop it running hot all the time.
-Targets (Claude's numbers, the user can change them):
-- Settings scrolling: at least 58 swaps/s with p95 at or under 20 ms, across 5 boots: p95 met (19.3, kernel157 sweetvsyncphase, 0 low launches in 25); 57.0 swaps/s is this bench's cap.
-- Control Center: at least 45 swaps/s (now 43.8 on the fixed bench motion).
-- Soak: no UI restarts in 30 min of hard scrolling (n7: 1 restart in 60 min).
+## Focus (the user, 2026-11-02)
+Make more things work: video in apps like Instagram first (hardware decode), then games and App Store apps.
+Interface speed and heat are good enough for daily use (Settings ~57 swaps/s, Control Center 43.8, peaks ~82 C);
+the speed focus is over. Targets (Claude's numbers, the user can change them):
+- Video: a 1080p H.264 video plays smoothly in Safari with hardware decode, CPU under 15 % of one core.
+- 3D: a WebGL game in Safari runs 15 min without a GPU hang.
+- Apps: one free App Store app installs and runs (gate for Instagram, Crossy Road, Minecraft).
+- Stability: under 1 GPU hang per hour of soak.
 
 ## Test schedule
-- Normal test runs: 15 min at most. A/B comparisons: 5 boots per side once the bench tool exists.
+- Normal test runs: 15 min at most. A/B comparisons: 5 boots per side (tools/sunfish-perfab.sh).
 - One 1 h soak per night, after `work/night` is set (9:30 pm or when the user says); results in [gpu-bugs.md](gpu-bugs.md).
 - A run with a hang, a backboardd restart, the panel off or 0 swaps is void.
 - Stop rule: a gain under 1 ms counts only if a 5-boot A/B confirms it.
 
-## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each)
+## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each, except stage work of item 1)
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
-1. **Heat**: A76 1939 MHz default (kernel158); today's defaults soak max 81.6 C, none at 90+ (dfs; this morning 95.7). Idle screen on: adspboot (O18), Clock icon 10 fps full redraw (O17) parked. Next: tonight's 1 h soak. (cpu.md)
-2. ▶ **Control Center** 43.8 swaps/s with the cover cull SWEET_CULL=3 (default; 41.9 without; fixed cc motion; target 45). Steady frames (83 draws) logged (dl4), analysis running; then the best cut. (smoothness.md)
-3. **Real-use hitches**: bench gaps are the swipe reversal (gp), not stalls; next: time app opens and the keyboard by hand-like taps; recheck the Oct 30 >100 ms gaps in a real-use soak. (smoothness.md, cpu.md)
-4. **Render CPU**: backboardd's render thread 13.4 ms/frame on Settings, mostly bridge per-draw work (rc); surface flush done (SWEET_SURF_FLUSH=1); next: Turnip redundant binds / per-frame VkRenderPass (0.3-0.5 ms, guess), allocation churn. (smoothness.md)
-5. **Upstream takeaways**: trace filter env (U6: works, still distorts, parked); UBWC census (U9), spare image blocks timing (U10). QoS (U7) no gain, off.
+1. ▶ **Hardware video decode** (Snapdragon 730G video engine, "Venus"), in stages, each a go/no-go (video.md):
+   0. Baseline: test videos in Safari (H.264, HEVC; 720p, 1080p) on today's software path: what plays, CPU, heat, sound, G7.
+   1. Research, read-only: Venus registers, clocks, power domain, SMMU for SM7150 (Android kernel source, local partition
+      dumps); firmware file and TrustZone ID; HFI version; Linux `venus` driver as reference; how VideoToolbox finds and
+      calls decoder plugins (Apple's AVD.videodecoder). Output: a staged spec in video.md.
+   2. Kernel bring-up: power on, firmware boot through TrustZone, an HFI ping answered (resets only, small steps).
+   3. First frame: a phone tool decodes a raw H.264 file to a YUV buffer, checked against a reference.
+   4. VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
+   5. Tuning: heat, 4K, several streams at once (feeds).
+2. **3D test**: a WebGL game in Safari (three.js demos or a simple browser game), 15 min, alongside stage 0.
+3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
+4. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
+5. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
 
-After these: GPU governor (full and idle levels at most), once the hangs in gpu-bugs.md are under control: GPU clock changes have needed fixes before (xnu 0174). @2x stays spare.
+After these: small Metal test apps built here (textured cube with depth, compute), then Crossy Road (Unity), Instagram,
+Minecraft. Likely needed on the way: YUV surfaces in the bridge (G7 "planar iosurface refused"), louder speaker (B16),
+a GPU stand-in for the missing colour-convert/scale hardware (helps Photos too; cpu.md phs).
 
 ## GPU bugs
-Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-loaded). Fix one now only if it voids benches, stops phone testing, or doubles in rate after a change (then turn that change off first). The rest wait until the speed targets are met.
-
-## GPU bug now due
-G1 (no-fault hang, no recovery): n7 ran a full hour, 397 k submits, 0 G1, with `sweetsmmutcr=3` (stock SMMU walks and ACTLR), default in kernel153. Watch it in the next soaks. A CX cycle doesn't recover a real G1 (the GDSC refuses, n6), so off. Silent reset n1, n5: not seen in n7; pet crumb on in soaks (gpu.md).
+Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-loaded). Fix one when it voids tests,
+stops phone work, or doubles in rate after a change (then turn that change off first).
 
 ## Phone
-THE USER'S since 2026-11-02 19:56 ("boot it into a state I can play with"): no phone work until the user hands it back. Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1, no flamereboot; bundle work/metal2-next (mode 3, cache, U0011..14, Turnip 0110 slice); luma boost off (backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1); /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3. kernel155 = 154 + `sweetvsyncgrid` (off; no gain); kernel156 = 0274 boot-arg only. Live-log listener restarted 2026-11-02 06:29 (usb0 link-state fix running). Phone booted `play` at 19:56 (kernel158 everyday setup, bundle 82f6b41 = SweetMetal2 4C4C44A9, lock screen OK on the webcam).
+THE USER'S since 2026-11-02 19:56 ("boot it into a state I can play with"): no phone work until the user hands it back.
+Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76
+1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 82f6b41
+(SweetMetal2 4C4C44A9); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
+TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Booted `play` at 19:56.
 
 ## Next (in this order)
-1. Phone is the user's: wait until they hand it back. Night soak n8 did NOT run on 2026-11-02 (the user took the phone at 19:55): run it the next night (`tools/sunfish-nightsoak.sh n8`; mtl2-env now has SWEET_SURF_FLUSH=1 and SWEET_CULL=3: watch G1).
-2. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms/frame guess): its build was stopped half way, so rebuild first (`METAL2_VARIANT=next tools/build-metal2-linux.sh`; work/metal2-next may hold a partial build: don't install it before rebuilding). Then a pstack check (tu_CreateRenderPass2 samples -> 0) and a 5-boot A/B on settings, cc, home.
-3. Control Center (43.8 -> 45): cheap levers all tried on 2026-11-02 (smoothness.md); left: quarter-size Home in close/drag frames (days). Consider the next priority instead (real-use hitches).
+1. Without the phone: stage 1 research (investigator), the plan's video.md spec.
+2. When the phone is back: stage 0 baseline + the WebGL test (about 30 min together).
+3. Night soak n8 (did not run 2026-11-02): `tools/sunfish-nightsoak.sh n8` (kernel158; watch G1 with SWEET_CULL=3).
+4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuild first (the 2026-11-02 build was
+   stopped half way: don't install work/metal2-next before rebuilding), then a 5-boot A/B on settings, cc, home.
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
-proximity by hand (U17), battery discharge (U3), headphone plug test (U15),
-Files check (U13), touch while plugged in (U14).
-Parked for later (the user, 2026-10-30): Compass accuracy (20-30 deg off, jumps; dm12, recorder on), camera far focus (lens range; backlog Later), auto-brightness (B42), headphone jack iOS side (audio.md jack10b).
-Parked for the speed focus (the user, 2026-10-31): speaker volume (B16), garbled images (B44), stale clock (B49), battery + camera CPU (O14), camera polish (B48).
+proximity by hand (U17), battery discharge (U3), headphone plug test (U15), Files check (U13), touch while plugged in (U14).
+Parked for later (the user, 2026-10-30): Compass accuracy, camera far focus, auto-brightness (B42), headphone jack iOS side.
+Back in play now the speed focus is over: speaker volume (B16), garbled images (B44), stale clock (B49), battery + camera
+CPU (O14), camera polish (B48).
 Finished items: [completed.md](completed.md) (not auto-loaded).
 
-## Upstream, not CPU/GPU (the daily check adds here during the speed focus; details in backlog.md)
+## Upstream (the daily check adds here; details in backlog.md)
 - Touch poll under 8 ms while touched (hakios-xnu 6d8f818; ~3.5 ms input lag, guess; needs a latency tool).
 - RPMh try-lock: retry on EBUSY, a vote can fail silently now (0.5 h; found reading ours for e5b01a0).
 - xpcproxy identity version (hakios-xnu 78b518b): first count the errors in one Safari oslog.
@@ -56,7 +72,8 @@ Finished items: [completed.md](completed.md) (not auto-loaded).
 - Driver review reports (230762c, 5429d38, 1800069; 2-3 h read-only): SMEM padding underflow found in phone/wifi/smem.c.
 
 ## Questions for you (Claude took the recommended path meanwhile)
-- PowerLog and CoreDuet databases on the phone were moved aside (not deleted) to /var/local/idlefix-db, to stop the idle CPU burn; `tools/sunfish-idlefix-db.sh --undo` restores them. Battery usage history and app suggestions start fresh. OK to delete them later? (Kept for now.)
+- PowerLog and CoreDuet databases on the phone were moved aside (not deleted) to /var/local/idlefix-db, to stop the idle
+  CPU burn; `tools/sunfish-idlefix-db.sh --undo` restores them. OK to delete them later? (Kept for now.)
 
 ## Your tasks at the phone
 In [user-tasks.md](user-tasks.md) (not auto-loaded): 11 open. Claude doesn't wait on them; it moves to the next item.
@@ -65,7 +82,7 @@ In [user-tasks.md](user-tasks.md) (not auto-loaded): 11 open. Claude doesn't wai
 - (none)
 
 ## Backlog
-The Broken, Later and Optimize lists are in [backlog.md](backlog.md) (not auto-loaded).
+The Broken, Later and Optimize lists are in [backlog.md](backlog.md) (not auto-loaded); leftover speed items in Optimize.
 
 ## Verification
 Each item: numbers in the feature Log, this plan and the README status table in the same commit, a journal line,
