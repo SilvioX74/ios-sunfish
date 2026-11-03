@@ -35,6 +35,17 @@ Path: raw Bayer through RDI (CSIPHY -> CSID -> IFE RDI write master -> memory), 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:19 camd as an Interactive launchd job (O-launchd A/B camiA/camiB, kernel161): faster, but a first-start fault
+`CAMD_INTERACTIVE=1 tools/sunfish-install-camera.sh --job` (5299c39). Battery 4454 mV, no hangs.
+| side | camclient START (3 runs) | fps read | dropped | Camera.app START | camd idle CPU | camd preview CPU |
+| A (default) | 6.47 / 11.62 / 12.02 s | 13.8 / 14.2 / 14.3 | 0/1/1 | 5692 ms | 0.08 s/120 s | 5.1 s/30 s |
+| B (Interactive) | 0.71 / 0.71 / 3.13 s | 22.3 / 21.0 / 20.9 | 3/7/4 | 707 ms | 0.08 s/120 s | 5.6 s/30 s |
+B's first START after boot failed (-5): "camid: slg rd 0x1105 err 6", "camid: ABORT: slg read", "camd: == session end:
+FAULT (no more starts): bring-up failed"; camd stayed latched until killed (launchd restarted it); B's numbers are from
+the restarted camd, so restart vs Interactive is confounded (one boot each). Guess (not checked): camid's power-up
+sleeps rely on coalescing stretching them ~10x; with real 1 ms sleeps the sensor isn't up for the first I2C read.
+Job restored to default (camiR). Previews OK on both sides (green-tinted, as before).
+
 ### 2026-10-30 23:58 The user: the camera can't focus on far things (range 400..725 inferred; backlog Later). Compass on dm12: more consistent, 20-30 deg off the Pixel 8 Pro, still jumps; both saved for later at the user's request.
 
 ### 2026-10-30 23:55 s1: first camera session after a boot can ignore the shutter (B48)
