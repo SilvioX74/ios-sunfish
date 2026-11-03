@@ -75,6 +75,20 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 07:10 Stage 3 first decode (v3): session runs to START, 0 frames: too few output2 buffers
+venusctl 3d06aae (sha256 3ac87217...), boot venusR (06:26, kernel158). Outputs research/notes/venus-runs/
+2026-11-03-v3-{install,memtest-buf,decode-320}.txt. Input work/stage3/in-320x240.h264 (16681 bytes, 10 frames).
+- Buffer window memtest 0xa5500000+0x4000000: 0 of 16777216 words changed in 60 s.
+- decode: buffers 0xa5500000-0xa5ca1000 (7812 KB), split mode (OUTPUT UBWC DPB + OUTPUT2 linear NV12, stride 384,
+  scanlines 256). Requirements: input 155648 x min 4; output 155648 min 18; output2 147456 min 18; scratch 345600;
+  scratch_1 1422848; persist_1 147456. Every property set answered without error; 18 DPBs + 18 output2 buffers;
+  LOAD_RESOURCES and START_DONE error 0; ETB 0-3 (5128, 1343, 1467, 1295 bytes).
+- SEQUENCE_CHANGED insufficient (320x240, capture min 5; property 0x700000e not parsed). After reconfig the tool
+  set 8 DPBs + 8 output2 buffers (new table: min 5 but min_host 18, scratch_1 1136640), then CONTINUE; firmware:
+  `h264Dec_Continue(224): Not enough output2 buffers!`. FBDs only came back empty (filled 0). 0 of 10 frames in
+  3.15 s; close sequence all error 0 (SESSION_END_DONE), clean shutdown and power off, no reboot.
+- Fix 1ace6d0: output and DPB counts are at least the firmware's min_host. Run v3b next.
+
 ### 2026-11-03 07:00 Stage 2 go (v2c): clean boot, ping, H.264 decoder session open/close
 venusctl ee0ffd4 (sha256 c3ea219f...), boot venusR (06:25:56, kernel158), VENUS_PHYS=0xa5100000. Outputs
 research/notes/venus-runs/2026-11-03-v2c-{boot,ping,session}.txt. All three exit 0 with a clean power off, no reboot.
