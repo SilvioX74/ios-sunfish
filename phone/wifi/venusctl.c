@@ -1909,8 +1909,8 @@ static void seq_changed(const uint32_t *p, int n)
 /* every msgq packet during decode (wait_msg on_pkt): EBD, FBD, EVENT_NOTIFY */
 static int dec_pkt(int n)
 {
-	uint32_t p[32];
-	memcpy(p, pkt, 4u * (unsigned)(n < 32 ? n : 32));
+	uint32_t p[64];	/* the SEQUENCE_CHANGED event is 44 words (crop extradata 0x700000e at word 31) */
+	memcpy(p, pkt, 4u * (unsigned)(n < 64 ? n : 64));
 	dc.acts++;
 	if (p[1] == M_EBD && n >= 10) {	/* hfi_msg_session_empty_buffer_done_packet (vidc_hfi.h:604) */
 		struct vbuf *b = find_buf(dc.in, dc.nin, p[7]);
@@ -2136,10 +2136,15 @@ static int alloc_outputs(int count)
 		}
 		printf("venus: %d DPBs of %u bytes (UBWC)\n", dc.ndpb, ro[1]);
 	}
+	uint32_t sz = rq[1] > need ? rq[1] : (uint32_t)need;
+	/* v3-v3d: without this the firmware keeps the host's output2 size at 0 (dec[0x14c], set only by this property
+	 * for type 3: venus.b02 0xdf2c4) and its CONTINUE check fails as "Not enough output2 buffers!" (0xe0bd0-0xe0bf4);
+	 * downstream sends it in start_streaming before the DPBs and CONTINUE (msm_vidc.c:1183-1196) */
+	if (dc.split && set_prop(P_BUF_SIZE_MIN, B_OUTPUT2, sz, 0, 2, "output2 size minimum"))
+		return -1;
 	if (set_prop(P_BUF_COUNT, dc.split ? B_OUTPUT2 : B_OUTPUT, (uint32_t)n, (uint32_t)n, 3, "output count"))
 		return -1;
 	dc.nopb = 0;
-	uint32_t sz = rq[1] > need ? rq[1] : (uint32_t)need;
 	for (int i = 0; i < n; i++) {
 		uint32_t pa = balloc(sz, "output");
 		if (!pa)
