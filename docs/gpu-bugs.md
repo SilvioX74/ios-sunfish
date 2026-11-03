@@ -270,3 +270,14 @@ Newest first. Earlier soaks were shorter or used other loads, so compare rates, 
 | 2026-10-31 n1 | kernel139, shadow cache, mode 2, A55 1497 MHz | 24.5 min, silent reset | 127 k | 0 | 0 | 0 | Reset to fastboot, no panic line |
 | 2026-10-31 z1 | kernel135, allocator | ~34 min, stopped early | 151 k | 0 | 3 | 2 | - |
 | 2026-10-31 soak1 | kernel134, allocator | 2 boots | ~113 k | 2 | at least 1 | not counted | - |
+
+### 2026-11-03 08:15 G7 GPU YCbCr path on the phone (fe2d169, kernel159)
+Observed: `SWEET YCBCR: 420f fmt 500 plane 0 1128x1504 -> gpu (offset 64 row 1152 matrix 0)` (camera, backboardd),
+`b3a8 fmt 550 plane 0 1125x1500 -> gpu`, `b3a8 fmt 550 plane 0 1536x1536 -> gpu` (WebKit.GPU), `420v fmt 500 plane 0
+1920x1080 -> gpu` (Safari video): 4 gpu, 0 cpu, 0 refused. Camera viewfinder green with GPU on and off alike (not this
+build). Safari 1080p colour bars right (one diagonal artefact line). Maps crashed 2/2 ~10 s after launch with GPU on:
+`MISSING NBFunction -libraryData`, `-bitCodeOffset`, `-bitCodeFileSize`, then `CRASH Maps[633] sig 11 ... far 0x0`
+(the 4ca1221 fallback answers nil); with SWEET_YCBCR_GPU=0 no crash in ~50 s. Left SWEET_YCBCR_GPU=0 set in
+/var/local/mtl2-env. Matrix reads 0 (BT.601) for all: the matrix key lookup may be wrong. Investigator on libraryData
+(possible B50 link). Markers g7a..g7d in ../logs/boots/20261103-074436.log.
+
