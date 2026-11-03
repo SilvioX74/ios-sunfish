@@ -1,3 +1,4 @@
+#include <stdlib.h>
 /*
  * shot: write what the render server shows on the main display to a PNG (backlog B41, plan D7).
  *   shot [OUT.png]      default /var/local/shot.png
@@ -37,9 +38,14 @@ int main(int argc, char **argv)
 			}
 		}
 
+		/* B53 check (2026-11-03): SHOT_ROW_ALIGN=256 gives 4608 for 1125 px (the bridge aliases it), the default 64 gives
+		 * 4544 (shadowed), the same shape as Safari's tab snapshots */
+		size_t align = getenv("SHOT_ROW_ALIGN") ? strtoul(getenv("SHOT_ROW_ALIGN"), NULL, 0) : 64;
+		if (align < 4 || (align & (align - 1)))
+			align = 64;
 		NSDictionary *props = @{
 			(id)kIOSurfaceWidth: @(w), (id)kIOSurfaceHeight: @(h),
-			(id)kIOSurfaceBytesPerElement: @4, (id)kIOSurfaceBytesPerRow: @(((w * 4) + 63) & ~(size_t)63),
+			(id)kIOSurfaceBytesPerElement: @4, (id)kIOSurfaceBytesPerRow: @(((w * 4) + align - 1) & ~(align - 1)),
 			(id)kIOSurfacePixelFormat: @((uint32_t)'BGRA'),
 		};
 		IOSurfaceRef s = IOSurfaceCreate((__bridge CFDictionaryRef)props);
