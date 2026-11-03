@@ -53,8 +53,8 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
 2. Morning (night flag off): stage 0 Safari video baseline + the WebGL test (about 30 min together; video muted
    before 5 am).
 3. Then stage 2 on the phone: venusctl probe, power, pas-check (read-only first; risky steps in daylight).
-4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuild first (the 2026-11-02 build was
-   stopped half way: don't install work/metal2-next before rebuilding), then a 5-boot A/B on settings, cc, home.
+4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuilt 2026-11-02 21:54
+   (METAL2_VARIANT=next, LC_UUID 4C4C444C-...-BBFD7B88C1E1, 0125 in, not installed), then a 5-boot A/B on settings, cc, home.
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15), Files check (U13), touch while plugged in (U14).
