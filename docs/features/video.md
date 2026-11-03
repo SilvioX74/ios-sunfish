@@ -56,6 +56,15 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 21:50 venusctl written (stage 2 steps 1-3), not run yet
+- phone/wifi/venusctl.c (3851cad): `probe` (read-only), `power on/off [--cvp]`, `pas-check [--fw DIR] [--no-shutdown]`.
+  Writes only to a fixed allow-list (GCC video branches, videocc PLL0/RCG/GDSCs/branches, RPMh MM3+MM2); no SMR writes;
+  videocc access gated on gcc_video_ahb bit31; 100 ms poll timeouts; a failed `power on` runs `power off`.
+- Guesses in it: MM3/MM2 vote x=1,y=1 (probe prints whether cmd-db has them); GDSC SW_COLLAPSE bit0 from Linux;
+  gcc_video_ahb left on at power off; efuse 0x786018 bit10 picks PLL L=0x14 vs 0x19 (downstream). PAS shutdown only
+  after a successful init_image (adspboot adsp3: shutdown with nothing loaded blocked forever).
+- Phone step needed first: copy venus.mdt + .b00-.b04 to /var/local/fw/venus (iOS has no /vendor), log in device-changes.
+
 ### 2026-11-02 22:00 Stage 1 research done (read-only)
 - No blocker found: firmware is on the phone's vendor partition, TrustZone PAS ID 9, register map, clocks, GDSCs, SMMU IDs
   and memory region come from the phone's own live DT (../recon/live.dts) and the downstream sunfish 4.14 driver.
