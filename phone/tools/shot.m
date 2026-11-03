@@ -40,6 +40,8 @@ int main(int argc, char **argv)
 
 		/* B53 check (2026-11-03): SHOT_ROW_ALIGN=256 gives 4608 for 1125 px (the bridge aliases it), the default 64 gives
 		 * 4544 (shadowed), the same shape as Safari's tab snapshots */
+		if (getenv("SHOT_H") && strtoul(getenv("SHOT_H"), NULL, 0) > 0)	/* B53: Safari's tab snapshot is 1125x3033 */
+			h = strtoul(getenv("SHOT_H"), NULL, 0);
 		size_t align = getenv("SHOT_ROW_ALIGN") ? strtoul(getenv("SHOT_ROW_ALIGN"), NULL, 0) : 64;
 		if (align < 4 || (align & (align - 1)))
 			align = 64;
