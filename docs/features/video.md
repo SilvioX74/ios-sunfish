@@ -1,5 +1,5 @@
 # Video playback and hardware decode
-**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus engine decodes H.264 bit-exact from a phone tool, 1080p at 217 fps raw, 66 fps end-to-end through the venusd daemon (stage 4a), 1.2 ms copy-out (kernel160 sweetpmemwc=2). **Updated:** 2026-11-03.
+**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus engine decodes H.264 bit-exact from a phone tool, 1080p at 217 fps raw, VideoToolbox decodes H.264 through our plugin in mediaserverd, 1080p 60 fps, bit-exact (stage 4b). **Updated:** 2026-11-03.
 
 ## Facts
 - The iPhone X decodes video in hardware (AppleAVD); the port has no AVD, so iOS falls back to software decoders.
@@ -88,6 +88,22 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 09:55 Stage 4b (vt4b): VideoToolbox decodes H.264 on Venus through our plugin, in mediaserverd
+vtvenus.dylib + vtdecode 3405244 (sha256 446abe4b..., 77401726...), plugin in /System/Library/VideoDecoders/
+ExampleIPB.videodecoder (tools/sunfish-install-vtvenus.sh), venusd a2752c1 started by hand; kernel160 (per-boot log
+../logs/boots/20261103-082158.log). Clip work/stage3/in-1080p-{10,300}.h264.
+- VTIsHardwareDecodeSupported(avc1): 1 (was 0, vd1).
+- Software reference (`vtdecode --raw --hw off`, mediaserverd): 10 frames CRCs 2a544a75 ... ; 300 frames 47.1 fps.
+- Plugin in vtdecode's process (`--hw require --inproc`): OSStatus 0, `using hardware decoder: yes`, CRCs equal per
+  frame; 300 frames 40.7 fps, 0 dropped (venusd: 44.5 fps, copy-out 1.54 ms).
+- Plugin in mediaserverd (`install --restart`): vtvenus.log `944 mediaserverd: first CreateInstance in this process:
+  venusd connected`; 300 frames `0 dropped, 0 errors ... 4.97 s = 60.4 fps` (venusd 68.7 fps, first frame 600 ms after
+  OPEN); 10 frames CRC-identical to software.
+- Order: hardware returns the last two frames in display order (AU 9 before AU 8, as ffmpeg's reference), the software
+  decoder in decode order; frames carry their own PTS, so players should not care (watch in Safari).
+- Fallback: /var/local/venus-off -> CreateInstance -12906; `--hw enable/any` sessions fall back to software (OSStatus
+  0); `--hw require` fails cleanly. vtdecode's default is require. No CRASH, nothing left powered.
 
 ### 2026-11-03 09:25 Stage 4a (vd4a): venusd + venusc work: 1080p 66 fps end-to-end over the socket, bit-exact
 Binaries a2752c1 (venusctl 512ac1ed, venusd 6d8f7e50, venusc 638446f3) via tools/sunfish-install-venusd.sh --tools;

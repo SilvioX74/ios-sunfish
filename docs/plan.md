@@ -25,7 +25,7 @@ Only items Claude can move now. User tasks are listed below and never gate work;
    1. Done 2026-11-02: research, staged spec in video.md (PAS ID 9, HFI gen1, plugin slot ExampleIPB.videodecoder).
    2. Done 2026-11-03: firmware boots, H.264 session opens/closes; 10/10 rounds idle, 29/29 under 15 min UI load (s7c).
    3. Done 2026-11-03 (v3e): `venusctl decode` bit-exact vs ffmpeg at 320x240 and 1280x720. Left: speed on a long clip.
-   4. ▶ VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
+   4. ▶ VT plugin: 4a venusd (66 fps) and 4b VT in mediaserverd (60 fps, bit-exact) done 2026-11-03; 4c Safari next.
    5. Tuning: heat, 4K, several streams at once (feeds).
 2. **3D test**: WebGL 1 test page runs 15 min clean (wg4). Left: a real WebGL game 15 min; WebGL 2.
 3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
