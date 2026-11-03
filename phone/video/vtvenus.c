@@ -7,19 +7,36 @@
  *  - CreateInstance refuses (kVTCouldNotFindVideoDecoderErr: VT moves on to the software decoder) when
  *    /var/local/venus-off exists or venusd's socket doesn't connect. One line per process (getprogname) to the log.
  *  - StartSession: avcC parameter sets -> Annex B (sent before the first FRAME of each venusd session), pool
- *    attributes '420v' at the visible size, IOSurface, rows aligned to 64; OPEN with the size as the hint.
+ *    attributes '420v' at the visible size, IOSurface, rows aligned to 64. OPEN (the size as the hint) at the first
+ *    DecodeFrame (VTVENUS_LAZY_OPEN below).
  *  - DecodeFrame: AVCC length prefixes -> start codes, FRAME with pts = tag * 33333 (tag = the instance's frame
  *    number; venusc's spacing) and seq = tag; returns asynchronous. A reader thread takes DECODED (display order),
  *    copies Y and CbCr row by row from the padded Venus NV12 into a buffer of VT's pool and emits frame[tag]. Frames
  *    venusd never returns are emitted as dropped: 24 tags behind a returned one, at EOS_DONE, on a session error,
  *    at Invalidate. Backpressure: at most 32 frames in flight (DecodeFrame waits; 2 s without any frame back drops
- *    the oldest), and venusd stops reading while its inputs are full.
- *  - FinishDelayedFrames: EOS, wait for EOS_DONE (2 s without a message ends it), leftovers dropped; the next
- *    DecodeFrame CLOSEs and OPENs a new venusd session (FRAME after EOS is refused). Invalidate: CLOSE, leftovers
- *    dropped, reader stopped. A session ERROR (not -E2BIG): pending dropped, reopened at the next frame (5 reopens without a picture: off).
- * Never crashes its host (mediaserverd holds audio too): every failure returns a VT error and logs, no asserts,
- * 2 s timeouts on socket reads and writes (OPEN's answer: 4 s, Venus may boot ~1.1 s). The reader's state is a
- * separately allocated, reference-counted struct, so a release from inside an emit can't free it under the thread.
+ *    the oldest; cold: below), and venusd stops reading while its inputs are full.
+ *  - FinishDelayedFrames: EOS, wait for EOS_DONE (10 s without a message ends it; cold: below), leftovers dropped;
+ *    the next DecodeFrame CLOSEs and OPENs a new venusd session (FRAME after EOS is refused). Invalidate: CLOSE,
+ *    leftovers dropped, reader stopped. A session ERROR (not -E2BIG): pending dropped, reopened at the next frame
+ *    (5 reopens without a picture: off).
+ * Never crashes its host (mediaserverd holds audio too): every failure returns a VT error and logs, no asserts.
+ * The reader's state is a separately allocated, reference-counted struct, so a release from inside an emit can't
+ * free it under the thread.
+ * Cold start (vdcold, video.md vdboot: the first decode after boot stalls up to ~13 s in venusd, which then reads
+ * nothing; the old 2 s timeouts left the plugin dead for the clip). Switches: env or KEY=VALUE lines in
+ * /var/local/vtvenus-env (read once per process; the file wins):
+ *  - VTVENUS_COLD_MS (20000): OPEN's answer, and until the venusd session's first picture: FRAME sends, EOS_DONE,
+ *    "none back" for the in-flight limit. VTVENUS_WAIT_MS (10000): EOS_DONE/CLOSE after that, a FRAME send's
+ *    deadline. Sends that would block (EAGAIN, partial writes) are retried until the deadline. 4000/2000 ~ the old.
+ *  - VTVENUS_LAZY_OPEN (1): no OPEN at StartSession, only at the first DecodeFrame (an instance that never decodes
+ *    doesn't power Venus). 0: OPEN at StartSession as before.
+ *  - VTVENUS_RECONNECT (1): a lost connection (or a send past its deadline, an OPEN not answered) -> pending dropped,
+ *    reconnect once and OPEN a fresh venusd session; a second loss before a picture came back: errors from then on.
+ *    0: unusable after a loss, as before.
+ *  - VTVENUS_RESYNC (1): a fresh venusd session that would start on a non-IDR frame (after FinishDelayedFrames, an
+ *    error, a reconnect) first gets the parameter sets and the access units since the last IDR/I frame again (up to
+ *    256 / 16 MB; their pictures are discarded: pts tag * 33333 + 1), else frames are dropped until the next IDR/I
+ *    frame (300 at most, then sent anyway). 0: sent as they come, as before.
  * Log: /var/local/vtvenus.log (0666, cut past 1 MB) + os_log. Off: touch /var/local/venus-off (both this and venusd
  * refuse), or tools/sunfish-install-vtvenus.sh remove.
  */
@@ -50,8 +67,11 @@
 #define NSLOT		64
 #define MAX_INFLIGHT	32
 #define STALE		24		/* pending this many tags behind a returned picture: dropped */
-#define IO_MS		2000
-#define OPEN_MS		4000
+#define IO_MS		2000		/* socket timeout slices; the in-flight limit's "none back" once decoding */
+#define ENV_FILE	"/var/local/vtvenus-env"
+#define GOP_MAX		256		/* vdcold: access units kept for a resync (libx264 keyint 250) */
+#define GOP_BYTES	(16u << 20)
+#define SYNC_WAIT_MAX	300		/* frames dropped waiting for an IDR/I frame before sending anyway */
 #define MAX_FAILS	5
 #define RX_MAX		(32u << 20)
 #define LOG_ERR_MAX	50		/* error lines per instance */
@@ -108,12 +128,53 @@ enum {	/* VTErrors.h */
 
 struct slot { int used; uint64_t tag; VTVideoDecoderFrame frame; int no_out; };
 
+/* vdcold switches (header) */
+static struct { int cold_ms, wait_ms, lazy, reconnect, resync; } cfg = { 20000, 10000, 1, 1, 1 };
+static pthread_once_t cfg_once = PTHREAD_ONCE_INIT;
+
+static void cfg_set(const char *k, const char *val)
+{
+	int n = atoi(val);
+	if (!strcmp(k, "VTVENUS_COLD_MS") && n > 0)
+		cfg.cold_ms = n;
+	else if (!strcmp(k, "VTVENUS_WAIT_MS") && n > 0)
+		cfg.wait_ms = n;
+	else if (!strcmp(k, "VTVENUS_LAZY_OPEN"))
+		cfg.lazy = n;
+	else if (!strcmp(k, "VTVENUS_RECONNECT"))
+		cfg.reconnect = n;
+	else if (!strcmp(k, "VTVENUS_RESYNC"))
+		cfg.resync = n;
+}
+
+static void cfg_load(void)
+{
+	static const char *const keys[] = { "VTVENUS_COLD_MS", "VTVENUS_WAIT_MS", "VTVENUS_LAZY_OPEN", "VTVENUS_RECONNECT",
+					    "VTVENUS_RESYNC" };
+	for (size_t i = 0; i < sizeof keys / sizeof *keys; i++)
+		if (getenv(keys[i]))
+			cfg_set(keys[i], getenv(keys[i]));
+	FILE *f = fopen(ENV_FILE, "r");
+	char line[160];
+	while (f && fgets(line, sizeof line, f)) {
+		char *eq = strchr(line, '=');
+		if (line[0] == '#' || !eq)
+			continue;
+		*eq = 0;
+		cfg_set(line, eq + 1);
+	}
+	if (f)
+		fclose(f);
+}
+
 /* everything the reader thread touches; refs: the decoder object + the reader */
 struct vd {
 	int refs;
 	pthread_mutex_t mu, txmu;
 	pthread_cond_t cv;
 	int fd, stop, dead, invalid, emitting, reader_on, opened, sent_cfg, drained, reopen, fails, nerr;
+	int lost, parked, recon_used, just_recon;	/* vdcold: connection lost (reader parked), reconnect done */
+	int got_pic, need_sync, sync_wait;		/* a picture in this venusd session; resync before the next frame */
 	pthread_t reader;
 	VTVideoDecoderSession session;
 	CMVideoFormatDescriptionRef fmt;
@@ -129,6 +190,11 @@ struct vd {
 	uint8_t *rx, *tx, *in;	/* reader's payload; DecodeFrame's FRAME and sample copy */
 	size_t rx_cap, tx_cap, in_cap;
 	unsigned n_in, n_out, n_drop, n_sess;
+	uint8_t *gop, *rp;	/* vdcold: the access units since the last IDR/I frame (no parameter sets); replay buffer */
+	size_t gop_len, gop_cap, rp_cap;
+	uint32_t gop_off[GOP_MAX], gop_alen[GOP_MAX];
+	uint64_t gop_tag[GOP_MAX];
+	int gop_n, gop_ok;
 };
 struct storage { struct vd *v; };
 
@@ -178,13 +244,20 @@ static void wait_ms(struct vd *v, int ms)	/* v->mu held */
 	pthread_cond_timedwait_relative_np(&v->cv, &v->mu, &ts);
 }
 
-static int wr_full(int fd, const void *b, size_t n)
+/* vdcold: partial transfers and EAGAIN (the 2 s SO_SNDTIMEO/SO_RCVTIMEO) retried until ms have passed */
+static int wr_full(int fd, const void *b, size_t n, int ms)
 {
 	const uint8_t *p = b;
+	double t0 = mono();
 	while (n) {
 		ssize_t k = write(fd, p, n);
 		if (k < 0 && errno == EINTR)
 			continue;
+		if (k < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && (mono() - t0) * 1e3 < ms) {
+			struct pollfd q = { .fd = fd, .events = POLLOUT };
+			poll(&q, 1, 100);
+			continue;
+		}
 		if (k <= 0)
 			return -1;
 		p += k, n -= (size_t)k;
@@ -192,18 +265,30 @@ static int wr_full(int fd, const void *b, size_t n)
 	return 0;
 }
 
-static int rd_full(int fd, void *b, size_t n)	/* SO_RCVTIMEO 2 s per read */
+static int rd_full(int fd, void *b, size_t n, int ms)
 {
 	uint8_t *p = b;
+	double t0 = mono();
 	while (n) {
 		ssize_t k = read(fd, p, n);
 		if (k < 0 && errno == EINTR)
 			continue;
+		if (k < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && (mono() - t0) * 1e3 < ms) {
+			struct pollfd q = { .fd = fd, .events = POLLIN };
+			poll(&q, 1, 100);
+			continue;
+		}
 		if (k <= 0)
 			return -1;
 		p += k, n -= (size_t)k;
 	}
 	return 0;
+}
+
+/* vdcold: how long a send or an answer may take: the cold-start allowance until the venusd session's first picture */
+static int io_ms(struct vd *v)
+{
+	return v->got_pic ? cfg.wait_ms : cfg.cold_ms;
 }
 
 static int grow(uint8_t **b, size_t *cap, size_t want)
@@ -222,8 +307,9 @@ static int send_msg(struct vd *v, int type, uint64_t pts, uint32_t seq, const vo
 	struct venusd_msg m = { .magic = VENUSD_MAGIC, .type = (uint16_t)type, .version = VENUSD_VERSION, .len = len,
 		.pts = pts, .seq = seq, .codec = type == VD_OPEN ? VD_CODEC_H264 : 0,
 		.width = type == VD_OPEN ? (uint32_t)v->w : 0, .height = type == VD_OPEN ? (uint32_t)v->h : 0 };
+	int ms = io_ms(v);
 	pthread_mutex_lock(&v->txmu);
-	int r = v->fd < 0 || wr_full(v->fd, &m, sizeof m) || (len && wr_full(v->fd, payload, len)) ? -1 : 0;
+	int r = v->fd < 0 || wr_full(v->fd, &m, sizeof m, ms) || (len && wr_full(v->fd, payload, len, ms)) ? -1 : 0;
 	pthread_mutex_unlock(&v->txmu);
 	return r;
 }
@@ -240,6 +326,8 @@ static void vd_unref(struct vd *v)
 	free(v->rx);
 	free(v->tx);
 	free(v->in);
+	free(v->gop);
+	free(v->rp);
 	pthread_mutex_destroy(&v->mu);
 	pthread_mutex_destroy(&v->txmu);
 	pthread_cond_destroy(&v->cv);
@@ -386,6 +474,11 @@ static void decoded(struct vd *v, const struct venusd_msg *m)
 	int no_out = 0;
 	uint64_t tag = m->pts / PTS_STEP;
 	pthread_mutex_lock(&v->mu);
+	v->got_pic = 1, v->recon_used = 0;	/* vdcold: Venus decodes in this session */
+	if (m->pts % PTS_STEP == 1) {	/* a resync access unit's picture: shown before already */
+		pthread_mutex_unlock(&v->mu);
+		return;
+	}
 	struct slot *s = &v->slot[tag % NSLOT];
 	if (m->pts % PTS_STEP == 0 && s->used && s->tag == tag) {
 		frame = s->frame, no_out = s->no_out;
@@ -428,23 +521,40 @@ static void *reader(void *arg)
 	struct vd *v = arg;
 	for (;;) {
 		pthread_mutex_lock(&v->mu);
-		int stop = v->stop;
+		int stop = v->stop, fd = v->fd, ms = io_ms(v);
 		pthread_mutex_unlock(&v->mu);
 		if (stop)
 			break;
-		struct pollfd p = { .fd = v->fd, .events = POLLIN };
+		struct pollfd p = { .fd = fd, .events = POLLIN };
 		int r = poll(&p, 1, 250);
 		if (r == 0 || (r < 0 && errno == EINTR))
 			continue;
 		struct venusd_msg m = { 0 };
-		if (r < 0 || rd_full(v->fd, &m, sizeof m) || m.magic != VENUSD_MAGIC || m.len > RX_MAX ||
-		    grow(&v->rx, &v->rx_cap, m.len) || (m.len && rd_full(v->fd, v->rx, m.len))) {
+		if (r < 0 || rd_full(fd, &m, sizeof m, ms) || m.magic != VENUSD_MAGIC || m.len > RX_MAX ||
+		    grow(&v->rx, &v->rx_cap, m.len) || (m.len && rd_full(fd, v->rx, m.len, ms))) {
 			pthread_mutex_lock(&v->mu);
 			stop = v->stop;
 			pthread_mutex_unlock(&v->mu);
-			if (!stop)
-				ERRLOG(v, "venusd connection lost or bad message (magic %#x, len %u): decoder unusable", m.magic, m.len);
-			break;
+			if (stop)
+				break;
+			ERRLOG(v, "venusd connection lost or bad message (magic %#x, len %u): %s", m.magic, m.len,
+			       cfg.reconnect ? "pending dropped, reconnect at the next frame" : "decoder unusable");
+			if (!cfg.reconnect)
+				break;
+			/* vdcold: park until DecodeFrame has a new connection (reconnect) or the instance ends */
+			pthread_mutex_lock(&v->mu);
+			v->lost = 1;
+			pthread_cond_broadcast(&v->cv);
+			pthread_mutex_unlock(&v->mu);
+			drop_all(v);
+			pthread_mutex_lock(&v->mu);
+			v->parked = 1;
+			pthread_cond_broadcast(&v->cv);
+			while (v->lost && !v->stop)
+				wait_ms(v, 100);
+			v->parked = 0;
+			pthread_mutex_unlock(&v->mu);
+			continue;
 		}
 		pthread_mutex_lock(&v->mu);
 		v->last_rx = mono();
@@ -513,7 +623,7 @@ static void *reader(void *arg)
 static int wait_reply(struct vd *v, int *flag, int ms)
 {
 	double t0 = mono();
-	while (!*flag && !v->dead) {
+	while (!*flag && !v->dead && !v->lost) {
 		double since = mono() - (v->last_rx > t0 ? v->last_rx : t0);
 		if (since * 1e3 >= ms)
 			return -1;
@@ -522,26 +632,45 @@ static int wait_reply(struct vd *v, int *flag, int ms)
 	return *flag ? 0 : -1;
 }
 
+/* vdcold: the stream is broken (a send past its deadline or partial, an answer missing): a new connection at the
+ * next try (lost), or none (dead: VTVENUS_RECONNECT=0, or dead already); v->mu held */
+static void mark_broken(struct vd *v)
+{
+	v->dead = v->dead || !cfg.reconnect;
+	v->lost = !v->dead;
+	pthread_cond_broadcast(&v->cv);
+}
+
+static void send_broke(struct vd *v)
+{
+	pthread_mutex_lock(&v->mu);
+	mark_broken(v);
+	pthread_mutex_unlock(&v->mu);
+}
+
 static int venus_open(struct vd *v)
 {
 	pthread_mutex_lock(&v->mu);
 	v->got_open = 0;
 	pthread_mutex_unlock(&v->mu);
 	double t0 = mono();
+	v->got_pic = 0;	/* the cold allowance for OPEN's send too */
 	if (send_msg(v, VD_OPEN, 0, 0, NULL, 0)) {
-		ERRLOG(v, "OPEN: send failed (%s)", strerror(errno));
+		ERRLOG(v, "OPEN: send failed (%s)%s", strerror(errno), cfg.reconnect ? ": reconnect" : "");
+		send_broke(v);
 		return ERR_MALFUNCTION;
 	}
 	pthread_mutex_lock(&v->mu);
-	int r = wait_reply(v, &v->got_open, OPEN_MS);
+	int r = wait_reply(v, &v->got_open, cfg.cold_ms);
 	int32_t st = v->open_status;
-	if (r)
-		v->dead = 1;	/* an OPEN answered later would leave the state unknown */
+	if (r)	/* an OPEN answered later would leave the state unknown: a new connection (vdcold) or none */
+		mark_broken(v);
 	else if (!st)
-		v->opened = 1, v->sent_cfg = 0, v->drained = 0, v->reopen = 0, v->got_eos = 0, v->n_sess++;
+		v->opened = 1, v->sent_cfg = 0, v->drained = 0, v->reopen = 0, v->got_eos = 0, v->n_sess++,
+		v->need_sync = 1, v->sync_wait = 0;
 	pthread_mutex_unlock(&v->mu);
 	if (r) {
-		ERRLOG(v, "OPEN: no answer from venusd in %d ms", OPEN_MS);
+		ERRLOG(v, "OPEN: no answer from venusd in %d ms", cfg.cold_ms);
 		return ERR_MALFUNCTION;
 	}
 	if (st) {
@@ -555,7 +684,7 @@ static int venus_open(struct vd *v)
 static void venus_close(struct vd *v)
 {
 	pthread_mutex_lock(&v->mu);
-	int opened = v->opened && !v->dead;
+	int opened = v->opened && !v->dead && !v->lost;
 	v->got_close = 0;
 	v->opened = 0;
 	pthread_mutex_unlock(&v->mu);
@@ -563,12 +692,67 @@ static void venus_close(struct vd *v)
 		return;
 	if (send_msg(v, VD_CLOSE, 0, 0, NULL, 0)) {
 		ERRLOG(v, "CLOSE: send failed (%s)", strerror(errno));
+		send_broke(v);	/* half a message on the wire */
 		return;
 	}
 	pthread_mutex_lock(&v->mu);
-	if (wait_reply(v, &v->got_close, IO_MS))
-		ERRLOG(v, "CLOSE: no answer from venusd in %d ms", IO_MS);
+	int ms = cfg.wait_ms;
+	if (wait_reply(v, &v->got_close, ms))
+		ERRLOG(v, "CLOSE: no answer from venusd in %d ms", ms);
 	pthread_mutex_unlock(&v->mu);
+}
+
+static int venusd_connect(void);
+
+/* vdcold: a new connection after a loss, once until a picture comes back; the reader parks meanwhile. 0 = ok */
+static int reconnect(struct vd *v)
+{
+	pthread_mutex_lock(&v->mu);
+	int again = v->recon_used, off = !cfg.reconnect || v->stop || v->invalid;
+	if (again || off)
+		v->dead = 1;
+	else
+		v->recon_used = 1, v->lost = 1;
+	pthread_mutex_unlock(&v->mu);
+	if (again || off) {
+		ERRLOG(v, "venusd connection lost again before a picture came back: giving up (errors from now on)");
+		return -1;
+	}
+	pthread_mutex_lock(&v->txmu);
+	int old = v->fd;
+	pthread_mutex_unlock(&v->txmu);
+	if (old >= 0)
+		shutdown(old, SHUT_RDWR);	/* the reader sees the end and parks */
+	pthread_mutex_lock(&v->mu);
+	for (double t0 = mono(); v->reader_on && !v->parked && mono() - t0 < cfg.wait_ms / 1e3;)
+		wait_ms(v, 50);
+	int ok = !v->reader_on || v->parked;
+	if (!ok)
+		v->dead = 1;
+	pthread_mutex_unlock(&v->mu);
+	if (!ok) {
+		ERRLOG(v, "reconnect: the reader thread did not stop: giving up");
+		return -1;
+	}
+	int fd = venusd_connect(), e = errno;
+	pthread_mutex_lock(&v->txmu);
+	if (old >= 0)
+		close(old);
+	v->fd = fd;
+	pthread_mutex_unlock(&v->txmu);
+	pthread_mutex_lock(&v->mu);
+	if (fd < 0)
+		v->dead = 1;
+	else
+		v->lost = 0, v->opened = 0, v->drained = 0, v->reopen = 0, v->just_recon = 1;
+	pthread_cond_broadcast(&v->cv);
+	pthread_mutex_unlock(&v->mu);
+	if (fd < 0) {
+		ERRLOG(v, "reconnect to venusd failed (%s): giving up (errors from now on)", strerror(e));
+		return -1;
+	}
+	say("reconnected to venusd: a fresh session at the next frame");
+	return 0;
 }
 
 /* ---- the decoder's functions ---- */
@@ -722,9 +906,10 @@ static OSStatus dec_start_session(CMBaseObjectRef o, VTVideoDecoderSession sessi
 		ERRLOG(v, "no reader thread");
 		return ERR_MALFUNCTION;
 	}
-	st = venus_open(v);
+	st = cfg.lazy ? 0 : venus_open(v);	/* vdcold: lazy, the first DecodeFrame OPENs */
 	if (!st)
-		say("session started: avc1 %dx%d, NAL length %d, parameter sets %zu B", v->w, v->h, v->nal_len, v->ps_len);
+		say("session started: avc1 %dx%d, NAL length %d, parameter sets %zu B%s", v->w, v->h, v->nal_len, v->ps_len,
+		    cfg.lazy ? ", venusd OPEN at the first frame" : "");
 	return st;
 }
 
@@ -741,6 +926,8 @@ static Boolean dec_can_accept(CMBaseObjectRef o, CMFormatDescriptionRef fmt)
 		return false;
 	}
 	/* same size, maybe new parameter sets: they go before the next frame */
+	if (ps_len != v->ps_len || memcmp(ps, v->ps, ps_len))	/* vdcold: the kept GOP went with the old sets */
+		v->gop_ok = 0, v->gop_n = 0, v->gop_len = 0;
 	free(v->ps);
 	v->ps = ps, v->ps_len = ps_len, v->nal_len = nl;
 	v->sent_cfg = 0;
@@ -750,14 +937,53 @@ static Boolean dec_can_accept(CMBaseObjectRef o, CMFormatDescriptionRef fmt)
 	return true;
 }
 
-/* the sample's AVCC NALs -> Annex B in v->tx (after the parameter sets when they are due); its length, or -1 */
-static ssize_t to_annexb(struct vd *v, CMSampleBufferRef sb, int with_ps)
+/* vdcold: a NAL a fresh decoder can start on: IDR, or a slice with slice_type I/SI (first_mb_in_slice, slice_type:
+ * the first two ue(v) after the header; emulation prevention bytes skipped) */
+static int sync_nal(const uint8_t *p, size_t n)
+{
+	int type = n ? p[0] & 0x1f : 0;
+	if (type == 5)
+		return 1;
+	if (type != 1)
+		return 0;
+	uint8_t b[16];
+	size_t nb = 0;
+	for (size_t i = 1, z = 0; i < n && nb < sizeof b; i++) {
+		if (z >= 2 && p[i] == 3) {
+			z = 0;
+			continue;
+		}
+		z = p[i] ? 0 : z + 1;
+		b[nb++] = p[i];
+	}
+	size_t bit = 0;
+	uint32_t val[2];
+	for (int k = 0; k < 2; k++) {
+		int lz = 0;
+		while (bit < nb * 8 && !(b[bit / 8] >> (7 - bit % 8) & 1) && lz < 31)
+			lz++, bit++;
+		bit++;
+		uint32_t x = 0;
+		for (int j = 0; j < lz; j++, bit++)
+			x = x << 1 | (bit < nb * 8 ? (b[bit / 8] >> (7 - bit % 8) & 1) : 0);
+		if (bit > nb * 8)
+			return 0;
+		val[k] = (1u << lz) - 1 + x;
+	}
+	return val[1] % 5 == 2 || val[1] % 5 == 4;
+}
+
+/* the sample's AVCC NALs -> Annex B in v->tx (after the parameter sets when they are due); its length, or -1.
+ * *sync: the access unit has an IDR, or its first slice is I (vdcold) */
+static ssize_t to_annexb(struct vd *v, CMSampleBufferRef sb, int with_ps, int *sync)
 {
 	CMBlockBufferRef bb = CMSampleBufferGetDataBuffer(sb);
 	size_t len = bb ? CMBlockBufferGetDataLength(bb) : 0;
 	if (!len || grow(&v->in, &v->in_cap, len) || CMBlockBufferCopyDataBytes(bb, 0, len, v->in))
 		return -1;
 	size_t nal = 0, out = with_ps ? v->ps_len : 0;
+	int vcl = 0;
+	*sync = 0;
 	for (size_t i = 0; i < len;) {	/* sizes first */
 		size_t n = 0;
 		if (i + (size_t)v->nal_len > len)
@@ -767,6 +993,10 @@ static ssize_t to_annexb(struct vd *v, CMSampleBufferRef sb, int with_ps)
 		i += (size_t)v->nal_len;
 		if (!n || n > len - i)
 			return -1;
+		int t = v->in[i] & 0x1f;
+		if (t == 5 || (t == 1 && !vcl))
+			*sync |= sync_nal(v->in + i, n);
+		vcl |= t == 1 || t == 5;
 		i += n, out += 4 + n, nal++;
 	}
 	if (!nal || out > VENUSD_MAX_AU || grow(&v->tx, &v->tx_cap, out))
@@ -786,43 +1016,100 @@ static ssize_t to_annexb(struct vd *v, CMSampleBufferRef sb, int with_ps)
 	return (ssize_t)out;
 }
 
-static OSStatus dec_decode_frame(CMBaseObjectRef o, VTVideoDecoderFrame frame, CMSampleBufferRef sb, VTDecodeFrameFlags flags,
-				 VTDecodeInfoFlags *info)
+#define RETRY	1	/* vdcold, submit(): the connection broke while sending: reconnect, then this frame again */
+
+/* vdcold: the access units since the last IDR/I frame, for a resync (resync()) */
+static void gop_add(struct vd *v, const uint8_t *au, size_t n, uint64_t tag, int sync)
 {
-	struct vd *v = vd_of(o);
-	if (info)
-		*info = 0;
-	if (!v || !frame || !sb)
-		return ERR_PARAM;
+	if (!cfg.resync)
+		return;
+	if (sync)
+		v->gop_n = 0, v->gop_len = 0, v->gop_ok = 1;
+	if (!v->gop_ok)
+		return;
+	size_t want = v->gop_len + n;
+	if (v->gop_n >= GOP_MAX || want > GOP_BYTES ||
+	    grow(&v->gop, &v->gop_cap, want > v->gop_cap ? (want > GOP_BYTES / 2 ? GOP_BYTES : want * 2) : want)) {
+		v->gop_ok = 0, v->gop_n = 0, v->gop_len = 0;	/* too long: the next IDR/I frame starts over */
+		return;
+	}
+	memcpy(v->gop + v->gop_len, au, n);
+	v->gop_off[v->gop_n] = (uint32_t)v->gop_len, v->gop_alen[v->gop_n] = (uint32_t)n, v->gop_tag[v->gop_n] = tag;
+	v->gop_n++, v->gop_len = want;
+}
+
+/* vdcold: a fresh venusd session gets the parameter sets and the GOP so far again; pts tag * PTS_STEP + 1 marks
+ * their pictures for decoded() to discard. 0, RETRY or an OSStatus */
+static OSStatus resync(struct vd *v)
+{
+	double t0 = mono();
+	for (int i = 0; i < v->gop_n; i++) {
+		size_t pre = i ? 0 : v->ps_len, want = pre + v->gop_alen[i];
+		if (grow(&v->rp, &v->rp_cap, want))
+			return ERR_MALFUNCTION;
+		memcpy(v->rp, v->ps, pre);
+		memcpy(v->rp + pre, v->gop + v->gop_off[i], v->gop_alen[i]);
+		if (send_msg(v, VD_FRAME, v->gop_tag[i] * PTS_STEP + 1, (uint32_t)v->gop_tag[i], v->rp, (uint32_t)want)) {
+			ERRLOG(v, "resync: FRAME %llu (again) send failed (%s)", (unsigned long long)v->gop_tag[i], strerror(errno));
+			send_broke(v);
+			return cfg.reconnect ? RETRY : ERR_MALFUNCTION;
+		}
+	}
+	v->sent_cfg = 1;
+	say("resync: parameter sets + %d access unit(s) from tag %llu sent again in %.0f ms (their pictures discarded)",
+	    v->gop_n, (unsigned long long)v->gop_tag[0], 1e3 * (mono() - t0));
+	return 0;
+}
+
+/* vdcold: a venusd session to send into: reconnect after a loss; OPEN at the first frame, after EOS or an error */
+static OSStatus ensure_session(struct vd *v)
+{
 	pthread_mutex_lock(&v->mu);
-	int bad = v->invalid || !v->session, dead = v->dead, reopen = v->drained || v->reopen || !v->opened;
+	int dead = v->dead, lost = v->lost, reopen = v->drained || v->reopen || !v->opened;
 	pthread_mutex_unlock(&v->mu);
-	if (bad)
-		return ERR_INVALID;
 	if (dead)
 		return ERR_MALFUNCTION;
-	if (reopen) {	/* after EOS (FinishDelayedFrames) or a session error: a new venusd session */
-		pthread_mutex_lock(&v->mu);
-		int fails = ++v->fails;	/* back to 0 with the next picture (decoded) */
-		if (fails > MAX_FAILS)
-			v->dead = 1;
-		pthread_mutex_unlock(&v->mu);
-		if (fails > MAX_FAILS) {
-			ERRLOG(v, "%d venusd sessions failed or were reopened in a row: giving up", MAX_FAILS);
+	if (lost) {
+		if (reconnect(v))
 			return ERR_MALFUNCTION;
-		}
-		venus_close(v);
-		drop_all(v);
-		OSStatus st = venus_open(v);
-		if (st)
-			return st;
+		reopen = 1;
 	}
-	/* backpressure: MAX_INFLIGHT frames out; 2 s without anything back drops the oldest */
+	if (!reopen)
+		return 0;
+	/* after EOS (FinishDelayedFrames) or a session error: a new venusd session */
+	pthread_mutex_lock(&v->mu);
+	int fails = ++v->fails;	/* back to 0 with the next picture (decoded) */
+	if (fails > MAX_FAILS)
+		v->dead = 1;
+	int recon = v->just_recon;
+	v->just_recon = 0;
+	pthread_mutex_unlock(&v->mu);
+	if (fails > MAX_FAILS) {
+		ERRLOG(v, "%d venusd sessions failed or were reopened in a row: giving up", MAX_FAILS);
+		return ERR_MALFUNCTION;
+	}
+	venus_close(v);
+	drop_all(v);
+	OSStatus st = venus_open(v);
+	/* just reconnected: venusd may not have dropped the old connection yet (-EBUSY for a moment) */
+	for (double t0 = mono(); st == ERR_NOT_NOW && recon && mono() - t0 < 3;) {
+		usleep(250000);
+		st = venus_open(v);
+	}
+	return st;
+}
+
+static OSStatus submit(struct vd *v, VTVideoDecoderFrame frame, CMSampleBufferRef sb, VTDecodeFrameFlags flags,
+		       VTDecodeInfoFlags *info)
+{
+	/* backpressure: MAX_INFLIGHT frames out; IO_MS (before the session's first picture: VTVENUS_COLD_MS) without
+	 * anything back drops the oldest */
 	pthread_mutex_lock(&v->mu);
 	double t0 = mono();
-	while (v->inflight >= MAX_INFLIGHT && !v->dead && !v->invalid) {
+	while (v->inflight >= MAX_INFLIGHT && !v->dead && !v->invalid && !v->lost) {
 		double last = v->last_rx > t0 ? v->last_rx : t0;
-		if (mono() - last > IO_MS / 1e3) {
+		int lim = v->got_pic ? IO_MS : cfg.cold_ms;
+		if (mono() - last > lim / 1e3) {
 			VTVideoDecoderFrame f[1];
 			int n = 0;
 			uint64_t old = UINT64_MAX;
@@ -834,7 +1121,7 @@ static OSStatus dec_decode_frame(CMBaseObjectRef o, VTVideoDecoderFrame frame, C
 				f[n++] = os->frame, os->used = 0, v->inflight--;
 			v->emitting++;
 			pthread_mutex_unlock(&v->mu);
-			ERRLOG(v, "%d frames in flight, none back for %d ms: oldest (tag %llu) dropped", MAX_INFLIGHT, IO_MS,
+			ERRLOG(v, "%d frames in flight, none back for %d ms: oldest (tag %llu) dropped", MAX_INFLIGHT, lim,
 			       (unsigned long long)old);
 			emit_dropped(v, f, n);
 			pthread_mutex_lock(&v->mu);
@@ -843,15 +1130,39 @@ static OSStatus dec_decode_frame(CMBaseObjectRef o, VTVideoDecoderFrame frame, C
 		}
 		wait_ms(v, 100);
 	}
-	dead = v->dead || v->invalid;
+	int dead = v->dead || v->invalid, lost = v->lost;
 	pthread_mutex_unlock(&v->mu);
 	if (dead)
 		return ERR_MALFUNCTION;
-	ssize_t len = to_annexb(v, sb, !v->sent_cfg);
+	if (lost)
+		return RETRY;
+	int sync = 0, with_ps = !v->sent_cfg;
+	ssize_t len = to_annexb(v, sb, with_ps, &sync);
 	if (len < 0) {
 		ERRLOG(v, "frame %llu: sample not AVCC with %d-byte lengths (or too long): bad data",
 		       (unsigned long long)v->next_tag, v->nal_len);
 		return ERR_BAD_DATA;
+	}
+	if (v->need_sync && cfg.resync && !sync) {	/* vdcold: a fresh session would start on a non-IDR frame */
+		if (v->gop_ok && v->gop_n) {
+			OSStatus st = resync(v);
+			if (st)
+				return st;
+		} else if (v->sync_wait < SYNC_WAIT_MAX) {
+			if (!v->sync_wait++)
+				ERRLOG(v, "frame %llu: fresh venusd session, nothing kept to resync on: dropped until an IDR/I frame",
+				       (unsigned long long)v->next_tag);
+			VTVideoDecoderFrame f[1] = { frame };
+			pthread_mutex_lock(&v->mu);
+			v->emitting++;
+			pthread_mutex_unlock(&v->mu);
+			emit_dropped(v, f, 1);
+			v->n_in++;
+			return 0;
+		} else {
+			ERRLOG(v, "no IDR/I frame in %d frames: frame %llu sent anyway", SYNC_WAIT_MAX,
+			       (unsigned long long)v->next_tag);
+		}
 	}
 	VTVideoDecoderFrame stale[1];
 	int ns = 0;
@@ -866,19 +1177,55 @@ static OSStatus dec_decode_frame(CMBaseObjectRef o, VTVideoDecoderFrame frame, C
 	pthread_mutex_unlock(&v->mu);
 	emit_dropped(v, stale, ns);
 	if (send_msg(v, VD_FRAME, tag * PTS_STEP, (uint32_t)tag, v->tx, (uint32_t)len)) {
+		int e = errno;
 		pthread_mutex_lock(&v->mu);
 		if (s->used && s->tag == tag)
 			s->used = 0, v->inflight--;
-		v->dead = 1;
 		pthread_mutex_unlock(&v->mu);
-		ERRLOG(v, "FRAME %llu: send failed (%s): decoder unusable", (unsigned long long)tag, strerror(errno));
-		return ERR_MALFUNCTION;
+		send_broke(v);
+		ERRLOG(v, "FRAME %llu: send failed within %d ms (%s): %s", (unsigned long long)tag, io_ms(v), strerror(e),
+		       cfg.reconnect ? "reconnect" : "decoder unusable");
+		return cfg.reconnect ? RETRY : ERR_MALFUNCTION;
 	}
 	v->sent_cfg = 1;
+	v->need_sync = 0;
 	v->n_in++;
+	gop_add(v, v->tx + (with_ps ? v->ps_len : 0), (size_t)len - (with_ps ? v->ps_len : 0), tag, sync);
 	if (info)
 		*info = kVTDecodeInfo_Asynchronous;
 	return 0;
+}
+
+static OSStatus dec_decode_frame(CMBaseObjectRef o, VTVideoDecoderFrame frame, CMSampleBufferRef sb, VTDecodeFrameFlags flags,
+				 VTDecodeInfoFlags *info)
+{
+	struct vd *v = vd_of(o);
+	if (info)
+		*info = 0;
+	if (!v || !frame || !sb)
+		return ERR_PARAM;
+	pthread_mutex_lock(&v->mu);
+	int bad = v->invalid || !v->session;
+	pthread_mutex_unlock(&v->mu);
+	if (bad)
+		return ERR_INVALID;
+	/* vdcold: a lost connection gets one more try right away (reconnect, OPEN, resync, this frame) */
+	for (int attempt = 0;; attempt++) {
+		OSStatus st = ensure_session(v);
+		if (st) {
+			pthread_mutex_lock(&v->mu);
+			int again = v->lost && !v->dead && !attempt;
+			pthread_mutex_unlock(&v->mu);
+			if (again)
+				continue;
+			return st;
+		}
+		st = submit(v, frame, sb, flags, info);
+		if (st != RETRY)
+			return st;
+		if (attempt)
+			return ERR_MALFUNCTION;	/* lost again: the next frame's reconnect gives up unless a picture came */
+	}
 }
 
 static OSStatus dec_finish_delayed(CMBaseObjectRef o)
@@ -887,8 +1234,9 @@ static OSStatus dec_finish_delayed(CMBaseObjectRef o)
 	if (!v)
 		return ERR_PARAM;
 	pthread_mutex_lock(&v->mu);
-	int skip = v->invalid || v->dead || !v->opened || v->drained || v->reopen || !v->sent_cfg;
+	int skip = v->invalid || v->dead || v->lost || !v->opened || v->drained || v->reopen || !v->sent_cfg;
 	v->got_eos = 0;
+	int ms = io_ms(v);	/* vdcold: no picture yet in this session: the cold allowance */
 	pthread_mutex_unlock(&v->mu);
 	if (skip) {	/* nothing sent in this venusd session: nothing to drain */
 		drop_all(v);
@@ -897,14 +1245,12 @@ static OSStatus dec_finish_delayed(CMBaseObjectRef o)
 	double t0 = mono();
 	if (send_msg(v, VD_EOS, 0, (uint32_t)v->next_tag, NULL, 0)) {
 		ERRLOG(v, "EOS: send failed (%s)", strerror(errno));
-		pthread_mutex_lock(&v->mu);
-		v->dead = 1;
-		pthread_mutex_unlock(&v->mu);
+		send_broke(v);
 		drop_all(v);
-		return ERR_MALFUNCTION;
+		return cfg.reconnect ? 0 : ERR_MALFUNCTION;
 	}
 	pthread_mutex_lock(&v->mu);
-	int r = wait_reply(v, &v->got_eos, IO_MS);
+	int r = wait_reply(v, &v->got_eos, ms);
 	int32_t st = v->eos_status;
 	v->drained = 1;
 	pthread_mutex_unlock(&v->mu);
@@ -954,6 +1300,7 @@ static OSStatus create_instance(FourCharCode codec, CFAllocatorRef alloc, CMBase
 	if (!out)
 		return ERR_PARAM;
 	*out = NULL;
+	pthread_once(&cfg_once, cfg_load);
 	if (codec != kCMVideoCodecType_H264)
 		snprintf(why, sizeof why, "codec %#x", (unsigned)codec);
 	else if (!stat(OFF_FILE, &sb))
@@ -961,7 +1308,9 @@ static OSStatus create_instance(FourCharCode codec, CFAllocatorRef alloc, CMBase
 	else if ((fd = venusd_connect()) < 0)
 		snprintf(why, sizeof why, "no venusd at %s (%s)", VENUSD_SOCK, strerror(errno));
 	if (!__atomic_exchange_n(&process_logged, 1, __ATOMIC_ACQ_REL))
-		say("first CreateInstance in this process: %s%s", why[0] ? "refused, software decoder: " : "venusd connected", why);
+		say("first CreateInstance in this process: %s%s (cold %d ms, wait %d ms, lazy open %d, reconnect %d, resync %d)",
+		    why[0] ? "refused, software decoder: " : "venusd connected", why, cfg.cold_ms, cfg.wait_ms, cfg.lazy,
+		    cfg.reconnect, cfg.resync);
 	if (why[0])
 		return ERR_NO_DECODER;
 	struct vd *v = calloc(1, sizeof *v);

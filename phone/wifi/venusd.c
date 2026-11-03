@@ -16,6 +16,10 @@
  * Switches: /var/local/venus-off (OPEN -> -ENODEV), VENUSD_VERBOSE=1 (venusctl's per-buffer lines in the log),
  * VENUSD_IDLE_S, VENUSD_PHYS (0xa5100000), VENUSD_BUF_MB (160), VENUSD_IN_KB (input buffer floor, 1024),
  * VENUSD_DEBUG (firmware debug mask, 0x18); the VENUSCTL_* decoder switches work as in venusctl.
+ * Cold start (vdcold, video.md vdboot: the first decode after boot stalls up to ~13 s): until a session's first
+ * picture, socket reads/writes that would block and the 3 s no-progress rule get VENUSD_COLD_S (20) instead of 2/3 s
+ * (0: the old rule). VENUSD_WARMUP=1 (default): right after the socket is up, power Venus, decode one built-in
+ * 320x240 IDR, power off again, so the first-use stall happens at boot, not in Safari (0: off).
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -57,6 +61,27 @@ static double idle_since, t_open, t_first, t_last_frame, t_eos, t_prog;
 static uint32_t sent, hint_w, hint_h;
 static unsigned last_acts;
 static uint8_t *au;
+static unsigned cold_s = 20;	/* vdcold: VENUSD_COLD_S */
+
+/* vdcold: the warm-up stream, one 320x240 grey IDR (SPS, PPS, slice; ffmpeg color=gray, libx264 constrained baseline,
+ * SEI removed; 320x240 is a size stage 3 decoded bit-exact) */
+static const uint8_t warm_au[] = {
+	0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xc0, 0x0d, 0xdc, 0x14, 0x1f, 0xb0, 0x11, 0x00, 0x00, 0x03, 0x00, 0x01, 0x00,
+	0x00, 0x03, 0x00, 0x3c, 0x0f, 0x14, 0x2b, 0x80, 0x00, 0x00, 0x00, 0x01, 0x68, 0xce, 0x0f, 0x2c, 0x80, 0x00, 0x00,
+	0x01, 0x65, 0x88, 0x84, 0x04, 0xbc, 0x98, 0xa0, 0x00, 0x20, 0x2f, 0x27, 0x27, 0x27, 0x27, 0x27, 0x27, 0x27, 0x27,
+	0x27, 0x27, 0x27, 0x27, 0x27, 0x27, 0x27, 0x27, 0x27, 0x27, 0x27, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75,
+	0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7,
+	0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d,
+	0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75,
+	0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7,
+	0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d,
+	0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75,
+	0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7,
+	0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d,
+	0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75,
+	0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7,
+	0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x5d, 0x75, 0xd7, 0x80
+};
 
 static double mono(void)
 {
@@ -80,13 +105,28 @@ static void note(const char *fmt, ...)
 		dprintf(confd, "%s\n", s);
 }
 
+/* vdcold: how long a socket read/write may wait in all: the cold-start allowance until the session's first picture
+ * (the first decode after boot stalls), else the 2 s of SO_SNDTIMEO/SO_RCVTIMEO */
+static double io_limit(void)
+{
+	int cold = owner >= 0 && (sess == S_OPEN || sess == S_RUN || sess == S_EOS) && !t_first;
+	return cold && cold_s > 2 ? cold_s : 2;
+}
+
+/* partial transfers and EAGAIN (the 2 s socket timeouts) retried until io_limit() has passed */
 static int wr_full(int fd, const void *b, size_t n)
 {
 	const uint8_t *p = b;
+	double t0 = mono(), lim = io_limit();
 	while (n) {
 		ssize_t k = write(fd, p, n);
 		if (k < 0 && errno == EINTR)
 			continue;
+		if (k < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && mono() - t0 < lim) {
+			struct pollfd q = { .fd = fd, .events = POLLOUT };
+			poll(&q, 1, 100);
+			continue;
+		}
 		if (k <= 0)
 			return -1;
 		p += k, n -= (size_t)k;
@@ -97,10 +137,16 @@ static int wr_full(int fd, const void *b, size_t n)
 static int rd_full(int fd, void *b, size_t n)
 {
 	uint8_t *p = b;
+	double t0 = mono(), lim = io_limit();
 	while (n) {
 		ssize_t k = read(fd, p, n);
 		if (k < 0 && errno == EINTR)
 			continue;
+		if (k < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && mono() - t0 < lim) {
+			struct pollfd q = { .fd = fd, .events = POLLIN };
+			poll(&q, 1, 100);
+			continue;
+		}
 		if (k <= 0)
 			return -1;
 		p += k, n -= (size_t)k;
@@ -401,9 +447,11 @@ static void sess_poll(void)
 		printf("venusd: EOS done %.0f ms after EOS, %d frames\n", 1e3 * (t - t_eos), st.frames);
 		return;
 	}
-	/* venusctl decode's 3 s without a message; while the inputs are all queued too (the client can't send) */
-	if (t - t_prog > 3 && (sess == S_EOS || !vdec_can_etb())) {
-		printf("venusd: no firmware progress for 3 s (%s)\n", sname[sess]);
+	/* venusctl decode's 3 s without a message; while the inputs are all queued too (the client can't send).
+	 * vdcold: VENUSD_COLD_S before the session's first picture */
+	double quiet = !t_first && cold_s > 3 ? cold_s : 3;
+	if (t - t_prog > quiet && (sess == S_EOS || !vdec_can_etb())) {
+		printf("venusd: no firmware progress for %.0f s (%s)\n", quiet, sname[sess]);
 		if (sess == S_EOS) {
 			reply(owner, VD_EOS_DONE, -ETIMEDOUT, 0);
 			sess = S_DONE;
@@ -411,6 +459,54 @@ static void sess_poll(void)
 			sess_fail(-ETIMEDOUT, sent);
 		}
 	}
+}
+
+/* vdcold: one tiny decode at start (VENUSD_WARMUP), then Venus down again: the first-use stall happens here */
+static void warm_up(void)
+{
+	struct vdec_status st = { 0 };
+	double t0 = mono(), t_up, lim = cold_s > 30 ? cold_s : 30;
+	int r = 0, eos = 0;
+	note("venusd: warm-up: Venus up, one %zu-byte 320x240 IDR, Venus down", sizeof warm_au);
+	if (bring_up()) {
+		note("venusd: warm-up: bring-up failed (OPEN brings it up again)");
+		return;
+	}
+	t_up = mono();
+	t_open = t_up, t_first = t_last_frame = 0;
+	memcpy(au, warm_au, sizeof warm_au);
+	r = sess_start(au, sizeof warm_au);
+	if (!r && vdec_etb(au, sizeof warm_au, 0, 0, 0))
+		r = -EIO;
+	while (!r && !term) {
+		if (!eos && vdec_can_etb()) {	/* the EOS once an input is free (a reconfig may hold them) */
+			if (vdec_etb(NULL, 0, 0, 1, 1)) {
+				r = -EIO;
+				break;
+			}
+			eos = 1;
+		}
+		if (vdec_poll(1)) {
+			r = -EIO;
+			break;
+		}
+		vdec_status(&st);
+		if (st.err || st.fw_dead)
+			r = st.err ? st.err : -EIO;
+		else if (st.eos)
+			break;
+		else if (mono() - t_up > lim)
+			r = -ETIMEDOUT;
+	}
+	vdec_status(&st);
+	note("venusd: warm-up %s (status %d): %d frame(s), first frame %.0f ms after the decoder start, %.0f ms in all"
+	     " (bring-up %.0f ms)", r ? "FAILED" : "done", r, st.frames, t_first ? 1e3 * (t_first - t_up) : 0.0,
+	     1e3 * (mono() - t0), 1e3 * (t_up - t0));
+	sess_stop();
+	sess = S_NONE;
+	t_first = t_last_frame = 0;
+	if (up)
+		down("warm-up done");
 }
 
 static void on_term(int s)
@@ -467,13 +563,16 @@ int main(int argc, char **argv)
 		in_min = (uint32_t)strtoul(getenv("VENUSD_IN_KB"), NULL, 0) << 10;
 	if (getenv("VENUSD_DEBUG"))
 		debug = (uint32_t)strtoul(getenv("VENUSD_DEBUG"), NULL, 0);
+	if (getenv("VENUSD_COLD_S"))
+		cold_s = (unsigned)atoi(getenv("VENUSD_COLD_S"));
+	int warm = !getenv("VENUSD_WARMUP") || atoi(getenv("VENUSD_WARMUP"));
 	struct stat sb;
 	fw = stat("/vendor/firmware/venus.mdt", &sb) == 0 ? "/vendor/firmware" : "/var/local/fw/venus";	/* venusctl's */
 	au = malloc(VENUSD_MAX_AU);
 	if (!au)
 		return 1;
-	note("venusd: start, pid %d, idle %u s, queues %#llx, window %llu MB, inputs >= %u KB, quiet %d", getpid(), idle_s,
-	     (unsigned long long)phys, (unsigned long long)buf_mb, in_min >> 10, vc_quiet);
+	note("venusd: start, pid %d, idle %u s, queues %#llx, window %llu MB, inputs >= %u KB, quiet %d, cold %u s, warm-up %d",
+	     getpid(), idle_s, (unsigned long long)phys, (unsigned long long)buf_mb, in_min >> 10, vc_quiet, cold_s, warm);
 	pm_init();
 	stale_drop(STATE);
 	stale_drop(AHB_STATE);
@@ -493,6 +592,8 @@ int main(int argc, char **argv)
 		return 1;
 	for (int i = 0; i < MAXCL; i++)
 		cl[i].fd = -1, cl[i].gone = 0;
+	if (warm && !fault)	/* clients that connect meanwhile wait in the listen backlog */
+		warm_up();
 	idle_since = mono();
 	while (!term) {
 		struct pollfd p[MAXCL + 1];
