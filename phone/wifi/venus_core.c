@@ -6,7 +6,11 @@
  *     runs its old loop over the same steps
  *   - vdec_sink: decoded frames to a callback (venusd) instead of venusctl's crop + CRC + OUT file
  *   - vc_quiet: no per-buffer lines (ETB/FTB commands, EBD/FBD packets) for the daemon's log; venusctl leaves it 0
- * The bitstream helpers (access units, SPS, CRC32) are in venus_h264.c.
+ * The bitstream helpers (access units, SPS, CRC32) are in venus_h264.c, HEVC's in venus_hevc.c.
+ * 4e: HEVC 8-bit Main decode (vdec_prepare's hevc, decode's --hevc): SESSION_INIT codec HFI_VIDEO_CODEC_HEVC 0x2000,
+ * everything else as for H.264, as downstream does (msm_vdec.c:507-526 the same input/output min counts 4/8,
+ * msm_vidc_clocks.c:1393-1405 the same work mode rule, DPB NV12_UBWC for 8-bit msm_vdec.c:1147-1150, input size from
+ * the firmware's requirement for both). Main10 / 4:2:2 are refused before the session.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +22,7 @@
 #include "pmem.h"
 #include "smmu.h"
 #include "venus_core.h"
+#include "venus_hevc.h"
 
 #define GCC		0x00100000u
 #define GCC_VIDEO_AHB	(GCC + 0xb004)	/* gcc_video_ahb_clk, GDSC parent (notes table "GDSC parent clock") */
@@ -1751,6 +1756,7 @@ static struct {
 	int n_core[8], n_moved;
 	unsigned acts;		/* msgq packets handled: progress for the timeout */
 	int started;		/* 4a: START sent (vdec_close flushes and stops) */
+	int hevc;		/* 4e: an HEVC session (SESSION_INIT codec) */
 	uint32_t isz;		/* 4a: input buffer size */
 	FILE *out;
 	uint8_t *fbuf;
@@ -2222,7 +2228,7 @@ static int dec_close(int started)
 }
 
 /* 4a: decode's session in steps. prepare: SYS_INIT/debug config (sys_up), buffer window, layout from the SPS */
-int vdec_prepare(uint32_t debug, uint64_t bufphys, uint64_t mb, int want, const struct h264_sps *sps)
+int vdec_prepare(uint32_t debug, uint64_t bufphys, uint64_t mb, int want, const struct h264_sps *sps, int hevc)
 {
 	uint8_t *fbuf = dc.fbuf;	/* the copy-out buffer outlives a session (venusd runs many) */
 	size_t fbuf_len = dc.fbuf_len;
@@ -2235,6 +2241,7 @@ int vdec_prepare(uint32_t debug, uint64_t bufphys, uint64_t mb, int want, const 
 	dc.cy = sps->cy;
 	dc.cw = sps->cw;
 	dc.ch = sps->ch;
+	dc.hevc = hevc;
 	struct vstate v;
 	if (sys_up(&v, debug, "before decode"))
 		return 1;
@@ -2266,7 +2273,10 @@ int vdec_start(uint32_t min_in)
 	       (unsigned long long)dc.lim, dc.split ? "split (OUTPUT UBWC DPB + OUTPUT2 linear)" : "primary (OUTPUT linear)",
 	       dc.ystride, dc.yscan);
 
-	uint32_t si[5] = { 20, 0x10007, SESSION_ID, 2, 2 };	/* SYS_SESSION_INIT, decoder, H.264 (as session) */
+	/* SYS_SESSION_INIT, decoder, H.264 (as session) or 4e HEVC (HFI_VIDEO_CODEC_HEVC, vidc_hfi_helper.h:83) */
+	uint32_t si[5] = { 20, 0x10007, SESSION_ID, 2, dc.hevc ? VD_HFI_CODEC_HEVC : 2 };
+	if (dc.hevc)
+		printf("venus: HEVC decoder session (codec %#x)\n", VD_HFI_CODEC_HEVC);
 	if (q_write(si) || wait_msg(0x20006, 1000))
 		return 1;
 	printf("venus: SESSION_INIT_DONE error %#x\n", pkt[3]);
@@ -2428,7 +2438,7 @@ void vdec_sfr(void)
 		print_sfr(v.q);
 }
 
-int decode(uint32_t debug, const char *in, const char *outp, int want, uint64_t bufphys)
+int decode(uint32_t debug, const char *in, const char *outp, int want, uint64_t bufphys, int hevc)
 {
 	size_t len = 0;
 	uint8_t *s = slurp(in, &len);
@@ -2439,18 +2449,26 @@ int decode(uint32_t debug, const char *in, const char *outp, int want, uint64_t 
 	static uint32_t off[NAU], alen[NAU];
 	memset(&dc, 0, sizeof(dc));
 	struct h264_sps sps = { 0, 0, 0, 0, 0, 0 };
-	int nau = split_aus(s, len, off, alen, NAU, &sps);
+	if (hevc < 0)	/* 4e: from the stream's first NAL header (venusctl --h264/--hevc decide) */
+		hevc = hevc_detect(s, len);
+	struct hevc_sps hs = { 0 };
+	int nau = hevc ? split_aus_hevc(s, len, off, alen, NAU, &sps, &hs) : split_aus(s, len, off, alen, NAU, &sps);
+	if (hevc && nau >= 0 && !hevc_main8(&hs)) {
+		printf("venus: refused: HEVC profile %d, chroma format %d, %d/%d bit: 8-bit 4:2:0 Main only\n", hs.profile,
+		       hs.chroma, hs.depth_y, hs.depth_c);
+		return 1;
+	}
 	if (nau < 0) {
 		nau = -nau - 1;
 		printf("venus: no SPS parsed: default 1920x1088 (msm_vidc_internal.h:43-44), the firmware's"
 		       " SEQUENCE_CHANGED decides\n");
 		sps = (struct h264_sps){ .w = 1920, .h = 1088, .cw = 1920, .ch = 1080 };
 	}
-	printf("venus: %s: %zu bytes, %d access units\n", in, len, nau);
+	printf("venus: %s: %zu bytes, %d access units%s\n", in, len, nau, hevc ? " (HEVC)" : "");
 	if (!nau)
 		return 1;
 	uint64_t mb = getenv("VENUSCTL_BUF_MB") ? strtoull(getenv("VENUSCTL_BUF_MB"), NULL, 0) : 64;
-	if (vdec_prepare(debug, bufphys, mb, want, &sps))
+	if (vdec_prepare(debug, bufphys, mb, want, &sps, hevc))
 		return 1;
 	dc.out = fopen(outp, "wb");
 	if (!dc.out) {

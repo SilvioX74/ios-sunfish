@@ -30,6 +30,8 @@
  * 5 = power on "fails": the LEFT POWERED path, reboot after);
  * the file is deleted when read (one shot per file), the env var fires once per venusd. Firmware debug lines during a
  * session carry "[frame N]" (VENUSD_FW_FRAME=0: not).
+ * 4e: OPEN with codec VD_CODEC_HEVC opens an HEVC session (8-bit 4:2:0 Main; another SPS: ERROR -ENOTSUP at the first
+ * FRAME); codec 0 or VD_CODEC_H264 is H.264 as before. VENUSD_HEVC=0: HEVC OPENs refused (-EINVAL).
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -49,6 +51,7 @@
 #include <unistd.h>
 #include "pmem.h"
 #include "venus_core.h"
+#include "venus_hevc.h"
 #include "venus_proto.h"
 
 #define LOG_MAX		(1 << 20)
@@ -74,6 +77,7 @@ static uint32_t sent, hint_w, hint_h;
 static unsigned last_acts;
 static uint8_t *au;
 static unsigned cold_s = 20;	/* vdcold: VENUSD_COLD_S */
+static int sess_hevc, hevc_ok = 1;	/* 4e: the session's codec; VENUSD_HEVC */
 static jmp_buf stop_jb, rec_jb;	/* vdstop: the main loop; recover() itself */
 static int stop_armed, recovering, opening = -1, ending, warmed;
 static unsigned nstops, test_frame, test_k;	/* VENUSD_TEST_CLKOFF / TEST_FILE: frame F, K reads */
@@ -353,8 +357,9 @@ static void do_open(int i, const struct venusd_msg *m)
 				  cl[owner].fd);
 	else if (owner == i)
 		rc = -EINVAL, printf("venusd: second OPEN on fd %d refused (session %s)\n", cl[i].fd, sname[sess]);
-	else if (m->codec != VD_CODEC_H264)
-		rc = -EINVAL, printf("venusd: OPEN codec %u refused: H.264 (%u) only\n", m->codec, VD_CODEC_H264);
+	else if (m->codec && m->codec != VD_CODEC_H264 && (m->codec != VD_CODEC_HEVC || !hevc_ok))
+		rc = -EINVAL, printf("venusd: OPEN codec %u refused: H.264 (%u)%s only\n", m->codec, VD_CODEC_H264,
+				     hevc_ok ? " or HEVC (2)" : " (VENUSD_HEVC=0)");
 	else if (!stat(OFF_FILE, &sb))
 		rc = -ENODEV, printf("venusd: OPEN refused: %s exists\n", OFF_FILE);
 	else if (fault)
@@ -367,9 +372,11 @@ static void do_open(int i, const struct venusd_msg *m)
 		nsess++;
 		sent = 0;
 		hint_w = m->width, hint_h = m->height;
+		sess_hevc = m->codec == VD_CODEC_HEVC;
 		t_open = mono();
 		t_first = t_last_frame = 0;
-		note("venusd: session %u opened (fd %d, hint %ux%u)", nsess, cl[i].fd, hint_w, hint_h);
+		note("venusd: session %u opened (fd %d, %s, hint %ux%u)", nsess, cl[i].fd, sess_hevc ? "HEVC" : "H.264", hint_w,
+		     hint_h);
 		test_file();
 	}
 	reply(i, VD_OPEN, rc, 0);
@@ -380,13 +387,20 @@ static int sess_start(const uint8_t *p, uint32_t len)
 {
 	uint32_t off[4], alen[4];
 	struct h264_sps sps = { 0, 0, 0, 0, 0, 0 };
-	if (split_aus(p, len, off, alen, 4, &sps) < 0) {
+	struct hevc_sps hs = { 0 };
+	int nau = sess_hevc ? split_aus_hevc(p, len, off, alen, 4, &sps, &hs) : split_aus(p, len, off, alen, 4, &sps);
+	if (sess_hevc && nau >= 0 && !hevc_main8(&hs)) {	/* 4e: Venus here decodes 8-bit 4:2:0 Main only */
+		printf("venusd: HEVC profile %d, chroma format %d, %d/%d bit refused: 8-bit 4:2:0 Main only\n", hs.profile,
+		       hs.chroma, hs.depth_y, hs.depth_c);
+		return -ENOTSUP;
+	}
+	if (nau < 0) {
 		uint32_t w = hint_w ? hint_w : 1920, h = hint_h ? hint_h : 1080;
 		sps = (struct h264_sps){ .w = (int)((w + 15) & ~15u), .h = (int)((h + 15) & ~15u), .cw = (int)w, .ch = (int)h };
 		printf("venusd: no SPS in the first access unit: %dx%d (visible %dx%d), the firmware's SEQUENCE_CHANGED decides\n",
 		       sps.w, sps.h, sps.cw, sps.ch);
 	}
-	if (vdec_prepare(debug, 0, buf_mb, INT_MAX, &sps))
+	if (vdec_prepare(debug, 0, buf_mb, INT_MAX, &sps, sess_hevc))
 		return -EIO;
 	int r = vdec_start(in_min);
 	if (r) {
@@ -529,6 +543,7 @@ static void warm_up(void)
 	}
 	t_up = mono();
 	t_open = t_up, t_first = t_last_frame = 0;
+	sess_hevc = 0;	/* the warm-up stream is H.264 */
 	memcpy(au, warm_au, sizeof warm_au);
 	r = sess_start(au, sizeof warm_au);
 	if (!r && vdec_etb(au, sizeof warm_au, 0, 0, 0))
@@ -693,6 +708,7 @@ int main(int argc, char **argv)
 	if (getenv("VENUSD_COLD_S"))
 		cold_s = (unsigned)atoi(getenv("VENUSD_COLD_S"));
 	int warm = !getenv("VENUSD_WARMUP") || atoi(getenv("VENUSD_WARMUP"));
+	hevc_ok = !getenv("VENUSD_HEVC") || atoi(getenv("VENUSD_HEVC"));
 	if (!getenv("VENUSD_RECOVER") || atoi(getenv("VENUSD_RECOVER")))
 		vc_stop_hook = on_stop;
 	vc_frame_tag = !getenv("VENUSD_FW_FRAME") || atoi(getenv("VENUSD_FW_FRAME"));
@@ -703,8 +719,8 @@ int main(int argc, char **argv)
 	if (!au)
 		return 1;
 	note("venusd: start, pid %d, idle %u s, queues %#llx, window %llu MB, inputs >= %u KB, quiet %d, cold %u s, warm-up %d,"
-	     " recover %d", getpid(), idle_s, (unsigned long long)phys, (unsigned long long)buf_mb, in_min >> 10, vc_quiet,
-	     cold_s, warm, vc_stop_hook != NULL);
+	     " recover %d, hevc %d", getpid(), idle_s, (unsigned long long)phys, (unsigned long long)buf_mb, in_min >> 10,
+	     vc_quiet, cold_s, warm, vc_stop_hook != NULL, hevc_ok);
 	pm_init();
 	stale_drop(STATE);
 	stale_drop(AHB_STATE);

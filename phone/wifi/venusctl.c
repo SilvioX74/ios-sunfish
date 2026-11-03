@@ -33,6 +33,8 @@
  *                           after the --phys queue block (or --bufphys). Off switches/knobs: VENUSCTL_PRIMARY=1 (linear
  *                           on OUTPUT, no multi-stream), VENUSCTL_DPB_SETBUF=1, VENUSCTL_ROUTE, VENUSCTL_NOUT,
  *                           VENUSCTL_YSTRIDE/YSCAN, VENUSCTL_BUF_MB (64)
+ *                           4e: IN may be HEVC (Annex B, 8-bit 4:2:0 Main; Main10/4:2:2 refused), told apart by its
+ *                           first NAL header; --hevc / --h264 force the codec (--h264: as before 4e)
  *   venusctl shutdown       undoes boot --keep/init from STATE: PAS shutdown(9), queue memory, SMRs. Then power off.
  *   venusctl memtest ADDR SIZE write|check  the --phys region check (pre-run review 8.1): fill ADDR..ADDR+SIZE through
  *                           /dev/pmem (as init) with addr ^ 0x5a5a5a5a per word, or count the words that changed
@@ -103,7 +105,7 @@ static void ts_start(void)
 int main(int argc, char **argv)
 {
 	const char *fw = NULL, *cmd = NULL, *arg = NULL, *arg2 = NULL, *arg3 = NULL;
-	int no_shutdown = 0, keep = 0, frames = 5;
+	int no_shutdown = 0, keep = 0, frames = 5, hevc = -1;	/* 4e: -1 = from the stream */
 	uint64_t phys = 0, bufphys = 0;
 	uint32_t debug = 0x18;	/* HFI_DEBUG_MSG_ERROR | FATAL (guess: msm_vidc_debug.c's default is not in our source copy) */
 	setvbuf(stdout, NULL, _IOLBF, 0);	/* a hang shows the last line */
@@ -127,6 +129,10 @@ int main(int argc, char **argv)
 			frames = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--bufphys") && i + 1 < argc)
 			bufphys = strtoull(argv[++i], NULL, 0);
+		else if (!strcmp(argv[i], "--hevc"))
+			hevc = 1;
+		else if (!strcmp(argv[i], "--h264"))
+			hevc = 0;
 		else if (!strcmp(argv[i], "--debug") && i + 1 < argc)
 			debug = (uint32_t)strtoul(argv[++i], NULL, 0);
 		else if (!cmd)
@@ -152,7 +158,7 @@ int main(int argc, char **argv)
 	if (arg2 && strcmp(cmd, "memtest") && strcmp(cmd, "decode"))
 		goto usage;
 	if (!strcmp(cmd, "decode") && arg && arg2 && !arg3 && frames > 0)
-		return decode(debug, arg, arg2, frames, bufphys);
+		return decode(debug, arg, arg2, frames, bufphys, hevc);
 	if (!strcmp(cmd, "memtest") && arg && arg2 && arg3 && (!strcmp(arg3, "write") || !strcmp(arg3, "check")))
 		return memtest(strtoull(arg, NULL, 0), strtoull(arg2, NULL, 0), !strcmp(arg3, "write"));
 	if (!strcmp(cmd, "probe") && !arg)
@@ -176,7 +182,8 @@ int main(int argc, char **argv)
 usage:
 	fprintf(stderr, "usage: venusctl [-v] probe | power on|off [--cvp] [--force] | pas-check [--fw DIR] [--no-shutdown]\n"
 		"       | boot [--fw DIR] [--keep] | init [--phys ADDR] | ping [--debug MASK]\n"
-		"       | session [--debug MASK] | decode IN.h264 OUT.yuv [--frames N] [--bufphys ADDR] [--debug MASK]\n"
+		"       | session [--debug MASK] | decode IN.h264|IN.h265 OUT.yuv [--frames N] [--bufphys ADDR] [--debug MASK]\n"
+		"         [--hevc|--h264]\n"
 		"       | shutdown\n"
 		"       | memtest ADDR SIZE write|check\n");
 	return 2;

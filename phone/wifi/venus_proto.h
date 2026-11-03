@@ -2,10 +2,12 @@
  * venusd protocol (video 4a, docs/features/video.md "Stage 4 spec"): /var/run/venusd.sock, AF_UNIX stream, mode 0666.
  * Every message, both ways: struct venusd_msg (96 bytes, little endian, magic VENUSD_MAGIC, version 1), then len
  * payload bytes. One decode session at a time, one per connection:
- *   OPEN    c->d  codec (VD_CODEC_H264), width/height = a size hint (0 = from the stream's SPS, else 1920x1088).
+ *   OPEN    c->d  codec (VD_CODEC_H264; 0 counts as H.264 too; 4e: VD_CODEC_HEVC, 8-bit 4:2:0 Main only), width/height
+ *                 = a size hint (0 = from the stream's SPS, else 1920x1088).
  *                 Powers Venus up and boots the firmware if it is down (~1.1 s), then replies OPEN, status 0.
  *                 -EBUSY: another connection has the session; -ENODEV: /var/local/venus-off exists; -EIO: the bring-up
- *                 failed (venusd log); -EINVAL: bad codec. The HFI session itself starts with the first FRAME.
+ *                 failed (venusd log); -EINVAL: bad codec (or HEVC with VENUSD_HEVC=0). The HFI session itself starts
+ *                 with the first FRAME; an HEVC SPS that isn't 8-bit 4:2:0 Main there: ERROR -ENOTSUP.
  *   FRAME   c->d  one access unit, Annex B (start codes), pts (echoed in DECODED), seq (the client's frame number,
  *                 echoed in ERROR). No reply when queued. venusd reads the next message only once an input buffer is
  *                 free, so a sender blocks: that is the backpressure.
@@ -36,6 +38,7 @@
 
 enum { VD_OPEN = 1, VD_FRAME, VD_DECODED, VD_EOS, VD_EOS_DONE, VD_CLOSE, VD_ERROR };
 #define VD_CODEC_H264	1
+#define VD_CODEC_HEVC	2	/* 4e; FRAME payloads are HEVC Annex B access units (VPS/SPS/PPS in band) */
 
 struct venusd_msg {
 	uint32_t magic;

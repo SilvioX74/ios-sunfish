@@ -8,6 +8,8 @@
  * tools/sunfish-venus-yuvcmp.py. Then a summary: frames, wall time (first FRAME to EOS_DONE), fps, round trip per
  * frame (FRAME sent to its DECODED back, by pts), venusd's copy-out. Needs no /dev/pmem: runs as any user.
  * Env: VENUSD_SOCK (default /var/run/venusd.sock). Exit 0: every access unit came back as a frame, no error.
+ * 4e: IN may be HEVC Annex B (venus_hevc.c splitter, OPEN codec VD_CODEC_HEVC), told apart by its first NAL header;
+ * --hevc / --h264 force the codec.
  */
 #include <errno.h>
 #include <pthread.h>
@@ -19,11 +21,12 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include "venus_h264.h"
+#include "venus_hevc.h"
 #include "venus_proto.h"
 
 #define PTS_STEP	33333u
 
-static int fd = -1, nullout, want;
+static int fd = -1, nullout, want, hevc = -1;	/* 4e: -1 = from the stream */
 static FILE *out;
 static double *sent_t;		/* when FRAME n went out */
 static volatile int stop, eos_done, closed, fatal;
@@ -70,7 +73,8 @@ static int rd_full(void *b, size_t n)
 static int send_msg(int type, uint64_t pts, uint32_t seq, const void *payload, uint32_t len, uint32_t w, uint32_t h)
 {
 	struct venusd_msg m = { .magic = VENUSD_MAGIC, .type = (uint16_t)type, .version = VENUSD_VERSION, .len = len,
-		.pts = pts, .seq = seq, .codec = type == VD_OPEN ? VD_CODEC_H264 : 0, .width = w, .height = h };
+		.pts = pts, .seq = seq, .codec = type == VD_OPEN ? (hevc ? VD_CODEC_HEVC : VD_CODEC_H264) : 0, .width = w,
+		.height = h };
 	return wr_full(&m, sizeof m) || (len && wr_full(payload, len)) ? -1 : 0;
 }
 
@@ -198,6 +202,10 @@ int main(int argc, char **argv)
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--null"))
 			nullout = 1;
+		else if (!strcmp(argv[i], "--hevc"))
+			hevc = 1;
+		else if (!strcmp(argv[i], "--h264"))
+			hevc = 0;
 		else if (!strcmp(argv[i], "--frames") && i + 1 < argc)
 			maxf = atoi(argv[++i]);
 		else if (!in)
@@ -218,13 +226,16 @@ int main(int argc, char **argv)
 	int cap = (int)(len / 4 + 1);	/* no AU is shorter than a start code + NAL header */
 	uint32_t *off = malloc(sizeof(uint32_t) * (size_t)cap), *alen = malloc(sizeof(uint32_t) * (size_t)cap);
 	struct h264_sps sps = { 0, 0, 0, 0, 0, 0 };
-	int nau = off && alen ? split_aus(s, len, off, alen, cap, &sps) : 0;
+	if (hevc < 0)
+		hevc = hevc_detect(s, len);
+	int nau = !off || !alen ? 0 : hevc ? split_aus_hevc(s, len, off, alen, cap, &sps, NULL) :
+					      split_aus(s, len, off, alen, cap, &sps);
 	if (nau < 0) {
 		nau = -nau - 1;
 		printf("venusc: no SPS parsed: venusd uses its default size\n");
 	}
 	want = maxf > 0 && maxf < nau ? maxf : nau;
-	printf("venusc: %s: %zu bytes, %d access units, sending %d\n", in, len, nau, want);
+	printf("venusc: %s: %zu bytes, %d access units%s, sending %d\n", in, len, nau, hevc ? " (HEVC)" : "", want);
 	if (!want)
 		return 1;
 	sent_t = calloc((size_t)want, sizeof(double));
@@ -290,6 +301,7 @@ int main(int argc, char **argv)
 		printf("venus: wrote %d frames %dx%d NV12 (Y, then interleaved CbCr) to %s\n", frames, cw, ch, outp);
 	return frames == want && !fatal && !eos_status ? 0 : 1;
 usage:
-	fprintf(stderr, "usage: venusc IN.h264 OUT.nv12 [--frames N] | venusc IN.h264 [OUT] --null [--frames N]\n");
+	fprintf(stderr, "usage: venusc IN.h264|IN.h265 OUT.nv12 [--frames N] [--hevc|--h264] | venusc IN [OUT] --null"
+		" [--frames N]\n");
 	return 2;
 }

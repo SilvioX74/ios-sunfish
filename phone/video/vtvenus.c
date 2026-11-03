@@ -42,6 +42,9 @@
  *  - VTVENUS_ERR_GAP_MS (5000; vdstop): a venusd session error (venusd recovers Venus after a STOP and answers
  *    VD_ERROR -EIO) reopens with resync as above, once per venusd session; a second session failing within this many
  *    ms of the last error: errors for this instance from then on. 0: no such limit (MAX_FAILS reopens only).
+ *  - VTVENUS_HEVC (1; video 4e): also register 'hvc1' (OPEN with VD_CODEC_HEVC): hvcC's VPS/SPS/PPS -> Annex B as for
+ *    avc1; StartSession/CanAccept refuse an SPS that isn't 8-bit 4:2:0 Main (Main10, 4:2:2: VT's software decoder),
+ *    resync from the last IRAP access unit (IDR, CRA, BLA). 0: avc1 only, as before.
  * Log: /var/local/vtvenus.log (0666, cut past 1 MB) + os_log. Off: touch /var/local/venus-off (both this and venusd
  * refuse), or tools/sunfish-install-vtvenus.sh remove.
  */
@@ -64,6 +67,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "../wifi/venus_proto.h"
+#include "../wifi/venus_hevc.h"
 
 #define LOG_PATH	"/var/local/vtvenus.log"
 #define LOG_MAX		(1 << 20)
@@ -134,8 +138,8 @@ enum {	/* VTErrors.h */
 struct slot { int used; uint64_t tag; VTVideoDecoderFrame frame; int no_out; };
 
 /* vdcold switches (header) */
-static struct { int cold_ms, wait_ms, lazy, reconnect, resync, recon_wait, err_gap_ms; } cfg = {
-	20000, 10000, 1, 1, 1, 1, 5000 };
+static struct { int cold_ms, wait_ms, lazy, reconnect, resync, recon_wait, err_gap_ms, hevc; } cfg = {
+	20000, 10000, 1, 1, 1, 1, 5000, 1 };
 static pthread_once_t cfg_once = PTHREAD_ONCE_INIT;
 
 static void cfg_set(const char *k, const char *val)
@@ -155,12 +159,14 @@ static void cfg_set(const char *k, const char *val)
 		cfg.recon_wait = n;
 	else if (!strcmp(k, "VTVENUS_ERR_GAP_MS") && n >= 0)
 		cfg.err_gap_ms = n;
+	else if (!strcmp(k, "VTVENUS_HEVC"))
+		cfg.hevc = n;
 }
 
 static void cfg_load(void)
 {
 	static const char *const keys[] = { "VTVENUS_COLD_MS", "VTVENUS_WAIT_MS", "VTVENUS_LAZY_OPEN", "VTVENUS_RECONNECT",
-					    "VTVENUS_RESYNC", "VTVENUS_RECON_WAIT", "VTVENUS_ERR_GAP_MS" };
+					    "VTVENUS_RESYNC", "VTVENUS_RECON_WAIT", "VTVENUS_ERR_GAP_MS", "VTVENUS_HEVC" };
 	for (size_t i = 0; i < sizeof keys / sizeof *keys; i++)
 		if (getenv(keys[i]))
 			cfg_set(keys[i], getenv(keys[i]));
@@ -183,6 +189,7 @@ struct vd {
 	pthread_mutex_t mu, txmu;
 	pthread_cond_t cv;
 	int fd, stop, dead, invalid, emitting, reader_on, opened, sent_cfg, drained, reopen, fails, nerr;
+	int hevc;		/* 4e: an hvc1 instance */
 	int lost, parked, recon_used, just_recon;	/* vdcold: connection lost (reader parked), reconnect done */
 	int got_pic, need_sync, sync_wait;		/* a picture in this venusd session; resync before the next frame */
 	unsigned err_sess;				/* vdstop: the venusd session of the last error counted */
@@ -190,7 +197,7 @@ struct vd {
 	pthread_t reader;
 	VTVideoDecoderSession session;
 	CMVideoFormatDescriptionRef fmt;
-	uint8_t *ps;		/* SPS + PPS, Annex B */
+	uint8_t *ps;		/* SPS + PPS (HEVC: VPS + SPS + PPS), Annex B */
 	size_t ps_len;
 	int nal_len, w, h, pool_w, pool_h;
 	uint64_t next_tag;
@@ -202,7 +209,7 @@ struct vd {
 	uint8_t *rx, *tx, *in;	/* reader's payload; DecodeFrame's FRAME and sample copy */
 	size_t rx_cap, tx_cap, in_cap;
 	unsigned n_in, n_out, n_drop, n_sess;
-	uint8_t *gop, *rp;	/* vdcold: the access units since the last IDR/I frame (no parameter sets); replay buffer */
+	uint8_t *gop, *rp;	/* vdcold: the access units since the last IDR/I frame (HEVC: IRAP; no parameter sets); replay */
 	size_t gop_len, gop_cap, rp_cap;
 	uint32_t gop_off[GOP_MAX], gop_alen[GOP_MAX];
 	uint64_t gop_tag[GOP_MAX];
@@ -317,7 +324,7 @@ static int grow(uint8_t **b, size_t *cap, size_t want)
 static int send_msg(struct vd *v, int type, uint64_t pts, uint32_t seq, const void *payload, uint32_t len)
 {
 	struct venusd_msg m = { .magic = VENUSD_MAGIC, .type = (uint16_t)type, .version = VENUSD_VERSION, .len = len,
-		.pts = pts, .seq = seq, .codec = type == VD_OPEN ? VD_CODEC_H264 : 0,
+		.pts = pts, .seq = seq, .codec = type == VD_OPEN ? (v->hevc ? VD_CODEC_HEVC : VD_CODEC_H264) : 0,
 		.width = type == VD_OPEN ? (uint32_t)v->w : 0, .height = type == VD_OPEN ? (uint32_t)v->h : 0 };
 	int ms = io_ms(v);
 	pthread_mutex_lock(&v->txmu);
@@ -846,8 +853,9 @@ static void dec_finalize(CMBaseObjectRef o)
 static CFStringRef dec_description(CMBaseObjectRef o)
 {
 	struct vd *v = vd_of(o);
-	return CFStringCreateWithFormat(NULL, NULL, CFSTR("<vtvenus %p: Venus H.264 via venusd, %u in, %u out, %u dropped>"),
-					(void *)o, v ? v->n_in : 0, v ? v->n_out : 0, v ? v->n_drop : 0);
+	return CFStringCreateWithFormat(NULL, NULL, CFSTR("<vtvenus %p: Venus %s via venusd, %u in, %u out, %u dropped>"),
+					(void *)o, v && v->hevc ? "HEVC" : "H.264", v ? v->n_in : 0, v ? v->n_out : 0,
+					v ? v->n_drop : 0);
 }
 
 static OSStatus dec_copy_property(CMBaseObjectRef o, CFStringRef key, CFAllocatorRef a, void *out)
@@ -879,45 +887,58 @@ static OSStatus dec_supported(CMBaseObjectRef o, CFDictionaryRef *out)
 	return *out ? 0 : ERR_MALFUNCTION;
 }
 
-/* the format's SPS/PPS as Annex B, its NAL length size and size; 0 = usable by Venus */
+/* the format's SPS/PPS (4e hvc1: VPS/SPS/PPS from hvcC) as Annex B, its NAL length size and size; 0 = usable */
+typedef OSStatus (*getps_fn)(CMFormatDescriptionRef, size_t, const uint8_t **, size_t *, size_t *, int *);
 static OSStatus parse_format(struct vd *v, CMFormatDescriptionRef fmt, uint8_t **ps, size_t *ps_len, int *nal_len,
 			     int *w, int *h)
 {
 	size_t count = 0;
 	int nl = 0;
-	if (!fmt || CMFormatDescriptionGetMediaSubType(fmt) != kCMVideoCodecType_H264 ||
-	    CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 0, NULL, NULL, &count, &nl) || !count ||
+	FourCharCode want = v->hevc ? kCMVideoCodecType_HEVC : kCMVideoCodecType_H264;
+	getps_fn getps = v->hevc ? CMVideoFormatDescriptionGetHEVCParameterSetAtIndex :
+				   CMVideoFormatDescriptionGetH264ParameterSetAtIndex;
+	if (!fmt || CMFormatDescriptionGetMediaSubType(fmt) != want || getps(fmt, 0, NULL, NULL, &count, &nl) || !count ||
 	    (nl != 1 && nl != 2 && nl != 4)) {
-		ERRLOG(v, "format: not avc1 with parameter sets (count %zu, NAL length size %d)", count, nl);
+		ERRLOG(v, "format: not %s with parameter sets (count %zu, NAL length size %d)", v->hevc ? "hvc1" : "avc1",
+		       count, nl);
 		return ERR_FORMAT;
 	}
 	size_t total = 0;
 	for (size_t i = 0; i < count; i++) {
 		const uint8_t *p = NULL;
 		size_t n = 0;
-		if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, i, &p, &n, NULL, NULL) || !p || !n)
+		if (getps(fmt, i, &p, &n, NULL, NULL) || !p || !n)
 			return ERR_FORMAT;
 		total += 4 + n;
 	}
 	uint8_t *b = malloc(total), *q = b;
 	if (!b)
 		return ERR_MALFUNCTION;
-	int profile = -1;
+	int profile = -1, main8 = !v->hevc;
+	struct hevc_sps hs = { 0 };
 	for (size_t i = 0; i < count; i++) {
 		const uint8_t *p = NULL;
 		size_t n = 0;
-		CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, i, &p, &n, NULL, NULL);
-		if ((p[0] & 0x1f) == 7 && n > 1 && profile < 0)
+		getps(fmt, i, &p, &n, NULL, NULL);
+		if (!v->hevc && (p[0] & 0x1f) == 7 && n > 1 && profile < 0)
 			profile = p[1];
+		if (v->hevc && ((p[0] >> 1) & 0x3f) == 33 && profile < 0 && !hevc_sps_parse(p, n, &hs))	/* 4e */
+			profile = hs.profile, main8 = hevc_main8(&hs);
 		memcpy(q, "\0\0\0\1", 4);
 		memcpy(q + 4, p, n);
 		q += 4 + n;
 	}
 	CMVideoDimensions d = CMVideoFormatDescriptionGetDimensions(fmt);
 	int big = d.width > d.height ? d.width : d.height, small = d.width > d.height ? d.height : d.width;
-	/* 8-bit 4:2:0 only (High 10 110, High 4:2:2 122, High 4:4:4 244), up to 1920x1088 */
-	if (profile == 110 || profile == 122 || profile == 244 || d.width <= 0 || d.height <= 0 || big > 1920 || small > 1088) {
-		ERRLOG(v, "format: profile %d, %dx%d: not for Venus here", profile, d.width, d.height);
+	/* 8-bit 4:2:0 only (High 10 110, High 4:2:2 122, High 4:4:4 244; HEVC: Main / Main Still Picture, an SPS that
+	 * says 4:2:0 8-bit, none parsed = refused), up to 1920x1088 */
+	if (profile == 110 || profile == 122 || profile == 244 || !main8 || d.width <= 0 || d.height <= 0 || big > 1920 ||
+	    small > 1088) {
+		if (v->hevc)
+			ERRLOG(v, "format: hvc1 profile %d (chroma format %d, %d/%d bit), %dx%d: not for Venus here", profile,
+			       hs.chroma, hs.depth_y, hs.depth_c, d.width, d.height);
+		else
+			ERRLOG(v, "format: profile %d, %dx%d: not for Venus here", profile, d.width, d.height);
 		free(b);
 		return ERR_FORMAT;
 	}
@@ -949,8 +970,8 @@ static OSStatus dec_start_session(CMBaseObjectRef o, VTVideoDecoderSession sessi
 	}
 	st = cfg.lazy ? 0 : venus_open(v);	/* vdcold: lazy, the first DecodeFrame OPENs */
 	if (!st)
-		say("session started: avc1 %dx%d, NAL length %d, parameter sets %zu B%s", v->w, v->h, v->nal_len, v->ps_len,
-		    cfg.lazy ? ", venusd OPEN at the first frame" : "");
+		say("session started: %s %dx%d, NAL length %d, parameter sets %zu B%s", v->hevc ? "hvc1" : "avc1", v->w, v->h,
+		    v->nal_len, v->ps_len, cfg.lazy ? ", venusd OPEN at the first frame" : "");
 	return st;
 }
 
@@ -1015,7 +1036,7 @@ static int sync_nal(const uint8_t *p, size_t n)
 }
 
 /* the sample's AVCC NALs -> Annex B in v->tx (after the parameter sets when they are due); its length, or -1.
- * *sync: the access unit has an IDR, or its first slice is I (vdcold) */
+ * *sync: the access unit has an IDR, or its first slice is I (vdcold); 4e HEVC: it has an IRAP NAL (IDR, CRA, BLA) */
 static ssize_t to_annexb(struct vd *v, CMSampleBufferRef sb, int with_ps, int *sync)
 {
 	CMBlockBufferRef bb = CMSampleBufferGetDataBuffer(sb);
@@ -1034,10 +1055,14 @@ static ssize_t to_annexb(struct vd *v, CMSampleBufferRef sb, int with_ps, int *s
 		i += (size_t)v->nal_len;
 		if (!n || n > len - i)
 			return -1;
-		int t = v->in[i] & 0x1f;
-		if (t == 5 || (t == 1 && !vcl))
-			*sync |= sync_nal(v->in + i, n);
-		vcl |= t == 1 || t == 5;
+		if (v->hevc) {
+			*sync |= hevc_irap((v->in[i] >> 1) & 0x3f);
+		} else {
+			int t = v->in[i] & 0x1f;
+			if (t == 5 || (t == 1 && !vcl))
+				*sync |= sync_nal(v->in + i, n);
+			vcl |= t == 1 || t == 5;
+		}
 		i += n, out += 4 + n, nal++;
 	}
 	if (!nal || out > VENUSD_MAX_AU || grow(&v->tx, &v->tx_cap, out))
@@ -1342,7 +1367,7 @@ static OSStatus create_instance(FourCharCode codec, CFAllocatorRef alloc, CMBase
 		return ERR_PARAM;
 	*out = NULL;
 	pthread_once(&cfg_once, cfg_load);
-	if (codec != kCMVideoCodecType_H264)
+	if (codec != kCMVideoCodecType_H264 && (codec != kCMVideoCodecType_HEVC || !cfg.hevc))
 		snprintf(why, sizeof why, "codec %#x", (unsigned)codec);
 	else if (!stat(OFF_FILE, &sb))
 		snprintf(why, sizeof why, "%s exists", OFF_FILE);
@@ -1362,7 +1387,7 @@ static OSStatus create_instance(FourCharCode codec, CFAllocatorRef alloc, CMBase
 		close(fd);
 		return ERR_MALFUNCTION;
 	}
-	v->refs = 1, v->fd = fd;
+	v->refs = 1, v->fd = fd, v->hevc = codec == kCMVideoCodecType_HEVC;
 	pthread_mutex_init(&v->mu, NULL);
 	pthread_mutex_init(&v->txmu, NULL);
 	pthread_cond_init(&v->cv, NULL);
@@ -1380,8 +1405,11 @@ __attribute__((visibility("default"))) void ExampleIPBDecoderRegister(void)
 						  &kCFTypeDictionaryValueCallBacks);
 	/* hardware (VT's default) at rating 0: hardware wins a tie (_vtSortRegistryItemsByRating) */
 	OSStatus st = VTRegisterVideoDecoderWithInfo(kCMVideoCodecType_H264, info, (void *)create_instance);
-	if (info)
-		CFRelease(info);
 	if (st)
 		say("VTRegisterVideoDecoderWithInfo avc1: OSStatus %d", (int)st);
+	pthread_once(&cfg_once, cfg_load);
+	if (cfg.hevc && (st = VTRegisterVideoDecoderWithInfo(kCMVideoCodecType_HEVC, info, (void *)create_instance)))
+		say("VTRegisterVideoDecoderWithInfo hvc1: OSStatus %d", (int)st);	/* 4e; VTVENUS_HEVC=0: not registered */
+	if (info)
+		CFRelease(info);
 }

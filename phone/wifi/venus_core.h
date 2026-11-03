@@ -35,7 +35,7 @@ int boot(const char *fw, int keep);
 int init(uint64_t phys);
 int ping(uint32_t debug);
 int session(uint32_t debug);
-int decode(uint32_t debug, const char *in, const char *outp, int want, uint64_t bufphys);
+int decode(uint32_t debug, const char *in, const char *outp, int want, uint64_t bufphys, int hevc);	/* -1: detect */
 int memtest(uint64_t a, uint64_t len, int write);
 int shutdown_cmd(void);
 
@@ -55,8 +55,9 @@ struct vdec_frame {	/* one decoded picture as read out of its OUTPUT2 buffer */
 extern void (*vdec_sink)(const struct vdec_frame *f);
 
 /* SYS_INIT if due, debug config, the buffer window (bufphys, or the next 1 MB after the --phys queue block; mb MB),
- * NV12 layout for the SPS's coded size. Up to want frames are handed out. 0 = ok (no session yet). */
-int vdec_prepare(uint32_t debug, uint64_t bufphys, uint64_t mb, int want, const struct h264_sps *sps);
+ * NV12 layout for the SPS's coded size. Up to want frames are handed out. hevc (4e): an HEVC session (8-bit Main;
+ * the caller checks the SPS), else H.264. 0 = ok (no session yet). */
+int vdec_prepare(uint32_t debug, uint64_t bufphys, uint64_t mb, int want, const struct h264_sps *sps, int hevc);
 /* SESSION_INIT, properties, internal/input/output buffers (inputs at least min_in bytes), LOAD_RESOURCES, START,
  * FTBs. 0 = running; 1 = failed with no session; 2 = failed with a session: vdec_close owed */
 int vdec_start(uint32_t min_in);
