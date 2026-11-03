@@ -56,7 +56,8 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
    dominates. G7 GPU path stays off (GPU-bound); later a native VkSamplerYcbcrConversion.
 3. mediaserverd restarts can wedge it (Safari stops loading video; camclk/camid exec loop on restart): install the
    plugin with a reboot, and find out why mediaserverd runs camclk/camid.
-4. WebGL: 3D target met (three.js games_fps, WebGL 2, 15 min, 0 hangs, 7.4 fps). Next: why so slow (GPU-bound);
+4. WebGL: 3D target met (games_fps 15 min, 0 hangs, 7.4 fps). Slow = one 57 ms fragment shader on the screen pass
+   (trace 2026-11-03): dump/analyse shader 4b132e36ec68;
    argument encoders for WebGL 2 pages that use them. Maps B50 is not the GPU cap.
 5. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
 

@@ -22,6 +22,19 @@ hangs but only 7.4 fps (GPU-bound); HexGL parked (its loader stalls on iOS Safar
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:00 trace: games_fps is one 57 ms fragment shader on the screen pass
+Bundle 2278758 (SWEET_GPU_TRACE_PROC=com.apple.WebKit.GPU + MESA_GPU_TRACES=print), traces in research/notes/
+webgl-trace-2026-11-03.log (80 s) and -draw- (45 s, TU_SWEET_DRAW_TRACE=1); fps 7.2-7.8 during both.
+- render_pass 60.6 s of GPU in 80 s; the 1125x1905 target 50.2 s of it (83 %): 3244 passes, mean 15.5 ms, ~1 draw per
+  pass (1948 1-sample passes, 1296 4-sample MSAA passes with 0-1 draws). 1024x1024 shadow map: 2588 passes, 3.9 ms each,
+  up to 101 draws.
+- Draw trace: `fs 4b132e36ec68 vs c9b15857bd08` = 70.7 % of draw time, 57 ms per draw (n=353); `1125x1905 draw 0`
+  17.2 ms mean. Next shaders 3.8-5.1 ms.
+- tiledRender=false on 7335 of 7400 passes (`Autotune selected sysmem`); lrz disabled on all (lrzDisableReason empty);
+  sysmem_clear 5.7 s, sysmem_resolve 2.2 s; slow_clear_lrz 3250x.
+- Reading: per-pixel shader cost, not draw count. Next: dump shader 4b132e36ec68 (ANGLE MSL -> AIR -> SPIR-V -> ir3),
+  instruction count, loops/branches, texture/compare sampling; then sysmem vs GMEM for the screen pass.
+
 ### 2026-11-03 14:40 tfps: three.js games_fps (WebGL 2) runs 15 min clean — the 3D target
 three.js examples/games_fps.html (MIT, sparse clone in work/webgl-games/threejs, gitignored; error/fps hook added),
 bundle fcdf6de, kernel160 boot lat1, 11:28:54-11:44 (15.4 min).
