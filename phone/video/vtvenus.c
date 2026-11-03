@@ -37,6 +37,11 @@
  *    error, a reconnect) first gets the parameter sets and the access units since the last IDR/I frame again (up to
  *    256 / 16 MB; their pictures are discarded: pts tag * 33333 + 1), else frames are dropped until the next IDR/I
  *    frame (300 at most, then sent anyway). 0: sent as they come, as before.
+ *  - VTVENUS_RECON_WAIT (1; vdstop): a reconnect that finds venusd restarting (connection refused, no socket) tries
+ *    again every 250 ms up to VTVENUS_COLD_MS. 0: one try, as before.
+ *  - VTVENUS_ERR_GAP_MS (5000; vdstop): a venusd session error (venusd recovers Venus after a STOP and answers
+ *    VD_ERROR -EIO) reopens with resync as above, once per venusd session; a second session failing within this many
+ *    ms of the last error: errors for this instance from then on. 0: no such limit (MAX_FAILS reopens only).
  * Log: /var/local/vtvenus.log (0666, cut past 1 MB) + os_log. Off: touch /var/local/venus-off (both this and venusd
  * refuse), or tools/sunfish-install-vtvenus.sh remove.
  */
@@ -129,7 +134,8 @@ enum {	/* VTErrors.h */
 struct slot { int used; uint64_t tag; VTVideoDecoderFrame frame; int no_out; };
 
 /* vdcold switches (header) */
-static struct { int cold_ms, wait_ms, lazy, reconnect, resync; } cfg = { 20000, 10000, 1, 1, 1 };
+static struct { int cold_ms, wait_ms, lazy, reconnect, resync, recon_wait, err_gap_ms; } cfg = {
+	20000, 10000, 1, 1, 1, 1, 5000 };
 static pthread_once_t cfg_once = PTHREAD_ONCE_INIT;
 
 static void cfg_set(const char *k, const char *val)
@@ -145,12 +151,16 @@ static void cfg_set(const char *k, const char *val)
 		cfg.reconnect = n;
 	else if (!strcmp(k, "VTVENUS_RESYNC"))
 		cfg.resync = n;
+	else if (!strcmp(k, "VTVENUS_RECON_WAIT"))
+		cfg.recon_wait = n;
+	else if (!strcmp(k, "VTVENUS_ERR_GAP_MS") && n >= 0)
+		cfg.err_gap_ms = n;
 }
 
 static void cfg_load(void)
 {
 	static const char *const keys[] = { "VTVENUS_COLD_MS", "VTVENUS_WAIT_MS", "VTVENUS_LAZY_OPEN", "VTVENUS_RECONNECT",
-					    "VTVENUS_RESYNC" };
+					    "VTVENUS_RESYNC", "VTVENUS_RECON_WAIT", "VTVENUS_ERR_GAP_MS" };
 	for (size_t i = 0; i < sizeof keys / sizeof *keys; i++)
 		if (getenv(keys[i]))
 			cfg_set(keys[i], getenv(keys[i]));
@@ -175,6 +185,8 @@ struct vd {
 	int fd, stop, dead, invalid, emitting, reader_on, opened, sent_cfg, drained, reopen, fails, nerr;
 	int lost, parked, recon_used, just_recon;	/* vdcold: connection lost (reader parked), reconnect done */
 	int got_pic, need_sync, sync_wait;		/* a picture in this venusd session; resync before the next frame */
+	unsigned err_sess;				/* vdstop: the venusd session of the last error counted */
+	double last_err;				/* and when (0: none yet) */
 	pthread_t reader;
 	VTVideoDecoderSession session;
 	CMVideoFormatDescriptionRef fmt;
@@ -576,8 +588,24 @@ static void *reader(void *arg)
 				ERRLOG(v, "frame %u longer than venusd's input buffers: dropped", m.seq);
 				emit_dropped(v, f, n);
 			} else {
-				ERRLOG(v, "venusd session error %d (%#x) at frame %u: pending dropped, reopen at the next frame",
-				       m.status, (unsigned)m.status, m.seq);
+				/* vdstop: one error per venusd session counts (venusd answers every FRAME after it with one
+				 * too); a second failed session within VTVENUS_ERR_GAP_MS: give up */
+				double t = mono();
+				pthread_mutex_lock(&v->mu);
+				int counted = v->last_err > 0 && v->err_sess == v->n_sess;
+				int quit = !counted && cfg.err_gap_ms > 0 && v->last_err > 0 &&
+					   (t - v->last_err) * 1e3 < cfg.err_gap_ms;
+				if (!counted)
+					v->err_sess = v->n_sess, v->last_err = t;
+				if (quit)
+					v->dead = 1;
+				pthread_mutex_unlock(&v->mu);
+				if (quit)
+					ERRLOG(v, "venusd session error %d (%#x) at frame %u, again within %d ms: giving up"
+					       " (errors from now on)", m.status, (unsigned)m.status, m.seq, cfg.err_gap_ms);
+				else if (!counted)
+					ERRLOG(v, "venusd session error %d (%#x) at frame %u: pending dropped, reopen at the"
+					       " next frame", m.status, (unsigned)m.status, m.seq);
 				pthread_mutex_lock(&v->mu);
 				v->reopen = 1;
 				v->got_eos = 1, v->eos_status = m.status;	/* an EOS waiter ends too */
@@ -734,7 +762,20 @@ static int reconnect(struct vd *v)
 		ERRLOG(v, "reconnect: the reader thread did not stop: giving up");
 		return -1;
 	}
-	int fd = venusd_connect(), e = errno;
+	int fd = venusd_connect(), e = errno, tries = 1;
+	/* vdstop: venusd restarting (no socket, nobody listening): every 250 ms up to VTVENUS_COLD_MS */
+	for (double t0 = mono(); fd < 0 && cfg.recon_wait && (e == ECONNREFUSED || e == ENOENT) &&
+	     mono() - t0 < cfg.cold_ms / 1e3;) {
+		pthread_mutex_lock(&v->mu);
+		int stop = v->stop || v->invalid;
+		pthread_mutex_unlock(&v->mu);
+		if (stop)
+			break;
+		usleep(250000);
+		fd = venusd_connect(), e = errno, tries++;
+	}
+	if (fd >= 0 && tries > 1)
+		say("reconnect: venusd answered after %d tries (250 ms apart)", tries);
 	pthread_mutex_lock(&v->txmu);
 	if (old >= 0)
 		close(old);
@@ -1308,9 +1349,9 @@ static OSStatus create_instance(FourCharCode codec, CFAllocatorRef alloc, CMBase
 	else if ((fd = venusd_connect()) < 0)
 		snprintf(why, sizeof why, "no venusd at %s (%s)", VENUSD_SOCK, strerror(errno));
 	if (!__atomic_exchange_n(&process_logged, 1, __ATOMIC_ACQ_REL))
-		say("first CreateInstance in this process: %s%s (cold %d ms, wait %d ms, lazy open %d, reconnect %d, resync %d)",
-		    why[0] ? "refused, software decoder: " : "venusd connected", why, cfg.cold_ms, cfg.wait_ms, cfg.lazy,
-		    cfg.reconnect, cfg.resync);
+		say("first CreateInstance in this process: %s%s (cold %d ms, wait %d ms, lazy open %d, reconnect %d, resync %d,"
+		    " reconnect wait %d, error gap %d ms)", why[0] ? "refused, software decoder: " : "venusd connected", why,
+		    cfg.cold_ms, cfg.wait_ms, cfg.lazy, cfg.reconnect, cfg.resync, cfg.recon_wait, cfg.err_gap_ms);
 	if (why[0])
 		return ERR_NO_DECODER;
 	struct vd *v = calloc(1, sizeof *v);

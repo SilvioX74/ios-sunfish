@@ -9,7 +9,7 @@
  * (idle VENUSD_IDLE_S = 60 s, SIGTERM, a firmware sys error) = venusctl shutdown (PAS shutdown first), then power
  * off; a failed shutdown is LEFT POWERED: no power off (a collapse under live firmware hangs the bus), venusd stays
  * up refusing OPEN with -EIO until a reboot. venus_core's STATE file is the record: a STATE left by a venusd that
- * died (a STOP in venus_core exits) is undone at the next start. Don't run venusctl while venusd runs (same STATE).
+ * died is undone at the next start. Don't run venusctl while venusd runs (same STATE).
  * Polling, no IRQ: the message queue every 1 ms while a session runs, nothing while idle. One session at a time
  * (a second OPEN: -EBUSY). Frames go back over the socket (copy-out through the kernel160 sweetpmemwc=2 mapping);
  * IOSurface hand-off is 4b.
@@ -20,11 +20,22 @@
  * picture, socket reads/writes that would block and the 3 s no-progress rule get VENUSD_COLD_S (20) instead of 2/3 s
  * (0: the old rule). VENUSD_WARMUP=1 (default): right after the socket is up, power Venus, decode one built-in
  * 320x240 IDR, power off again, so the first-use stall happens at boot, not in Safari (0: off).
+ * vdstop (research/notes/venus-wpt-2026-11-03.md section 4; vdcold: a clock/GDSC read off once at a doorbell and
+ * venusd exited): a venus_core STOP (a clock or GDSC off in 3 reads 1 ms apart, a blocked write) longjmps back to the
+ * main loop instead of exiting: the client gets VD_ERROR -EIO (an OPEN in bring-up: VD_OPEN -EIO), the SFR is
+ * printed, then Venus down as downstream handle_sys_error (power on first if the clocks still read off: PAS shutdown
+ * needs it), the next OPEN brings it up again; a failed shutdown is LEFT POWERED as above. VENUSD_RECOVER=0: exit(1)
+ * as before. Test: /var/local/venusd-test-clkoff (or VENUSD_TEST_CLKOFF) "F[:K]": at the session's frame F the next
+ * K clock checks read off (K 3 = one STOP, normal teardown; 4 = the power-on-first path; 1-2 = the re-read passes;
+ * 5 = power on "fails": the LEFT POWERED path, reboot after);
+ * the file is deleted when read (one shot per file), the env var fires once per venusd. Firmware debug lines during a
+ * session carry "[frame N]" (VENUSD_FW_FRAME=0: not).
  */
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <poll.h>
+#include <setjmp.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -45,6 +56,7 @@
 #ifndef LOCKF	/* -D for a host test build */
 #define LOCKF		"/var/run/venusd.pid"
 #define OFF_FILE	"/var/local/venus-off"
+#define TEST_FILE	"/var/local/venusd-test-clkoff"
 #endif
 
 enum { S_NONE, S_OPEN, S_RUN, S_EOS, S_DONE, S_FAILED };	/* the session (owner connection) */
@@ -62,6 +74,9 @@ static uint32_t sent, hint_w, hint_h;
 static unsigned last_acts;
 static uint8_t *au;
 static unsigned cold_s = 20;	/* vdcold: VENUSD_COLD_S */
+static jmp_buf stop_jb, rec_jb;	/* vdstop: the main loop; recover() itself */
+static int stop_armed, recovering, opening = -1, ending, warmed;
+static unsigned nstops, test_frame, test_k;	/* VENUSD_TEST_CLKOFF / TEST_FILE: frame F, K reads */
 
 /* vdcold: the warm-up stream, one 320x240 grey IDR (SPS, PPS, slice; ffmpeg color=gray, libx264 constrained baseline,
  * SEI removed; 320x240 is a size stage 3 decoded bit-exact) */
@@ -188,6 +203,34 @@ static void sink(const struct vdec_frame *f)
 		t_first = mono();
 	t_last_frame = mono();
 	send_msg(owner, &m, f->buf);
+	if (test_frame && (unsigned)f->index + 1 >= test_frame) {	/* vdstop test: the next gated access STOPs */
+		note("venusd: test: frame %d: the next %u clock check(s) read off", f->index, test_k);
+		vc_fake_off = (int)test_k;
+		test_frame = 0;
+	}
+}
+
+/* vdstop test: TEST_FILE (deleted when read) or VENUSD_TEST_CLKOFF "F[:K]" (K 3) */
+static void test_arm(const char *spec, const char *from)
+{
+	unsigned f = 0, k = 3;
+	if (!spec || sscanf(spec, "%u:%u", &f, &k) < 1 || !f)
+		return;
+	test_frame = f, test_k = k ? k : 3;
+	note("venusd: test (%s): at frame %u the next %u clock check(s) read off", from, test_frame, test_k);
+}
+
+static void test_file(void)
+{
+	char b[32] = "";
+	FILE *f = fopen(TEST_FILE, "r");
+	if (!f)
+		return;
+	if (!fgets(b, sizeof b, f))
+		b[0] = 0;
+	fclose(f);
+	unlink(TEST_FILE);
+	test_arm(b, TEST_FILE);
 }
 
 /* ---- Venus up/down: tools/sunfish-venus-test.sh decode's steps and its LEFT POWERED rule ---- */
@@ -231,6 +274,15 @@ static int bring_up(void)
 	return 0;
 }
 
+/* bring_up for an OPEN from connection i (vdstop: a STOP in it answers that OPEN from recover()) */
+static int up_for(int i)
+{
+	opening = i;
+	int r = bring_up();
+	opening = -1;
+	return r;
+}
+
 /* ---- the session ---- */
 
 static void sess_log(const char *how)
@@ -263,15 +315,17 @@ static void sess_fail(int32_t status, uint32_t seq)
 	printf("venusd: session %u failed: status %d (%#x) at frame %u\n", nsess, status, (unsigned)status, seq);
 	if (owner >= 0)
 		reply(owner, VD_ERROR, status, seq);
+	sess = S_FAILED;	/* vdstop: before sess_stop, so a STOP in it sends no second VD_ERROR */
 	sess_stop();
 	sess_log("failed");
-	sess = S_FAILED;
 }
 
 static void sess_end(const char *how)
 {
 	if (sess != S_FAILED) {
+		ending = 1;	/* vdstop: a STOP in here: recover() finishes the end */
 		sess_stop();
+		ending = 0;
 		sess_log(how);
 	}
 	sess = S_NONE;
@@ -305,7 +359,7 @@ static void do_open(int i, const struct venusd_msg *m)
 		rc = -ENODEV, printf("venusd: OPEN refused: %s exists\n", OFF_FILE);
 	else if (fault)
 		rc = -EIO, printf("venusd: OPEN refused: Venus was left powered after a failed shutdown (reboot)\n");
-	else if (!up && bring_up())
+	else if (!up && up_for(i))
 		rc = -EIO;
 	if (!rc) {
 		owner = i;
@@ -316,6 +370,7 @@ static void do_open(int i, const struct venusd_msg *m)
 		t_open = mono();
 		t_first = t_last_frame = 0;
 		note("venusd: session %u opened (fd %d, hint %ux%u)", nsess, cl[i].fd, hint_w, hint_h);
+		test_file();
 	}
 	reply(i, VD_OPEN, rc, 0);
 }
@@ -509,6 +564,78 @@ static void warm_up(void)
 		down("warm-up done");
 }
 
+/* vdstop: venus_core's STOP hook: back to the main loop (stop_jb) or out of recover() (rec_jb); unarmed: venus_core
+ * exits as before */
+static void on_stop(const char *what)
+{
+	if (!stop_armed)
+		return;
+	stop_armed = 0;
+	note("venusd: venus_core STOP at %s: unwinding", what);
+	longjmp(recovering ? rec_jb : stop_jb, 1);
+}
+
+/* vdstop: after a STOP unwound the current operation: the client told, the SFR, Venus down (downstream
+ * handle_sys_error -> core_release: PAS shutdown + power off), the next OPEN runs bring-up */
+static void recover(void)
+{
+	struct stat sb;
+	nstops++;
+	note("venusd: recovering from STOP %u (session %u %s, %s)", nstops, nsess, sname[sess],
+	     opening >= 0 ? "in an OPEN's bring-up" : ending ? "while ending it" : owner >= 0 ? "client attached" : "no client");
+	if (opening >= 0) {
+		reply(opening, VD_OPEN, -EIO, 0);
+		opening = -1;
+	} else if (ending) {	/* the client closed or went: finish sess_end */
+		sess_log("ended (STOP while closing)");
+		sess = S_NONE, owner = -1, ending = 0;
+	} else if (owner >= 0 && (sess == S_OPEN || sess == S_RUN || sess == S_EOS)) {
+		reply(owner, VD_ERROR, -EIO, sent);
+		sess_log("failed (STOP)");
+		sess = S_FAILED;
+	} else if (owner < 0) {	/* warm-up, idle down */
+		sess = S_NONE;
+	}
+	hfi = 0;	/* the HFI session goes with the firmware */
+	vdec_sfr();
+	vdec_abort();
+	recovering = 1;
+	if (setjmp(rec_jb)) {
+		fault = 1;
+		note("venusd: STOP again while recovering: no power off (the firmware may still run): LEFT POWERED,"
+		     " reboot needed");
+	} else {
+		stop_armed = 1;
+		cvp = 1;
+		if (!stat(STATE, &sb)) {
+			if (!vc_core_ok()) {
+				note("venusd: recovery: a clock or GDSC still reads off: power on first (PAS shutdown needs it)");
+				if (power_on()) {
+					fault = 1;
+					note("venusd: recovery: power on failed: no PAS shutdown, no power off: LEFT POWERED,"
+					     " reboot needed");
+				}
+			}
+			if (!fault) {
+				up = 1;
+				down("recovery after a STOP");	/* LEFT POWERED (fault) if the PAS shutdown fails */
+			}
+		} else if (!stat(AHB_STATE, &sb)) {
+			note("venusd: recovery: %s without %s: powered, no firmware: power off", AHB_STATE, STATE);
+			power_off();
+			up = 0;
+		} else {
+			up = 0;
+		}
+	}
+	stop_armed = 0;
+	recovering = 0;
+	vc_fake_off = 0;	/* a test's leftover fake reads */
+	vdec_fw_reset();
+	idle_since = mono();
+	note("venusd: recovery done: %s", fault ? "LEFT POWERED, OPEN refused" : "Venus down, the next OPEN brings it up");
+}
+
 static void on_term(int s)
 {
 	(void)s;
@@ -566,13 +693,18 @@ int main(int argc, char **argv)
 	if (getenv("VENUSD_COLD_S"))
 		cold_s = (unsigned)atoi(getenv("VENUSD_COLD_S"));
 	int warm = !getenv("VENUSD_WARMUP") || atoi(getenv("VENUSD_WARMUP"));
+	if (!getenv("VENUSD_RECOVER") || atoi(getenv("VENUSD_RECOVER")))
+		vc_stop_hook = on_stop;
+	vc_frame_tag = !getenv("VENUSD_FW_FRAME") || atoi(getenv("VENUSD_FW_FRAME"));
+	test_arm(getenv("VENUSD_TEST_CLKOFF"), "VENUSD_TEST_CLKOFF");
 	struct stat sb;
 	fw = stat("/vendor/firmware/venus.mdt", &sb) == 0 ? "/vendor/firmware" : "/var/local/fw/venus";	/* venusctl's */
 	au = malloc(VENUSD_MAX_AU);
 	if (!au)
 		return 1;
-	note("venusd: start, pid %d, idle %u s, queues %#llx, window %llu MB, inputs >= %u KB, quiet %d, cold %u s, warm-up %d",
-	     getpid(), idle_s, (unsigned long long)phys, (unsigned long long)buf_mb, in_min >> 10, vc_quiet, cold_s, warm);
+	note("venusd: start, pid %d, idle %u s, queues %#llx, window %llu MB, inputs >= %u KB, quiet %d, cold %u s, warm-up %d,"
+	     " recover %d", getpid(), idle_s, (unsigned long long)phys, (unsigned long long)buf_mb, in_min >> 10, vc_quiet,
+	     cold_s, warm, vc_stop_hook != NULL);
 	pm_init();
 	stale_drop(STATE);
 	stale_drop(AHB_STATE);
@@ -592,7 +724,10 @@ int main(int argc, char **argv)
 		return 1;
 	for (int i = 0; i < MAXCL; i++)
 		cl[i].fd = -1, cl[i].gone = 0;
-	if (warm && !fault)	/* clients that connect meanwhile wait in the listen backlog */
+	if (setjmp(stop_jb))	/* vdstop: a venus_core STOP anywhere below unwinds to here */
+		recover();
+	stop_armed = vc_stop_hook != NULL;
+	if (warm && !fault && !warmed++)	/* clients that connect meanwhile wait in the listen backlog */
 		warm_up();
 	idle_since = mono();
 	while (!term) {

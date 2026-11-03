@@ -180,14 +180,49 @@ static int ahb_on(void)
 	return !(rd32(GCC_VIDEO_AHB) & CLK_OFF);
 }
 
+/* vdstop (research/notes/venus-wpt-2026-11-03.md section 4): a STOP below calls vc_stop_hook instead of exiting at
+ * once (venusd unwinds and brings Venus down; it must not return); NULL or a hook that returns: exit(1) as before */
+void (*vc_stop_hook)(const char *what);
+int vc_fake_off;	/* vdstop test: the next N core_ok() reads report off (venusd VENUSD_TEST_CLKOFF) */
+static int fake_hit;	/* the last core_ok() was such a fake */
+
+static void vc_stop(const char *what)
+{
+	if (vc_stop_hook)
+		vc_stop_hook(what);
+	exit(1);
+}
+
+/* vdstop: a gate's reads before a STOP, 1 ms apart (a clock reading off once was transient in vdcold);
+ * VENUS_CLOCK_READS=1: one read, as before */
+static unsigned gate_reads(void)
+{
+	static int n = -1;
+	if (n < 0)
+		n = getenv("VENUS_CLOCK_READS") && atoi(getenv("VENUS_CLOCK_READS")) > 0 ? atoi(getenv("VENUS_CLOCK_READS")) : 3;
+	return (unsigned)n;
+}
+
 /* every videocc access: gcc_video_ahb must be on, else stop here (an access with it off hangs the bus) */
 static void vcc_gate(uint32_t pa, const char *what)
 {
-	if (pa >= VCC && pa <= VCC_END && !ahb_on()) {
-		printf("venus: STOP at %s (%#x): gcc_video_ahb %#010x is off, videocc not touched\n", what, pa,
-		       rd32(GCC_VIDEO_AHB));
-		exit(1);
+	if (pa < VCC || pa > VCC_END)
+		return;
+	unsigned n = gate_reads();
+	for (unsigned i = 1; i <= n; i++) {
+		if (ahb_on()) {
+			if (i > 1)
+				printf("venus: clock check: gcc_video_ahb on again at read %u/%u (%s %#x): going on\n", i, n,
+				       what, pa);
+			return;
+		}
+		printf("venus: clock check: gcc_video_ahb %#010x off (%u/%u)\n", rd32(GCC_VIDEO_AHB), i, n);
+		if (i < n)
+			delay_ms(1);
 	}
+	printf("venus: STOP at %s (%#x): gcc_video_ahb %#010x is off, videocc not touched\n", what, pa,
+	       rd32(GCC_VIDEO_AHB));
+	vc_stop(what);
 }
 
 static uint32_t vrd(uint32_t pa)
@@ -199,6 +234,12 @@ static uint32_t vrd(uint32_t pa)
 /* every core access (0x0aa00000-0x0aae4000): AHB, gcc_video_axi, GDSCs mvsc + mvs0 and the branches all on */
 static int core_ok(void)
 {
+	fake_hit = 0;
+	if (vc_fake_off > 0) {
+		vc_fake_off--;
+		fake_hit = 1;
+		return 0;
+	}
 	int ok = ahb_on() && !(rd32(GCC_VIDEO_AXI) & CLK_OFF) && (vrd(GDSC_MVSC) & PWR_ON) && (vrd(GDSC_MVS0) & PWR_ON);
 	for (unsigned i = 0; i < NBR && ok; i++)
 		if (!branches[i].cvp || cvp)
@@ -206,13 +247,55 @@ static int core_ok(void)
 	return ok;
 }
 
+int vc_core_ok(void)
+{
+	return core_ok();
+}
+
+/* vdstop: which of core_ok's registers read off, one line each (videocc only read while the AHB reads on) */
+static void clock_report(unsigned i, unsigned n)
+{
+	if (fake_hit) {
+		printf("venus: clock check: fake off (VENUSD_TEST_CLKOFF) (%u/%u)\n", i, n);
+		return;
+	}
+	int found = 0;
+	uint32_t v = rd32(GCC_VIDEO_AHB);
+	if (v & CLK_OFF) {
+		printf("venus: clock check: gcc_video_ahb %#010x off (%u/%u), videocc not read\n", v, i, n);
+		return;
+	}
+	if ((v = rd32(GCC_VIDEO_AXI)) & CLK_OFF)
+		found++, printf("venus: clock check: gcc_video_axi %#010x off (%u/%u)\n", v, i, n);
+	if (!((v = rd32(GDSC_MVSC)) & PWR_ON))
+		found++, printf("venus: clock check: gdsc mvsc %#010x off (%u/%u)\n", v, i, n);
+	if (!((v = rd32(GDSC_MVS0)) & PWR_ON))
+		found++, printf("venus: clock check: gdsc mvs0 %#010x off (%u/%u)\n", v, i, n);
+	for (unsigned k = 0; k < NBR; k++)
+		if ((!branches[k].cvp || cvp) && ((v = rd32(branches[k].pa)) & CLK_OFF))
+			found++, printf("venus: clock check: %s %#010x off (%u/%u)\n", branches[k].name, v, i, n);
+	if (!found)
+		printf("venus: clock check: none reads off on a second look (%u/%u)\n", i, n);
+}
+
 static void core_gate(uint32_t pa, const char *what)
 {
-	if (pa >= CORE && pa < CORE_END && !core_ok()) {
-		printf("venus: STOP at %s (%#x): a video clock or GDSC is off, core not touched"
-		       " (venusctl shutdown, then power off)\n", what, pa);
-		exit(1);
+	if (pa < CORE || pa >= CORE_END)
+		return;
+	unsigned n = gate_reads();
+	for (unsigned i = 1; i <= n; i++) {
+		if (core_ok()) {
+			if (i > 1)
+				printf("venus: clock check: on again at read %u/%u (%s %#x): going on\n", i, n, what, pa);
+			return;
+		}
+		clock_report(i, n);
+		if (i < n)
+			delay_ms(1);
 	}
+	printf("venus: STOP at %s (%#x): a video clock or GDSC is off, core not touched"
+	       " (venusctl shutdown, then power off)\n", what, pa);
+	vc_stop(what);
 }
 
 static uint32_t crd(uint32_t pa)
@@ -248,7 +331,7 @@ static void wr(uint32_t pa, uint32_t v, const char *why)
 {
 	if (!allowed(pa)) {
 		printf("venus: BLOCKED wr %#x = %#x (%s)\n", pa, v, why);
-		exit(1);
+		vc_stop(why);
 	}
 	vcc_gate(pa, why);
 	core_gate(pa, why);
@@ -1263,6 +1346,9 @@ static int q_read(unsigned i)
 	return got;
 }
 
+int vc_frame_tag;	/* vdstop: venusd sets it: firmware debug lines get the session's frame count */
+static int sess_frames(void);	/* -1: no session started */
+
 static void print_pkt(unsigned q, int n)
 {
 	printf("venus: %s pkt type %#x size %u:", q == 1 ? "msgq" : "dbgq", pkt[1], pkt[0]);
@@ -1279,7 +1365,11 @@ static void print_pkt(unsigned q, int n)
 		for (size_t k = 0; k < len && s[k]; k++)
 			if (s[k] < 0x20 || s[k] > 0x7e)
 				s[k] = ' ';
-		printf("venus: fw [%#x]: %s\n", pkt[2], s);
+		int fr = vc_frame_tag ? sess_frames() : -1;
+		if (fr >= 0)
+			printf("venus: [frame %d] fw [%#x]: %s\n", fr, pkt[2], s);
+		else
+			printf("venus: fw [%#x]: %s\n", pkt[2], s);
 	}
 }
 
@@ -1649,6 +1739,11 @@ static struct {
 	uint8_t *fbuf;
 	size_t fbuf_len;
 } dc;
+
+static int sess_frames(void)
+{
+	return dc.started && !dc.stopping ? dc.frames : -1;
+}
 
 static uint32_t align_up(uint32_t v, uint32_t a)
 {
@@ -2296,6 +2391,26 @@ void vdec_status(struct vdec_status *st)
 void vdec_fw_reset(void)
 {
 	fw_dead = 0;
+}
+
+void vdec_abort(void)
+{
+	uint8_t *fbuf = dc.fbuf;
+	size_t fbuf_len = dc.fbuf_len;
+	on_pkt = NULL;	/* before any queue drain: no FTB re-queue (doorbell) from a dead session's FBDs */
+	wait_soft = 0;
+	memset(&dc, 0, sizeof(dc));
+	dc.fbuf = fbuf;
+	dc.fbuf_len = fbuf_len;
+}
+
+void vdec_sfr(void)
+{
+	struct vstate v;
+	if (state_load(&v) || !v.q)
+		printf("venus: SFR: no queue block in %s\n", STATE);
+	else
+		print_sfr(v.q);
 }
 
 int decode(uint32_t debug, const char *in, const char *outp, int want, uint64_t bufphys)

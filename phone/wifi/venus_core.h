@@ -16,6 +16,12 @@
 
 extern int verbose, cvp, force;	/* venusctl -v, --cvp, --force */
 extern int vc_quiet;		/* 1: no per-buffer lines (ETB/FTB commands, EBD/FBD packets, ETB notes) */
+/* vdstop: a STOP (a clock or GDSC read off VENUS_CLOCK_READS = 3 times 1 ms apart, a blocked write) calls this
+ * instead of exit(1); it must not return (venusd longjmps out). NULL (venusctl): exit(1) */
+extern void (*vc_stop_hook)(const char *what);
+extern int vc_fake_off;		/* vdstop test: the next N clock checks read off (venusd VENUSD_TEST_CLKOFF) */
+extern int vc_frame_tag;	/* vdstop: 1: firmware debug lines during a session as "[frame N] fw [...]" */
+int vc_core_ok(void);		/* the core gate's check: AHB, AXI, GDSCs, branches on (no STOP) */
 
 const char *boot_id(void);
 void stale_drop(const char *path);	/* a state file from an earlier boot: deleted unread */
@@ -69,5 +75,7 @@ struct vdec_status {
 };
 void vdec_status(struct vdec_status *st);
 void vdec_fw_reset(void);	/* after a shutdown: the next bring-up starts with a live firmware again */
+void vdec_abort(void);		/* vdstop: forget the session after a STOP unwound it (no packets handled, no commands) */
+void vdec_sfr(void);		/* vdstop: print the firmware's SFR (STATE's queue block; DRAM only, no core access) */
 
 #endif
