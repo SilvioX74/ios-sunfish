@@ -25,9 +25,10 @@ Only items Claude can move now. User tasks are listed below and never gate work;
    1. Done 2026-11-02: research, staged spec in video.md (PAS ID 9, HFI gen1, plugin slot ExampleIPB.videodecoder).
    2. Done 2026-11-03: firmware boots, H.264 session opens/closes; 10/10 rounds idle, 29/29 under 15 min UI load (s7c).
    3. Done 2026-11-03 (v3e): `venusctl decode` bit-exact vs ffmpeg at 320x240 and 1280x720. Left: speed on a long clip.
-   4. ▶ VT plugin: 4a venusd (66 fps) and 4b VT in mediaserverd (60 fps, bit-exact) done 2026-11-03; 4c Safari next.
+   4. ▶ Done 2026-11-03: 4a venusd, 4b VT plugin, 4c Safari plays H.264 1080p via Venus (63/1800 dropped). Next: venusd
+      launchd job; 4d GPU YUV->RGB without the G7 stall (backboardd 96 %); 4e HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
-2. **3D test**: WebGL 1 test page runs 15 min clean (wg4). Left: a real WebGL game 15 min; WebGL 2.
+2. **3D test**: WebGL 1 incl. MSAA works (wg4, wgaa2). Left: HexGL renders white; a real game 15 min; WebGL 2.
 3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
 4. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
 5. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
@@ -48,17 +49,14 @@ Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfen
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 sweetgpucap=512 since ~09:00 (tag maps512), bundle a1f3952, SWEET_YCBCR_GPU on. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. WebGL 1 works (wg4, 5a76e18). AdrenoMetal ports (swizzle views, selector fallback, presentDrawable, LOD clamps)
-   being written; then a real WebGL game for 15 min (the 3D target) and WebGL 2.
-2. Video 4a0 done: kernel160 sweetpmemwc=2 copy-out 1.54 ms/1080p frame, 52 fps end-to-end, bit-exact. Open: the
-   13 s first-use cost after boot (then make =2 default). Next: 4a `venusd` + test client (video.md Stage 4 spec).
-   G7 GPU YCbCr on (a1f3952 refuses CoreImage function stitching, the Maps crash); B50 is not the GPU cap.
-3. Metal→Vulkan survey done (research/notes/upstream-2026-11-03-metal2vulkan-survey.md, upstream-2026-11-03-metal.md):
-   STAY on metal2vulkan 720ef1ce + cherry-pick (upstream e35bf78b deleted the zero-copy host-page images our B29 work
-   needs; rebase 4-6 days). Next, in order: G7 YCbCr planes via the pin's ycbcr.rs (port AdrenoMetal bridge 1125-1136,
-   2-3 h; video 4d), WebGL 2 argument encoders (pin has argument_encoder.rs; 4-6 h), cherry-pick bf3ce381 (1-2 h).
-   darling indium/darling-metal/iglunix indium: nothing better than ours.
-4. Bridge 0125 pass cache: = upstream 86b5d6fa; A/B dropped, revisit only with 86b5d6fa (survey item 5).
+1. venusd as a launchd job (tools/sunfish-install-venusd.sh) + bundle a458398 (G7 GPU path default off), then a reboot:
+   Safari H.264 plays via Venus with nothing started by hand. Everyday boot from then on: kernel160 + `sweetpmemwc=2
+   sweetgpucap=512` (see Phone). Open: the 13 s first-use decode stall after boot (video.md v4a1).
+2. Video 4d: GPU YUV->RGB without the G7 stall (G7 path drops 2/3 of frames, presenter stalls; CPU path costs backboardd
+   ~96 %). Then 4e HEVC; drop the 1-frame probe session per clip.
+3. WebGL: HexGL renders white after loading (error hook in work/webgl-games/hexgl/index.html beacons JS errors to the
+   :8078 server log); then a 15 min game run (the 3D target); WebGL 2 (argument encoders, the pin has them, 4-6 h).
+4. metal2vulkan: stay on 720ef1ce + cherry-pick (survey 2026-11-03); next picks: bf3ce381 (Core Image kernels), 6f3730ab.
 5. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)

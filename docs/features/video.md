@@ -89,6 +89,15 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 10:45 vd4e: framebuffer shots: the Safari picture is right on the hardware path
+tools/flame-shot during H.264 1080p playback at ~20 s: work/shots/vd4e-{cpu-hw,gpu-hw,cpu-sw}.png. All three show the six
+testsrc2 bars fully saturated (RGB samples e.g. (254,0,0) (0,255,1) (255,255,0) (0,0,255) (255,0,254) (1,255,255)), the
+moving line and the grey/checker patches of the clip; white bands are tearing from the ~16 s framebuffer read. The
+washed-out look was the webcam (exposure), not the pixels. So stage 4c works: **Safari plays H.264 1080p decoded by
+Venus, correct picture, 63/1800 dropped, mediaserverd 72 %** (with 0112's CPU YCbCr conversion; GPU path default off
+from a458398). Left: 4d (backboardd's ~96 % CPU conversion -> GPU, without the G7 path's stall), 4e HEVC, venusd as a
+launchd job, the 1-frame probe session per clip, the 13 s first-use stall after boot.
+
 ### 2026-11-03 10:30 vd4d: the drops are the G7 GPU YCbCr path; with the CPU conversion, Venus playback drops 63/1800
 Same boot; H.264 1080p, one fresh tab (SafariTabs.db* moved to /var/local/safari-tabs-bak/), start < 60 C.
 | run | YCbCr GPU | decode | dropped | backboardd | WebKit (2 busiest) | mediaserverd | venusd | max temp |
