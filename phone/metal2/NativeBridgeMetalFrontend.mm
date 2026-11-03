@@ -2437,8 +2437,9 @@ static void planarFill(NBTexture *t) {
 // converted on the GPU at each use, and a plane read alone (CVMetalTextureCache and decoders: R8Unorm plane 0, RG8Unorm plane 1) is a plain
 // texture over that plane. Ported from UniXNU/AdrenoMetal 243d63c NativeBridgeMetalFrontend.mm:1290-1302 (textureOnSurface) and :4174-4196
 // (newTextureWithDescriptor:iosurface:plane:) (MIT); the matrix is ours. A refusal falls back to 0112's CPU copy where it has one.
-// Off: SWEET_YCBCR_GPU=0 (0112 alone, as before).
-static bool ycbcrGpuOn() {static const bool on=[]{const char *p=getenv("SWEET_YCBCR_GPU");return !p||strcmp(p,"0");}();return on;}
+// Default OFF since vd4d (2026-11-03): with the GPU path Safari 1080p30 dropped 1187-1212 of 1800 frames (backboardd
+// at 15 %, the presenter stalls) against 63-82 with 0112's CPU conversion. SWEET_YCBCR_GPU=1 turns it on.
+static bool ycbcrGpuOn() {static const bool on=[]{const char *p=getenv("SWEET_YCBCR_GPU");return p&&strcmp(p,"0");}();return on;}
 extern "C" const CFStringRef kIOSurfaceYCbCrMatrix __attribute__((weak_import));   // exported by IOSurface.framework, not in the SDK's headers
 // The surface's matrix as nmb_texture_new_on_surface takes it: 0 none (or not a string), 1 BT.601, 2 BT.709, 3 BT.2020, 4 SMPTE 240M, 5 another.
 static uint32_t surfaceMatrix(IOSurfaceRef surface) {
@@ -2479,7 +2480,7 @@ static NBTexture *planeTexture(MTLTextureDescriptor *d,IOSurfaceRef surface,NSUI
  if(!surface || !d)return nil;
  if(IOSurfaceGetPlaneCount(surface)){
   const OSType fourcc=IOSurfaceGetPixelFormat(surface);const NSUInteger f=d.pixelFormat;
-  NSString *gpuWhy=planarOn()?@"SWEET_YCBCR_GPU=0":@"M2V_PLANAR=0";
+  NSString *gpuWhy=planarOn()?@"SWEET_YCBCR_GPU off":@"M2V_PLANAR=0";
   if(planarOn() && ycbcrGpuOn()){   // 0127: the GPU path first
    NBTexture *texture=planeTexture(d,surface,plane,&gpuWhy);
    if(texture){ycbcrNote(surface,d,plane,0,gpuWhy);return (id<MTLTexture>)texture;}
