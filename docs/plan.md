@@ -52,14 +52,13 @@ Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfen
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 sweetgpucap=512 (tag ht2, ~14:40), bundle 691c87d (direct planar conversion), venusd 007f8b1 + vtvenus (hvc1) installed, venusd from launchd. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. Video: latency fixed (0.6 s), wall-clock waits and HEVC 8-bit done (hevc1, 15:00). Next: confirm the Safari picture
-   with a cleaner capture (tearing in flame-shot), then 5: heat/4K/two streams; vtdecode HEVC mode.
-2. Video 4d leftovers: backboardd ~66 % for the CPU conversion (vImage, fcdf6de); the copy into the texture likely
-   dominates. G7 GPU path stays off (GPU-bound); later a native VkSamplerYcbcrConversion.
-3. mediaserverd restarts can wedge it (Safari stops loading video; camclk/camid exec loop on restart): install the
-   plugin with a reboot, and find out why mediaserverd runs camclk/camid.
-4. WebGL: 3D target met (games_fps 15 min, 0 hangs, 7.8 fps); speed is the lit shader itself (A/B 16:30) -> Optimize;
-   argument encoders for WebGL 2 pages that use them. Maps B50 is not the GPU cap.
+1. Wi-Fi CPU: wland ~68 % of a core at 5.8 MB/s (~10 pmem pread/pwrite + 1 write() per frame): batch ring reads and
+   frame hand-off (implementer), then measure MB/s and CPU.
+2. Video CPU (Safari HLS 1080p via Venus ~281 %): network ~71, mediaserverd ~58 (spread), backboardd ~45 (vImage
+   direct), venusd ~34 (socket copy per frame → IOSurface hand-off later). Native GPU YCbCr later.
+3. Other launchd jobs without Interactive (camd, hapticd, sensors, btbridge): A/B each (backlog O-launchd).
+4. GPU: suspect link Venus session start → GPU fault (2 of ~5 hangs today); B53 render-server snapshots intermittently
+   empty; B50 Maps; WebGL speed (Optimize).
 5. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
