@@ -89,6 +89,14 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 18:11 First-session "venusd session error -60 at frame 17" (read-only study)
+venusd's no-firmware-progress rule fires (venusd.c:790-800: 3 s quiet once the session has a first picture; the 20 s cold
+allowance ends at frame 0); vtvenus only relays it. crH: session 1 opened 71.321, frame 0 71.862, failed 76.968 "17 AUs
+in, 10 frames" (no picture ~4.8 s after frame 9). Same AU in crB and crH; session 2 decodes the same 18 AUs in 731 ms;
+seg000 has one keyframe at AU 0, so not content. Guess: a first-use stall at 1080p on freshly booted firmware (the warm-up
+is 320x240 and powers Venus down again). Seen on the socket path twice; credit path cg1 (n=1) didn't hit it. Parked
+(backlog B60): pull an unfiltered venusd.log / VENUSD_VERBOSE=1 boot, then A/B a 1080p warm-up or VENUSD_WARMUP=0.
+
 ### 2026-11-03 18:04 Credit path works (crG/crH/crI, kernel161, venusd 06f9715 + vtvenus 331e616): mediaserverd -35, venusd -22
 "venusd: memory limit 6/6 MB -> 512 MB: 0" (launchd gave a 6 MB limit). venusc --surf bit-exact (inf dB, every frame):
 720p 9 credited / 1 socket, 1080p-10 8 / 2, 0 handed back, 0 CRASH lines. Safari HLS H.264 1080p, % of one core, 30 s:
