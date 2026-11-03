@@ -22,6 +22,12 @@ encoders). **Updated:** 2026-11-03.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 07:58 wg5: AdrenoMetal ports (4ca1221) installed: no change in WebGL, UI fine
+Bundle 4ca1221 (LC_UUID 4C4C4484; swizzle views, missing-selector fallback, presentDrawable:, real LOD clamps), kernel159.
+UI smoke: Settings, Control Center, Photos (one blue thumbnail: B44), Maps (map area black: B50), Safari ok; 0 MISSING,
+0 CRASH after the install, 1 backboardd restart (the install), 0 GPU hangs. webgl.html n=400, 5 min: median 24.3 fps
+(min 18.2, max 25.5), 0 err beacons, cubes correct on the webcam.
+
 ### 2026-11-03 07:45 wg4: WebGL draws: 400 textured cubes, 15 min, 24 fps, 0 hangs
 Bundle work/metal2-next 5a76e18 (LC_UUID 4C4C4448-5555-3144-A1E8-B17B63C5AD50: 14ebff1 newLibraryWithSource override +
 sampler-LOD setters), kernel158 boot venusR; per-boot log ../logs/boots/20261103-062614.log, 07:28:04-07:43:15.

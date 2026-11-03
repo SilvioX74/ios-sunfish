@@ -89,6 +89,14 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 08:30 v4a0d: copy-out speed is the CPU type: A55 29.3 ms, A76 3.5 ms per 1080p frame
+venusctl 94e5e5c (copy time per CPU via TPIDR_EL0), kernel159 (0277 WC). 1080p 300 frames to /dev/null:
+research/notes/venus-runs/2026-11-03-v4a0d-1080p-300-percpu.txt. 300/300, 21.9 fps overall, copy mean 27.58 ms.
+Per CPU: cpu0-4 (A55) 91/85/56/31/16 frames, 29.31-29.39 ms each; cpu6/7 (A76) 3/15 frames, 3.49 ms each; 3 moved.
+So the WC path works (A76 ~900 MB/s, as camd's 0233), and the in-order A55 stalls on every uncached load (~107 MB/s),
+as the investigator predicted (research/notes/venus-copy-2026-11-03.md). Fix being written: sweetpmemwc=2 = cached
+mapping + clean/invalidate by range (expected 1.5-3 ms on any core).
+
 ### 2026-11-03 08:20 Stage 4a0 (v4a0): kernel159 (0277 WC window); 1080p bit-exact; Venus decodes 1080p at 217 fps
 Kernel159 = kernel158 + xnu 0277 (sweetpmemwc default 1), boot v4a0 07:44 (4456 mV), per-boot log
 ../logs/boots/20261103-074436.log (starts at 25 s, so 0277's "/dev/pmem ready ... Venus window" line from init is not in
