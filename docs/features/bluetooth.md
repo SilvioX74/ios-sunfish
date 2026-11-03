@@ -23,6 +23,18 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:55 Interactive launchd job A/B (ljA/ljB/ljR, kernel161, 5 min screen on, one boot each)
+| job | metric | A (ljA, default) | B (ljB, Interactive) |
+| sensors | accel rate / written | 53.6/s / +35506 | 54.4/s / +36655 |
+| sensors | mag gaps >200ms / >1s / max | 0/0/0 | 0/0/0 |
+| sensors | adspboot CPU (5 min) | 23.6 s (8.3 %) | 32.0 s (11.1 %) |
+| hapticd | taps counted of 20 / vibration lines | 19 / 3 | 20 / 3 |
+| hapticd | CPU | +0.02 s | +0.03 s |
+| btbridge | drops/overruns/restarts/recoveries | 0 | 0 |
+| btbridge | CPU (5 min) | 0.82 s (0.29 %) | 6.19 s (2.1 %) |
+Kept: hapticd Interactive (install default now, HAPTICD_INTERACTIVE=0 off). Reverted: sensors (+2.8 % of a core, no
+functional gain) and btbridge (+1.8 %, poll(0) loop, nothing to gain). No hangs; backboardd pid 61 throughout.
+
 ### 2026-10-30 16:00 RESET with btbridge's screen-off idle mode (124c3af, btd1, kernel123)
 - Installed btbridge 124c3af (10 ms per loop while blanked, no link, no HCI traffic 500 ms; BT_DARK=0 off). Bring-up fine (3 Mbaud, "ready, pumping"; two "chip error: op 0x2007 status 0xc" lines, not seen before); K: "idle (screen blanked, no link): 10 ms" within 12 s, btbridge CPU 0.05 s per 60 s screen-off; H: "active", Settings > Bluetooth On with AirPods + Xbox listed; K/H cycle 1 clean (stats: overruns 0, uart dropped 0, recoveries 0).
 - During K/H cycles 2-3 the phone RESET into fastboot (4439 mV): per-boot log ../logs/boots/20261030-131806.log ends at 354.8 s with ordinary lines, no panic/watchdog text. Cause unknown; the same K/H cycles on kernel123 with the old btbridge (dk1) were clean, so the idle mode is the suspect (e.g. RFR held long while the chip streams, or the 10 ms sleep vs a kernel UART path).

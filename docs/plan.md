@@ -47,7 +47,7 @@ stops phone work, or doubles in rate after a change (then turn that change off f
 ## Phone
 Claude's. On kernel161 (= kernel158 + xnu 0277 WC/0278 cached Venus window + 0279 RPMh fix) since 15:32 (tag rpmh1),
 bundle a71ea11 (direct planar conversion + hardware MSAA resolve), venusd f461433 (Interactive launchd job) + vtvenus (avc1/hvc1), wland 206585d
-(HT20, Interactive, bounds checks), camd Interactive + cam41. Everyday boot: `tools/sunfish-test.sh -k 161 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6
+(HT20, Interactive, bounds checks), camd + hapticd Interactive, cam41. Everyday boot: `tools/sunfish-test.sh -k 161 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6
 sweetampreset=1 sweetpmemwc=2 sweetgpucap=512`. /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20,
 SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1.
 
@@ -56,7 +56,7 @@ SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh); backboardd en
    dominate: a kernel batched input path is the next step (parked behind the items below).
 2. Video CPU (Safari HLS 1080p via Venus ~281 %): network ~71, mediaserverd ~58 (spread), backboardd ~45 (vImage
    direct), venusd ~34 (socket copy per frame → IOSurface hand-off later). Native GPU YCbCr later.
-3. Other launchd jobs without Interactive: camd done (open 5.7 -> 0.7 s, 30 fps); hapticd, sensors, btbridge: A/B each.
+3. Done: launchd Interactive A/B: camd (open 5.7 -> 0.7 s, 30 fps) and hapticd kept; sensors, btbridge cost CPU, reverted.
 4. GPU: suspect link Venus session start → GPU fault (2 of ~5 hangs today); B53 render-server snapshots intermittently
    empty; B50 Maps; WebGL speed (Optimize).
 5. Tonight: night soak n9 on kernel161 with the everyday args above (`tools/sunfish-nightsoak.sh n9`; it sets

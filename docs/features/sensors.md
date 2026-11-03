@@ -16,6 +16,18 @@ Fallback without the ADSP: a sysctl that injects rotation events (1-2 days), use
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:55 Interactive launchd job A/B (ljA/ljB/ljR, kernel161, 5 min screen on, one boot each)
+| job | metric | A (ljA, default) | B (ljB, Interactive) |
+| sensors | accel rate / written | 53.6/s / +35506 | 54.4/s / +36655 |
+| sensors | mag gaps >200ms / >1s / max | 0/0/0 | 0/0/0 |
+| sensors | adspboot CPU (5 min) | 23.6 s (8.3 %) | 32.0 s (11.1 %) |
+| hapticd | taps counted of 20 / vibration lines | 19 / 3 | 20 / 3 |
+| hapticd | CPU | +0.02 s | +0.03 s |
+| btbridge | drops/overruns/restarts/recoveries | 0 | 0 |
+| btbridge | CPU (5 min) | 0.82 s (0.29 %) | 6.19 s (2.1 %) |
+Kept: hapticd Interactive (install default now, HAPTICD_INTERACTIVE=0 off). Reverted: sensors (+2.8 % of a core, no
+functional gain) and btbridge (+1.8 %, poll(0) loop, nothing to gain). No hangs; backboardd pid 61 throughout.
+
 ### 2026-10-30 19:45 dm12 live (kernel128): sensors, fit guard OK; gyro-aided fit counters read at rest only; Compass parked
 - 4455 mV; magcal.txt seeded from rec1 (fit -34.400 -41.400 -59.700 52.000 2.000 1), unchanged after the reboot. Compass 115 deg SE at the desk (disturbed spot). Status: "cal fit r 52.0 res 2.00, gbias -0.0098,-0.0057,0.0071 still 1, gm pairs 0 solves 0 eig 0,0,0, rej 0/0/141/0/172/7/0/27/0, fitrej 0"; phone lay still, so 0 pairs says nothing yet. 0 "no response" lines. Recorder on (/var/local/motion-dump.on).
 - Parked: backlog "Later". The user's last hand test (before dm12): up to ~20 deg off a Pixel 8 Pro, some jumps. dm12's jump reduction is verified on rec1 only.

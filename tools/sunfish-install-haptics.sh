@@ -10,8 +10,8 @@
 # Off: touch /var/local/haptics.off (hapticd exits 0 at start, launchd leaves it stopped); do that and
 # kill hapticd (launchd restarts it, it sees the flag and exits 0) before other SE9 tools (adspboot amp, camid, i2cprobe, sunfish-cam-rx.sh).
 #   tools/sunfish-install-haptics.sh [--undo | --check | --job]
-#   --job: only rewrite the launchd job (reboot to apply). HAPTICD_INTERACTIVE=1 adds ProcessType/POSIXSpawnType
-#     Interactive (backlog O-launchd A/B; timer coalescing stretched 1 ms naps ~10x); default off
+#   --job: only rewrite the launchd job (reboot to apply). ProcessType/POSIXSpawnType Interactive by default
+#     (ljB 2026-11-03: 20/20 taps, CPU unchanged; timer coalescing stretched 1 ms naps ~10x); HAPTICD_INTERACTIVE=0 off
 #   --undo: job removed, MobileGestalt cache restored from .pre-haptics if present (tools left); boot without HAPTICS=1
 #   --check: prints the state of all of the above, no writes
 set -euo pipefail
@@ -45,7 +45,7 @@ else:
         'ProgramArguments': ['/bin/sh', '-c', '/var/local/bin/hapticd-start.sh'],
         'RunAtLoad': True, 'KeepAlive': {'SuccessfulExit': False}, 'ThrottleInterval': 10, 'UserName': 'root',
     }
-    if os.environ.get('HAPTICD_INTERACTIVE') == '1':
+    if os.environ.get('HAPTICD_INTERACTIVE', '1') != '0':
         jobs[sys.argv[3]].update({'ProcessType': 'Interactive', 'POSIXSpawnType': 'Interactive'})
 plistlib.dump(p, open(sys.argv[2], 'wb'), fmt=plistlib.FMT_BINARY)
 print('launchd jobs:', len(jobs))
@@ -75,7 +75,7 @@ fi
 if [ "$MODE" = --job ]; then
 	job install
 	F put $U/haptics/launchd.plist.new $LP 644 >/dev/null
-	echo "org.iosonpixel.hapticd rewritten (HAPTICD_INTERACTIVE=${HAPTICD_INTERACTIVE:-0}); reboot to apply"
+	echo "org.iosonpixel.hapticd rewritten (HAPTICD_INTERACTIVE=${HAPTICD_INTERACTIVE:-1}); reboot to apply"
 	exit 0
 fi
 [ -z "$MODE" ] || { echo "usage: $0 [--undo | --check | --job]"; exit 1; }
