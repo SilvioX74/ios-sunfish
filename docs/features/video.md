@@ -89,6 +89,15 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 13:10 "Safari video won't start" = a wedged mediaserverd, not the plugin
+After the install-time `psx -k mediaserverd`, the new mediaserverd (pid 563) spun (CPU 5 -> 58 s in ~10 min), Safari
+never requested the mp4 (`frames=0 w=0`, one AbortError), oslog showed only `SecTaskLoadEntitlements failed error=22`.
+vtdecode through that same mediaserverd still worked (`--hw require`: 10/10, `using hardware decoder: yes`; first
+frame ~10 s after a cold Venus warm-up), software playback with venus-off worked. One more mediaserverd restart with
+Venus down fixed it: Safari 720p via Venus `t=60.0 frames=1487 dropped=6` (vtvenus session 2 with resync). Cause of
+the wedge unknown (the restart execs camclk/camid many times; suspect). Rule for installs: after restarting
+mediaserverd, check Safari/vtvenus, restart once more if it spins.
+
 ### 2026-11-03 12:55 Careful installs (no reset); vImage; the clock-off STOP happens in normal use
 Boot stopR (kernel160). One step at a time, venusd idle between.
 - A/B: bundle fcdf6de (CPU YCbCr via Accelerate vImage): Safari 1080p via Venus (old venusd) 1800 frames, 0 dropped,
