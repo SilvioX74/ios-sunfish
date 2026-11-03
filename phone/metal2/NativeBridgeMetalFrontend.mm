@@ -580,6 +580,19 @@ static std::string quartzCoreCallers();
 @property(nonatomic) NmbSampler *handle;
 @property(nonatomic) NmbSamplerDescriptor descriptor;   // what made it, for a binding that replaces its LOD clamps
 @end
+// sweet resolve: an attachment's resolve texture (ANGLE's MSAA WebGL framebuffers resolve colour and depth at endEncoding: its
+// finalizeLoadStoreAction sets Store -> StoreAndMultisampleResolve where a resolveTexture is set) goes to the runtime, which refused the
+// resolving store action without it ("ResolveWithoutTexture(Depth)": every antialiased WebGL context lost). Ported from UniXNU/AdrenoMetal
+// 243d63c NativeBridgeMetalFrontend.mm:2987-3007 (MIT; its single-sample mode left out). A resolving store action with no resolve texture
+// is what Apple's driver tolerates: StoreAndMultisampleResolve -> Store, MultisampleResolve -> DontCare. SWEET_RESOLVE_FIX=0: neither, as
+// before.
+static bool resolveFixOn() {static const bool on=[]{const char *p=getenv("SWEET_RESOLVE_FIX");return !p||!*p||atoi(p)!=0;}();return on;}
+static void resolveFixNote(unsigned kind,bool store) {   // kind: colour 0..7, 8 depth, 9 stencil; once per process each
+ static std::atomic<uint32_t> said{0};
+ if(said.fetch_or(1u<<kind)&(1u<<kind))return;
+ NSString *what=kind==8?@"depth":kind==9?@"stencil":[NSString stringWithFormat:@"color %u",kind];
+ NBLOG(@"SWEET MTL: %@ resolve without texture -> %s (as Apple's driver)",what,store?"store":"dontcare");
+}
 // A binding's lodMinClamp:lodMaxClamp: (ANGLE binds every sampler so, for GL's TEXTURE_MIN_LOD/MAX_LOD and base level) is this sampler with
 // its clamps replaced: made once per pair and kept, at most 64 pairs (a caller that varies them every draw starts over rather than growing
 // without bound). Ported from UniXNU/AdrenoMetal 243d63c NativeBridgeMetalFrontend.mm:1650-1671 (MIT). SWEET_LODCLAMP=0: the clamps are
@@ -1725,20 +1738,31 @@ static void scheduled(void *context);
    if(pixels>=2000000)gFullScreenPasses++;
   }
  }
- auto attachment=[&](MTLRenderPassAttachmentDescriptor *a,NmbPassAttachment &out)->bool {
+ auto attachment=[&](MTLRenderPassAttachmentDescriptor *a,NmbPassAttachment &out,unsigned kind)->bool {
   if(!a.texture)return true;
   if(![(id)a.texture isKindOfClass:[NBTexture class]])return false;
   NBTexture *texture=(NBTexture *)a.texture;if(texture.surface)[_surfaces addObject:texture];
   [_resourceOwners addObject:texture];
   out.texture=texture.handle;out.level=a.level;out.slice=a.slice;out.depth_plane=a.depthPlane;out.load=a.loadAction;out.store=a.storeAction;
+  if(resolveFixOn()) {   // sweet resolve
+   if(a.resolveTexture) {
+    if(![(id)a.resolveTexture isKindOfClass:[NBTexture class]])return false;
+    NBTexture *resolve=(NBTexture *)a.resolveTexture;[_resourceOwners addObject:resolve];if(resolve.surface)[_surfaces addObject:resolve];
+    out.resolve_texture=resolve.handle;out.resolve_level=a.resolveLevel;out.resolve_slice=a.resolveSlice;out.resolve_depth_plane=a.resolveDepthPlane;
+   } else if(out.store==MTLStoreActionMultisampleResolve||out.store==MTLStoreActionStoreAndMultisampleResolve) {
+    const bool keep=out.store==MTLStoreActionStoreAndMultisampleResolve;out.store=keep?MTLStoreActionStore:MTLStoreActionDontCare;
+    resolveFixNote(kind,keep);
+   }
+  }
   return true;
  };
  for(unsigned i=0;i<8;i++) {
   MTLRenderPassColorAttachmentDescriptor *c=d.colorAttachments[i];
-  if(!attachment(c,pass.colors[i])){[self refuse:@"foreign color attachment"];return nil;}
+  if(!attachment(c,pass.colors[i],i)){[self refuse:@"foreign color attachment"];return nil;}
   pass.colors[i].clear[0]=c.clearColor.red;pass.colors[i].clear[1]=c.clearColor.green;pass.colors[i].clear[2]=c.clearColor.blue;pass.colors[i].clear[3]=c.clearColor.alpha;
  }
- if(!attachment(d.depthAttachment,pass.depth) || !attachment(d.stencilAttachment,pass.stencil)){[self refuse:@"foreign depth/stencil attachment"];return nil;}
+ if(!attachment(d.depthAttachment,pass.depth,8) || !attachment(d.stencilAttachment,pass.stencil,9)){[self refuse:@"foreign depth/stencil attachment"];return nil;}
+ if(resolveFixOn()){pass.depth.resolve_filter=d.depthAttachment.depthResolveFilter;pass.stencil.resolve_filter=d.stencilAttachment.stencilResolveFilter;}   // sweet resolve
  pass.depth.clear[0]=d.depthAttachment.clearDepth;pass.stencil.clear[0]=d.stencilAttachment.clearStencil;
  pass.width=d.renderTargetWidth;pass.height=d.renderTargetHeight;pass.array_length=d.renderTargetArrayLength;pass.samples=d.defaultRasterSampleCount;
  if(d.visibilityResultBuffer) {

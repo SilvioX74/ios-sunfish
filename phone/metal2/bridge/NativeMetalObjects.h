@@ -221,6 +221,10 @@ struct NmbPassAttachment {
     NmbTexture *texture;
     uint64_t level, slice, depth_plane, load, store;
     double clear[4]; /* color, or clear[0] depth / stencil */
+    /* sweet resolve: the attachment's resolve target (null: none), and a depth or stencil resolve filter. Ported from
+       UniXNU/AdrenoMetal 243d63c bridge/NativeMetalObjects.h:290-292 (MIT). */
+    NmbTexture *resolve_texture;
+    uint64_t resolve_level, resolve_slice, resolve_depth_plane, resolve_filter;
 };
 struct NmbRenderPassDescriptor {
     struct NmbPassAttachment colors[8], depth, stencil;
