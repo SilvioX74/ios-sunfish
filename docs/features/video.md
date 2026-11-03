@@ -60,6 +60,20 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 06:35 Stage 2 on the phone (v2a): probe, power, pas pass; firmware authenticates; boot teardown check fails
+venusctl d0f1da4 (sha256 93726b46...) installed; /var/local/fw/venus: b00 212, b01 6808, b02 1060680, b03 40516,
+b04 32, mdt 7020 bytes. Kernel158 boot of 2026-11-02 21:31, no reboot, VENUS_PHYS=0xa5100000. Markers `=== venus-*`.
+- probe PASS: `gcc_video_ahb 0x10b004 = 0x80000003` (HW_CTL, en 1); 15 valid SMRs, none for SIDs 0x1080-0x10e0.
+- power PASS: pll0 locked at 384.0 MHz (MODE 0xd0800005); WRAPPER_HW_VERSION = 0x5011020a; power off restores the start.
+- pas PASS: supported(9) 0/0, init_image 0/0, shutdown 0/0.
+- boot FAIL (exit 1), but only in teardown: auth_and_reset 0/0 and mem protect 0/0 (image linked at 0xf500000,
+  relocated to 0x94800000). Right after auth CTRL_STATUS, VERSION_INFO, CPU_STATUS, INTR_STATUS all 0 (expected
+  before init, guess). Then smmu_release reports CB15-18 "NOT as saved", e.g. `SMR15 (00000000) S2CR 0000000e CB15
+  SCTLR 07836516 CBAR 0001f000 CBA2R 00000000`. Shutdown and power off returned 0, final probe = start state, SSH
+  fine, no panic/watchdog/GPU hang. Not run: memtest, ping.
+- Guess: the SMRs read back invalid (0), so no stream uses those banks; the hypervisor's SMMU emulation or the
+  auth/mem-protect call may rewrite them. Next: verbose boot rerun to see saved vs found, then memtest and ping.
+
 ### 2026-11-03 06:25 Stage 0: Safari baseline on the software path (s0), WebGL lost at creation
 Kernel158 everyday boot (2026-11-02 21:31, no reboot), bundle 82f6b41, external power 4427 mV, iOS slider minimum.
 Per-boot log ../logs/boots/20261103-004005.log, 06:10-06:22. Page work/stage0/index.html (gitignored; clips 60 s,
