@@ -95,6 +95,11 @@ Kernels:
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 19:29 da: SWEET_CULL_DEADATT barely fires (10 draws per run): no gain, off; Settings slower on both sides tonight (open)
+- Bundle 82f6b41 (SweetMetal2 4C4C44A9), kernel158 everyday + SWEET_CULL=3, check run dax0 with telemetry: `DF3 ... deadatt` reached only 10 in the whole run (screenshots normal; cc 44.0, home 53.6). A/B 5 boots a side (daa def, dab +SWEET_CULL_DEADATT=1), 4453-4455 mV, 0 G1/G2/G4: cc 42.25 / 42.53, home 52.34 / 53.66 (5 of 5 pairs, but the cull drops ~nothing, so not caused by it), settings 53.68 / 53.67. Stays off.
+- Open: in all 10 da runs Settings read 52.7-54.5 swaps/s with p95 29-32 ms and skip2 5.4-6.9 %, against 56.3-57.2, p95 ~19.5-20.6, skip2 3.2-4.5 in the gm runs an hour earlier (same kernel, env, bench; bundle 4C4C44B8 then, 4C4C44A9 now: the new code only copies two fields per draw with the flag off). cc also lower (42.25 against 43.15, p95 38 against 35). Start temperature 77-81 against 74-77 C; A76 1939 in both; dax0 (first run on the new bundle) was fine on cc. Cause not found; check in the morning with a cold phone, current bundle against the previous (/var/local SweetMetal2.bundle.prev).
+- Webcam frames black after the runs: the display had turned off (auto-lock, `SWEET FB: display off` at 171 s), not a fault.
+
 ### 2026-11-02 18:52 gm: TU_FETCH_GMEM_MIN_DRAWS=25 against 20: within noise; stays 20
 - kernel158 everyday + SWEET_SURF_FLUSH=1 + SWEET_CULL=3, bundle 82f6b41, 5 boots a side alternating (gma = 20, gmb = 25; gma1 void on cc/home, rerun gma1r), cc,home,settings, 4440-4454 mV, 0 G1/G2/G4.
 - cc 42.67, 42.60, 43.64, 43.70, 43.14 / 44.30, 41.85, 43.77, 43.55, 43.83 (means 43.15 / 43.46); home 53.26 / 53.43; settings 56.31 / 56.01. Pairs won by 25: cc 3, home 3, settings 1 of 5. Screenshots the same. The trace's 4.4 vs ~1 ms for pass E (gt1b) doesn't show up untraced (per-bin tracepoints inflate GMEM times).
