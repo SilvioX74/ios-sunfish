@@ -89,6 +89,13 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:40 Credit path (331e616) first test (crA): jetsam killed venusd at the first credited frame
+venusd logged "session 1: frame 0 into credited IOSurface 119 (4.2-5.2 ms read)" then died, every session; boot log
+20261103-173338: "CRASH venusd[37] sig 9 ... reason ns 1 code 0x7" right after "SWEET SURF: venusd sel 4" = jetsam
+per-process memory limit (mapping a 3 MB surface on top of fbuf). VTVENUS_SURF=0 set (crB; SURF=0 baseline first session:
+716/9 dropped, 428.8 % total, "venusd session error -60 at frame 17" + resync). Fix 8636309: venusd job
+JetsamProperties JetsamMemoryLimit 128 MB. Bit-exact and CPU A/B pending (crD).
+
 ### 2026-11-03 17:13 Upper bound of the copy saving: -58 % of a core (npA, kernel161, venusd/vtvenus 836d076)
 HLS H.264 1080p, 30 s windows, % of one core (WebKit roles guessed by CPU level):
 | run | WebContent | Networking | GPU | backboardd | mediaserverd | venusd | kernel_task | total | frames/dropped |

@@ -22,6 +22,15 @@ hangs but only 7.4 fps (GPU-bound); HexGL parked (its loader stalls on iOS Safar
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:40 Bridge 0130 SWEET_M2V_CENTER_VARY (d3316ff): Turnip reads center varyings directly
+Mesa 85fda3b: a plain input with sampleShadingEnable off reads load_barycentric_pixel (nir_lower_io.c:354-360), the same
+ij ir3's InterpolateAtOffset(0) starts from (ir3_nir_lower_load_barycentric_at_offset.c:24-25), minus the ddx/ddy.
+sampleShadingEnable on (force_sample_interp, tu_pipeline.cc:1947, tu_shader.cc:3287) moves plain inputs to the sample,
+and the bridge turns it on for memory-writing fragments, so those keep InterpolateAtOffset(0) (new workaround
+SampleShadingMovesCenterVaryings). Reuse: upstream metal2vulkan has this property only for MoltenVK. Tests: targeted
+suites pass (engine_multisample 9, device 103, stage_io 11, fragment 14, cache 60, link 73). Build work/metal2-next-
+centervary, LC_UUID 4C4C44D4. Phone test pending.
+
 ### 2026-11-03 17:02 games_fps shader dump (shdR, kernel161, IR3_SHADER_DEBUG=fs, ~65 s, undone after)
 No fs hash 4b132e36ec68 this run (15 fs compiled, hashes differ with bundle a71ea11); largest fs 1457d61d (prog 40),
 not confirmed as the 57 ms draw: 1249 instr (147 nop), 24 full regs, single threadsize, max_waves 8, preamble 733,
