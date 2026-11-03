@@ -47,7 +47,9 @@ Stages, each a go/no-go: 0 Safari baseline on the software path; 1 read-only res
    (most likely step to reset).
 5. `init`: queues (3 MB uncached: header 0x1c8, 3 queues of 0xc8000) + SFR page, registers 0xd2064/68, 0xd2054,
    0xd2050, 0xd205c, 0xd2034-3c; 1 -> 0xd2048, poll 0xd204c bit0.
-6. `ping`: SYS_INIT 0x10001 -> 0x20001, SYS_PING 0x210002 -> 0x220002 (stage 2 go).
+6. `ping`: SYS_INIT 0x10001 -> 0x20001, SYS_PING 0x210002 -> 0x220002 (not acked by this firmware: a note only).
+   `session` (stage 2 go): SYS_SESSION_INIT 0x10007 (decoder 2, H.264 2) -> 0x20006 error 0, SESSION_END 0x10008 -> 0x20007.
+   Teardown counts an SMR that reads invalid as released; other register differences are warnings (saved vs read).
 7. Steps 4-6 ten times in one boot, then 15 min under GPU load (clean teardown).
 Risks: register access with a clock or GDSC off hangs the bus (gate on CBCR/GDSC bit31); auth_and_reset unpowered
 resets; masked SMRs reset (camera tests), use exact ones; no MX/CX votes (reset redfin); PAS shutdown before power off.

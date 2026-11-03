@@ -101,7 +101,10 @@ int smmu_identity(const char *name, uint32_t sid, uint32_t mask)
 }
 
 /* camera d: undo the last smmu_identity that wrote anything: SMR first (stream stops matching), then S2CR and the
- * bank (SCTLR, CBAR, CBA2R; redfin r17d: CBAR does not go back by itself), TLB sync. 0 = ok or nothing to do. */
+ * bank (SCTLR, CBAR, CBA2R; redfin r17d: CBAR does not go back by itself), TLB sync. 0 = restored or nothing to do.
+ * video v2c: 1 = released with differences (the SMR reads invalid, so no stream reaches the bank, but S2CR/bank
+ * registers differ: venus saw SCTLR random per bank, CBAR 0001f000), -1 = the SMR is still valid. On a mismatch it
+ * prints the saved values next to the ones read. */
 int smmu_release(const char *name)
 {
 	struct smmu_saved *v = &smmu_last;
@@ -116,13 +119,19 @@ int smmu_release(const char *name)
 	wr32(s + 0x70, 0);
 	for (int i = 0; i < 1000 && (rd32(s + 0x74) & 1); i++)
 		delay_ms(1);
-	int ok = rd32(s + 0x800 + 4 * v->slot) == v->smr && rd32(s + 0xc00 + 4 * v->slot) == v->s2cr &&
-		 rd32(v->gr1 + 4 * v->cb) == v->cbar;
+	uint32_t smr = rd32(s + 0x800 + 4 * v->slot), s2cr = rd32(s + 0xc00 + 4 * v->slot), sctlr = rd32(v->cbp);
+	uint32_t cbar = rd32(v->gr1 + 4 * v->cb), cba2r = rd32(v->gr1 + 0x800 + 4 * v->cb);
+	int ok = smr == v->smr && s2cr == v->s2cr && cbar == v->cbar;
+	int rc = ok ? 0 : !(smr >> 31) ? 1 : -1;
 	printf("smmu: %s released SMR%d (%08x) S2CR %08x CB%d SCTLR %08x CBAR %08x CBA2R %08x -> %s\n", name, v->slot,
-	       rd32(s + 0x800 + 4 * v->slot), rd32(s + 0xc00 + 4 * v->slot), v->cb, rd32(v->cbp), rd32(v->gr1 + 4 * v->cb),
-	       rd32(v->gr1 + 0x800 + 4 * v->cb), ok ? "restored" : "NOT as saved");
+	       smr, s2cr, v->cb, sctlr, cbar, cba2r, ok ? "restored" : rc > 0 ? "NOT as saved, SMR invalid (released)" :
+	       "NOT as saved, SMR STILL VALID");
+	if (!ok)	/* video v2c: saved vs read */
+		printf("smmu: %s SMR%d/CB%d saved vs read: SMR %08x/%08x S2CR %08x/%08x CBAR %08x/%08x CBA2R %08x/%08x"
+		       " SCTLR %08x/%08x\n", name, v->slot, v->cb, v->smr, smr, v->s2cr, s2cr, v->cbar, cbar, v->cba2r,
+		       cba2r, v->sctlr, sctlr);
 	v->slot = -1;
-	return ok ? 0 : -1;
+	return rc;
 }
 
 /*

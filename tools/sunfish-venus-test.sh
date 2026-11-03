@@ -1,13 +1,17 @@
 #!/bin/sh
 # Video stage 2 on the running phone (docs/features/video.md "Stage 2 spec"): one venusctl step, then venusctl
 # shutdown + power off (except probe and memtest, which don't power anything), printing each command's output.
-#   tools/sunfish-venus-test.sh probe|power|pas|boot|memtest|ping
+#   tools/sunfish-venus-test.sh probe|power|pas|boot|memtest|ping|session
 #     probe    venusctl probe (read-only)
 #     power    probe, power on, probe
 #     pas      power on, pas-check
 #     boot     power on, boot (PAS load + auth + memory protect, undone by boot itself)
 #     memtest  the init --phys region: memtest write, 60 s under whatever load runs, memtest check (no power on)
-#     ping     power on, boot --keep, init, ping
+#     ping     power on, boot --keep, init, ping (no PING_ACK is only a note: this firmware reads SYS_PING as a
+#              session command)
+#     session  power on, boot --keep, init, session (SYS_SESSION_INIT H.264 decoder -> 0x20006, SESSION_END -> 0x20007)
+# Every step that powers on ends with venusctl shutdown + power off, also after a failed step. The SMMU release counts
+# as done once each SMR reads invalid (other register differences are printed as warnings, saved vs read).
 # Pre-run review (research/notes/venus-stage1-2026-11-02.md 8.5): every power on/off gets --cvp (mvs1 domain on,
 # as downstream); a timed-out command (exit 124) or a failed shutdown stops the run with no power off
 # ("LEFT POWERED: reboot needed"): a GDSC/clock collapse under live firmware hangs the bus.
@@ -16,7 +20,7 @@
 # Needs /var/local/bin/venusctl and /var/local/fw/venus on the phone.
 cd "$(dirname "$0")/.." || exit 1
 step=$1
-case "$step" in probe|power|pas|boot|memtest|ping) ;; *) echo "usage: $0 probe|power|pas|boot|memtest|ping" >&2; exit 2;; esac
+case "$step" in probe|power|pas|boot|memtest|ping|session) ;; *) echo "usage: $0 probe|power|pas|boot|memtest|ping|session" >&2; exit 2;; esac
 v=${VENUS_V:+-v}
 t=${VENUS_T:-60}
 mt=${VENUS_MT:-0xa5100000 0x301000}
@@ -68,9 +72,9 @@ if run power on --cvp; then
 	power) run probe || rc=1 ;;
 	pas) run pas-check || rc=1 ;;
 	boot) run boot || rc=1 ;;
-	ping)
+	ping|session)
 		if run boot --keep && run init ${VENUS_PHYS:+--phys $VENUS_PHYS}; then
-			run ping || rc=1
+			run "$step" || rc=1
 		else
 			rc=1
 		fi ;;

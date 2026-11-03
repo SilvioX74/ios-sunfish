@@ -11,7 +11,8 @@ struct smmu_saved {
 	uint32_t smr, s2cr, cbar, cba2r, sctlr;
 };
 extern struct smmu_saved smmu_last;
-int smmu_release(const char *name);	/* put them back (SMR first); 0 = ok or nothing to do */
+int smmu_release(const char *name);	/* put them back (SMR first); 0 = ok or nothing to do, 1 = SMR invalid but
+					 * other registers differ (video v2c), -1 = SMR still valid */
 
 /* SIDS through a new translating bank: [IOVA, IOVA+LEN) -> PA (32-bit IOVA, within one 2 MB block). 0 = ok. */
 int smmu_translate(const char *name, const uint16_t *sids, unsigned n, uint64_t iova, uint64_t pa, uint64_t len);

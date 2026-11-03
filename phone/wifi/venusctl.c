@@ -20,13 +20,17 @@
  *                           aligned in 0xa5100000-0xbcc00000) with the queue table, 3 queues and the SFR page, the
  *                           UC/QTBL/SFR/VMIMSG registers, CTRL_INIT = 1, poll CTRL_STATUS (1 s)
  *   venusctl ping [--debug MASK]  after init: SYS_INIT -> INIT_DONE, debug to the debug queue, IMAGE_VERSION,
- *                           SYS_PING -> PING_ACK; polls the message queue (no IRQ), prints every packet
+ *                           SYS_PING -> PING_ACK; polls the message queue (no IRQ), prints every packet. No
+ *                           PING_ACK is a note, not a failure (v2c; VENUSCTL_PING_FATAL=1: failure)
+ *   venusctl session [--debug MASK]  after init: as ping up to IMAGE_VERSION, then SYS_SESSION_INIT (H.264 decoder)
+ *                           -> SESSION_INIT_DONE, SYS_SESSION_END -> SESSION_END_DONE (v2c)
  *   venusctl shutdown       undoes boot --keep/init from STATE: PAS shutdown(9), queue memory, SMRs. Then power off.
  *   venusctl memtest ADDR SIZE write|check  the --phys region check (pre-run review 8.1): fill ADDR..ADDR+SIZE through
  *                           /dev/pmem (as init) with addr ^ 0x5a5a5a5a per word, or count the words that changed
  * Pre-run review fixes (notes section 8.5): STATE and AHB_STATE carry the boot session id; a file from an earlier
  * boot is dropped unread (VENUSCTL_NO_BOOTID=1: keep the old behaviour). smmu release only of a slot that still reads
- * our exact SMR and S2CR. init/ping re-check the mnoc_sf_0_tbu vote before CTRL_INIT and each doorbell.
+ * our exact SMR and S2CR; it counts as done once the SMR reads invalid, other differences are warnings (v2c;
+ * VENUSCTL_STRICT_RELEASE=1: any difference fails). init/ping re-check the mnoc_sf_0_tbu vote before CTRL_INIT and each doorbell.
  *   -v                      print every register write (address, old, new, read-back)
  * Writes only: GCC video_ahb/video_axi CBCRs, the videocc PLL0/RCG/GDSC/CBCR registers below, RPMh BCMs MM3/MM2,
  * the core registers in allowed() (boot/init/ping), the firmware carveout, the queue block; SMMU writes only through
@@ -1000,7 +1004,16 @@ static int teardown(struct vstate *v)
 			       m->slot, smr, s2cr, (1u << 31) | sid, m->cb);
 		} else {
 			smmu_last = *m;
-			rc |= smmu_release("venus");
+			int r = smmu_release("venus");
+			/* v2c: SMR invalid (r 1) = released, the other differences only warned (after PAS shutdown
+			 * the bank registers read changed every run); a still-valid SMR stays a failure.
+			 * VENUSCTL_STRICT_RELEASE=1: any difference fails (old behaviour). */
+			if (r > 0 && !getenv("VENUSCTL_STRICT_RELEASE")) {
+				printf("venus: warning: SMR%d released (reads invalid), other registers differ (above)\n",
+				       m->slot);
+				r = 0;
+			}
+			rc |= r != 0;
 		}
 		state_save(v);
 	}
@@ -1300,6 +1313,10 @@ static void print_pkt(unsigned q, int n)
 	}
 }
 
+static int wait_soft;	/* v2c: a timeout is reported as a note, not a STOP (ping) */
+static uint32_t lastmsg[8];	/* v2c: first words of the last msgq packet, for a non-fatal ping */
+static int lastmsg_n;
+
 /* drain the debug queue, then the message queue until a packet of type want (0 = just drain); 0 = got it */
 static int wait_msg(uint32_t want, unsigned ms)
 {
@@ -1309,6 +1326,8 @@ static int wait_msg(uint32_t want, unsigned ms)
 			print_pkt(2, n);
 		while ((n = q_read(1)) > 0) {
 			print_pkt(1, n);
+			lastmsg_n = n < 8 ? n : 8;
+			memcpy(lastmsg, pkt, 4u * (unsigned)lastmsg_n);
 			if (pkt[1] == 0x21001 && n > 3 && pkt[3] == 1) {	/* EVENT_NOTIFY, HFI_EVENT_SYS_ERROR */
 				printf("venus: STOP: firmware sys error (data %#x %#x)\n", pkt[4], pkt[5]);
 				print_sfr(qb);
@@ -1324,7 +1343,7 @@ static int wait_msg(uint32_t want, unsigned ms)
 	}
 	if (!want)
 		return 0;
-	printf("venus: STOP: no %#x after %u ms\n", want, ms);
+	printf("venus: %s no %#x after %u ms\n", wait_soft ? "note:" : "STOP:", want, ms);
 	core_status("timeout");
 	print_sfr(qb);
 	return -1;
@@ -1435,7 +1454,8 @@ static int init(uint64_t phys)
 	return 0;
 }
 
-static int ping(uint32_t debug)
+/* ping and session: state check, then SYS_INIT (once per boot), debug config and IMAGE_VERSION. 0 = ok. */
+static int sys_up(struct vstate *vp, uint32_t debug, const char *what)
 {
 	struct vstate v;
 	if (state_load(&v) || !v.init || !v.q) {
@@ -1447,7 +1467,7 @@ static int ping(uint32_t debug)
 		return 1;
 	}
 	qb = v.q;
-	core_status("before ping");
+	core_status(what);
 	if (wait_msg(0, 0))
 		return 1;
 	if (v.sysinit) {
@@ -1483,13 +1503,84 @@ static int ping(uint32_t debug)
 	} else {
 		printf("venus: property info without an image version (size %u, property %#x)\n", pkt[0], pkt[3]);
 	}
-	uint32_t pg[3] = { 12, 0x210002, 0x76656e75 };	/* HFI_CMD_SYS_PING; client_data: our own cookie */
-	if (q_write(pg) || wait_msg(0x220002, 1000))
+	*vp = v;
+	return 0;
+}
+
+static int ping(uint32_t debug)
+{
+	struct vstate v;
+	if (sys_up(&v, debug, "before ping"))
 		return 1;
-	printf("venus: PING_ACK client_data %#x%s\n", pkt[2], pkt[2] == pg[2] ? "" : " (not our cookie)");
+	uint32_t pg[3] = { 12, 0x210002, 0x76656e75 };	/* HFI_CMD_SYS_PING; client_data: our own cookie */
+	if (q_write(pg))
+		return 1;
+	/* v2c: VIDEO.IR.1.2-00053 reads word 2 as a session ID (HostDriver_GetSessionIdx fail) and answers EVENT_NOTIFY
+	 * SESSION_ERROR 2, data 0x1004 (HFI_ERR_SESSION_INVALID_SESSION_ID): no PING_ACK. Not fatal: the firmware is
+	 * alive, session is the real round trip. VENUSCTL_PING_FATAL=1: a missing PING_ACK fails (old behaviour). */
+	int fatal = getenv("VENUSCTL_PING_FATAL") != NULL;
+	lastmsg_n = 0;
+	wait_soft = !fatal;
+	int r = wait_msg(0x220002, 1000);
+	wait_soft = 0;
+	if (r && fatal)
+		return 1;
+	if (r) {
+		printf("venus: ping not acked (non-fatal); last msgq packet:");
+		for (int k = 0; k < lastmsg_n; k++)
+			printf(" %08x", lastmsg[k]);
+		printf("%s\n", lastmsg_n ? "" : " none");
+	} else {
+		printf("venus: PING_ACK client_data %#x%s\n", pkt[2], pkt[2] == pg[2] ? "" : " (not our cookie)");
+	}
 	wait_msg(0, 50);
 	core_status("after ping");
-	printf("venus: ping ok (stage 2 go): venusctl shutdown, then power off\n");
+	printf("venus: ping %s: venusctl session, or venusctl shutdown, then power off\n",
+	       r ? "done without PING_ACK" : "ok (stage 2 go)");
+	return 0;
+}
+
+/*
+ * v2c: the first real HFI round trip, an H.264 decoder session opened and closed again (no buffers, no LOAD_RESOURCES).
+ * Constants from the downstream driver (research/ext/msm-vidc-sunfish/, vidc_hfi_helper.h; same values in
+ * research/notes/venus-stage1-2026-11-02.md "Packet IDs"):
+ *   HFI_CMD_SYS_SESSION_INIT 0x10007 = HFI_CMD_START_OFFSET 0x10000 + 0x7, struct hfi_cmd_sys_session_init_packet
+ *     {size 20, packet_type, session_id, session_domain, session_codec}; downstream session_id = hash32_ptr(session),
+ *     any 32-bit cookie: ours 0x76656e75 ("venu")
+ *   HFI_VIDEO_DOMAIN_DECODER 2 (HFI_COMMON_BASE + 0x2), HFI_VIDEO_CODEC_H264 2
+ *   HFI_MSG_SYS_SESSION_INIT_DONE 0x20006 = HFI_MSG_START_OFFSET 0x20000 + 0x6 {size, type, session_id, error_type,
+ *     num_properties, ...}; HFI_CMD_SYS_SESSION_END 0x10008 {size 12, type, session_id};
+ *   HFI_MSG_SYS_SESSION_END_DONE 0x20007 {size 16, type, session_id, error_type}
+ * A missing or failed reply is a STOP (exit 1); the caller's shutdown still undoes everything (PAS shutdown first).
+ */
+#define SESSION_ID	0x76656e75u
+static int session(uint32_t debug)
+{
+	struct vstate v;
+	if (sys_up(&v, debug, "before session"))
+		return 1;
+	uint32_t si[5] = { 20, 0x10007, SESSION_ID, 2, 2 };	/* SYS_SESSION_INIT, decoder, H.264 */
+	if (q_write(si) || wait_msg(0x20006, 1000))
+		return 1;
+	printf("venus: SESSION_INIT_DONE session %#x%s error %#x, %u properties\n", pkt[2],
+	       pkt[2] == SESSION_ID ? "" : " (not ours)", pkt[3], pkt[0] >= 20 ? pkt[4] : 0);
+	if (pkt[3]) {
+		printf("venus: STOP: SESSION_INIT_DONE with an error (no session to end)\n");
+		wait_msg(0, 50);
+		return 1;
+	}
+	uint32_t se[3] = { 12, 0x10008, SESSION_ID };	/* SYS_SESSION_END */
+	if (q_write(se) || wait_msg(0x20007, 1000))
+		return 1;
+	printf("venus: SESSION_END_DONE session %#x error %#x\n", pkt[2], pkt[0] >= 16 ? pkt[3] : 0);
+	int bad = pkt[0] >= 16 && pkt[3];
+	wait_msg(0, 50);
+	core_status("after session");
+	if (bad) {
+		printf("venus: STOP: SESSION_END_DONE with an error\n");
+		return 1;
+	}
+	printf("venus: session ok (H.264 decoder opened and closed): venusctl shutdown, then power off\n");
 	return 0;
 }
 
@@ -1610,11 +1701,14 @@ int main(int argc, char **argv)
 		return init(phys);
 	if (!strcmp(cmd, "ping") && !arg)
 		return ping(debug);
+	if (!strcmp(cmd, "session") && !arg)
+		return session(debug);
 	if (!strcmp(cmd, "shutdown") && !arg)
 		return shutdown_cmd();
 usage:
 	fprintf(stderr, "usage: venusctl [-v] probe | power on|off [--cvp] [--force] | pas-check [--fw DIR] [--no-shutdown]\n"
-		"       | boot [--fw DIR] [--keep] | init [--phys ADDR] | ping [--debug MASK] | shutdown\n"
+		"       | boot [--fw DIR] [--keep] | init [--phys ADDR] | ping [--debug MASK]\n"
+		"       | session [--debug MASK] | shutdown\n"
 		"       | memtest ADDR SIZE write|check\n");
 	return 2;
 }
