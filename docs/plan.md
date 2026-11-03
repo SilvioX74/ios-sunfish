@@ -51,7 +51,8 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
 1. Done tonight: n8 clean; vd1: stub decoder loads in mediaserverd, firmware on phone, probe read (video.md). venusctl
    AHB HW_CTL handling done (14dc1b0). venusctl boot/init/ping written (0e4f244). Pre-run review done, 8 fixes in (d0f1da4).
 2. Morning (night flag off): stage 0 Safari video baseline + the WebGL test (about 30 min together; video muted
-   before 5 am).
+   before 5 am): test page + 60 s H.264/HEVC 720p/1080p clips (testsrc2 + 440 Hz tone, muted by default) in
+   work/stage0/ (gitignored), serve with `python3 -m http.server -d work/stage0` on the USB link; vtdecode 1080p: 112 fps.
 3. Then stage 2 on the phone (venusctl 0e4f244, all subcommands written, only probe run): rebuild + install, then
    `tools/sunfish-venus-test.sh` probe -> power -> pas -> boot -> memtest -> ping (VENUS_PHYS=0xa5100000), stop at
    the first failure or "LEFT POWERED" (daylight; a reset is logged, then a smaller step). Review fixes in d0f1da4.
