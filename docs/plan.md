@@ -43,15 +43,15 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 stops phone work, or doubles in rate after a change (then turn that change off first).
 
 ## Phone
-THE USER'S since 2026-11-02 19:56 ("boot it into a state I can play with"): no phone work until the user hands it back.
+Claude's again (the user handed it back 2026-11-02 21:21; they put it in fastboot, so the next boot starts from there).
 Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76
 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 82f6b41
 (SweetMetal2 4C4C44A9); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
-TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Booted `play` at 19:56.
+TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
 1. Without the phone: stage 1 research (investigator), the plan's video.md spec.
-2. When the phone is back: stage 0 baseline + the WebGL test (about 30 min together).
+2. Phone (it's back): stage 0 baseline + the WebGL test (about 30 min together), in parallel with step 1. At 9:30 pm: night flag and the soak (step 3).
 3. Night soak n8 (did not run 2026-11-02): `tools/sunfish-nightsoak.sh n8` (kernel158; watch G1 with SWEET_CULL=3).
 4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuild first (the 2026-11-02 build was
    stopped half way: don't install work/metal2-next before rebuilding), then a 5-boot A/B on settings, cc, home.
