@@ -757,7 +757,14 @@ int main(int argc, char **argv)
 			idx[n - 1] = i, p[n].fd = cl[i].fd, p[n].events = POLLIN, p[n++].revents = 0;
 		}
 		int active = sess == S_RUN || sess == S_EOS;
-		if (poll(p, (nfds_t)n, active ? 1 : 1000) > 0) {
+		/* videoprof 2026-11-03: a 1 ms tick while a session runs was ~40 % of a core (1 kHz wakeups); the msgq has no
+		 * IRQ, so poll it every VENUSD_TICK_MS (default 4: 30 fps frames are 33 ms apart, 18 DPBs queued) */
+		static int tick = -1;
+		if (tick < 0) {
+			const char *e = getenv("VENUSD_TICK_MS");
+			tick = e && atoi(e) > 0 ? atoi(e) : 4;
+		}
+		if (poll(p, (nfds_t)n, active ? tick : 1000) > 0) {
 			if (p[0].revents & POLLIN) {
 				int fd = accept(ls, NULL, NULL), k;
 				for (k = 0; fd >= 0 && k < MAXCL && cl[k].fd >= 0; k++)
