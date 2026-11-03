@@ -89,6 +89,16 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:00 Per-frame copy path at 1080p (read-only study): 4 copies, ~12.5 MB/frame
+1 venusd pread Venus window -> fbuf 3.13 MB (measured 1.5-2.1 ms); 2 venusd write -> AF_UNIX (guess 2-3 ms); 3 mediaserverd
+read -> rx (guess 1.5-2.5 ms); 4 vtvenus row memcpy -> VT pool IOSurface (guess 1.5-2 ms). Copies 2-4 can go with "credits":
+vtvenus sends pool IOSurface IDs, venusd preads /dev/pmem straight into them (SweetSurface lookup by ID, no owner check).
+vtvenus can't mmap /dev/pmem (no mmap, root-only 0600). Decoding straight into IOSurfaces (sweet_surface_create_physical)
+needs two-plane + cached + buffer holding: stage 5, 2-4 days. Reuse: no related project hands frames to VT. mediaserverd's
+~58 %: profile can't split it (pstack misses kernel time); guess ours ~9-14 %, rest Apple's player/XPC. Saving estimate
+15-25 % of a core (guess); first an upper-bound A/B: venusd sends DECODED without pixels (/var/local/venusd-nopayload).
+Note: the 281 % breakdown is from kernel160/bundle 691c87d; not re-measured on kernel161.
+
 ### 2026-11-03 15:35 Correction: today's Log heading times run ahead of the clock
 Claude's session clock drifted: the `### 2026-11-03 HH:MM` headings written today after about 12:00 EST carry times up
 to ~6.5 h ahead of the real time (e.g. "21:40" was ~15:15 EST). The order of the entries is right; the real times are
