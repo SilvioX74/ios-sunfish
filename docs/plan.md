@@ -25,8 +25,8 @@ Only items Claude can move now. User tasks are listed below and never gate work;
    1. Done 2026-11-02: research, staged spec in video.md (PAS ID 9, HFI gen1, plugin slot ExampleIPB.videodecoder).
    2. Done 2026-11-03: firmware boots, H.264 session opens/closes; 10/10 rounds idle, 29/29 under 15 min UI load (s7c).
    3. Done 2026-11-03 (v3e): `venusctl decode` bit-exact vs ffmpeg at 320x240 and 1280x720. Left: speed on a long clip.
-   4. ▶ Done 2026-11-03: 4a venusd, 4b VT plugin, 4c Safari plays H.264 1080p via Venus (63/1800 dropped). Next: venusd
-      launchd job; 4d GPU YUV->RGB without the G7 stall (backboardd 96 %); 4e HEVC.
+   4. ▶ Done 2026-11-03: 4a venusd, 4b VT plugin, 4c Safari H.264 via Venus, venusd at boot + recovery. Next: ~8 s start
+      latency, 4d conversion cost, 4e HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
 2. **3D test**: WebGL 1 incl. MSAA works (wg4, wgaa2). Left: HexGL renders white; a real game 15 min; WebGL 2.
 3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
@@ -46,17 +46,17 @@ Claude's. Up since the everyday boot venusR (2026-11-03 06:25, kernel158), slide
 Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76
 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 5a76e18
 (SweetMetal2 4C4C4448); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
-TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 sweetgpucap=512 since ~09:00 (tag maps512), bundle a1f3952, SWEET_YCBCR_GPU on. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
+TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 sweetgpucap=512 (tag wedge1, 10:53), bundle fcdf6de (vImage), venusd + vtvenus (cfbebf1) installed, venusd from launchd. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. venusd as a launchd job (tools/sunfish-install-venusd.sh) + bundle a458398 (G7 GPU path default off), then a reboot:
-   Safari H.264 plays via Venus with nothing started by hand. Everyday boot from then on: kernel160 + `sweetpmemwc=2
-   sweetgpucap=512` (see Phone). Open: the 13 s first-use decode stall after boot (video.md v4a1).
-2. Video 4d: GPU YUV->RGB without the G7 stall (G7 path drops 2/3 of frames, presenter stalls; CPU path costs backboardd
-   ~96 %). Then 4e HEVC; drop the 1-frame probe session per clip.
-3. WebGL: HexGL renders white after loading (error hook in work/webgl-games/hexgl/index.html beacons JS errors to the
-   :8078 server log); then a 15 min game run (the 3D target); WebGL 2 (argument encoders, the pin has them, 4-6 h).
-4. metal2vulkan: stay on 720ef1ce + cherry-pick (survey 2026-11-03); next picks: bf3ce381 (Core Image kernels), 6f3730ab.
+1. Video start latency: the first frame comes 7.5-8.7 s after each venusd OPEN (vd4a: 0.6 s); find where (venusd
+   cold allowance? lazy OPEN + resync? warm-up?) and fix. Then HEVC (4e), venusd as everyday default.
+2. Video 4d leftovers: backboardd ~66 % for the CPU conversion (vImage, fcdf6de); the copy into the texture likely
+   dominates. G7 GPU path stays off (GPU-bound); later a native VkSamplerYcbcrConversion.
+3. mediaserverd restarts can wedge it (Safari stops loading video; camclk/camid exec loop on restart): install the
+   plugin with a reboot, and find out why mediaserverd runs camclk/camid.
+4. WebGL: HexGL on the phone (page loads no scripts after the .m4a change; works on desktop) and a 15 min game run;
+   WebGL 2 (argument encoders). Maps B50 is not the GPU cap.
 5. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
 
 ## User tasks (details in user-tasks.md; nothing waits on these)

@@ -89,6 +89,26 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 13:30 wedge1: 5 Safari clips through Venus on a fresh boot, no wedge; venusd recovery works (K=3, K=4)
+Boot wedge1 (kernel160, 4455 mV; ../logs/boots/20261103-105302.log), venusd 73803de2 + vtvenus 34372e4c (cfbebf1),
+bundle vimage. venusd warm-up at boot: first frame 7475 ms. mediaserverd pid 29 the whole time (never restarted).
+| clip | frames | dropped | mediaserverd CPU (s) before -> after |
+|---|---|---|---|
+| 720p | 1800 | 0 | 6.0 -> 29.6 |
+| 720p | 1800 | 48 | 30.1 -> 67.3 |
+| 1080p | 1800 | 1 | 67.8 -> 107.2 |
+| 1080p, fake clock-off at frame 300 (K=3) | 1800 | 41 | 107.7 -> 147.4 |
+| 1080p, K=4 (power-on-first path) | 1800 | 40 | 147.5 -> 185.3 |
+- Recovery K=3: `clock check: fake off (1/3..3/3)`, `STOP at doorbell ...`, `recovering from STOP 1 (session 8 running,
+  client attached)`, `Venus down (recovery after a STOP)`, `recovery done`, `Venus up in 191 ms`, new session; vtvenus
+  `session error -5 ... at frame 306: ... reopen`, `resync: parameter sets + 57 access unit(s) from tag 250 sent again
+  in 9680 ms (their pictures discarded)`. K=4: `recovery: a clock or GDSC still reads off: power on first`, then the
+  same. venusd pid 37 throughout.
+- No wedge: the two "Safari video won't start" cases both followed manual mediaserverd restarts. Rule: after a plugin
+  install, reboot rather than restart mediaserverd (the restart also execs camclk/camid many times).
+- Open: each session's first frame comes 7.5-8.7 s after OPEN (`first frame 8667 ms after it`; vd4a was ~0.6 s), and a
+  resync of 57 AUs took ~9.7 s: Safari waits ~8 s before a video starts. Next item.
+
 ### 2026-11-03 13:10 "Safari video won't start" = a wedged mediaserverd, not the plugin
 After the install-time `psx -k mediaserverd`, the new mediaserverd (pid 563) spun (CPU 5 -> 58 s in ~10 min), Safari
 never requested the mp4 (`frames=0 w=0`, one AbortError), oslog showed only `SecTaskLoadEntitlements failed error=22`.
