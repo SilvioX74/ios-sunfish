@@ -19,6 +19,20 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 20:10 ht1: 802.11n HT20 association: 3.0 -> 5.8 MB/s
+wland b13a681 (sha256 933ec47e; old binary kept as /var/local/bin/wland.pre-ht), installed with
+`tools/sunfish-install-wifi.sh --wland` (now from work/userland-linux/out; the old work/userland/stage was a stale Oct 23
+build). Boots ht1/ht0/ht2 on kernel160. Log: `wmi: fw 3226822e ... rf chains 2 ht caps 0x381b`, `join: 'Johann' ... 2437 MHz
+-63 dBm WPA2, asking HT20` (joined at the 2nd try), `assoc HT20 (MCS0-7, A-MPDU), WMM`, WPA2 keys, `*** joined`; no
+ERR-FATAL; nettest ok.
+| run | mode | MB/s | wland CPU | msdus/s | tx failed |
+|---|---|---|---|---|---|
+| Cloudflare | HT20 | 5.5-6.3 (~5.8) | ~68 % | ~4080 | 0 |
+| LAN from the PC (on Wi-Fi) | HT20 | 5.5-5.9 | ~69 % | ~3900 | 0 |
+| Cloudflare, `ht=0` in /var/local/wland.conf | legacy 11g | 2.9-3.2 | ~44 % | ~2230 | 0 |
+HT20 is the default now (no wland.conf). Next: wland's CPU per frame (~10 pmem syscalls/frame, one write() per frame to
+/dev/wlan) — batching or a kernel data path would cut the 68 %.
+
 ### 2026-11-03 19:45 wifi1: wland as an Interactive launchd job: 0.53 -> 3.0 MB/s
 Kernel160 (boots hevc1 -> wifi1). Safari dl.html (work/stage0) streaming from https://speed.cloudflare.com over Wi-Fi:
 before (wland job without ProcessType) 0.45-0.60 MB/s, wland 7.6 % of a core, htt msdus ~420/s; after
