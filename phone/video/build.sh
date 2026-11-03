@@ -11,7 +11,7 @@ mkdir -p out
 $CC -O2 -Wall -dynamiclib -install_name /System/Library/VideoDecoders/ExampleIPB.videodecoder \
 	-o out/vtstub.dylib vtstub.c
 $CC -O2 -Wall -Wextra -Wno-unused-parameter -dynamiclib -install_name /System/Library/VideoDecoders/ExampleIPB.videodecoder \
-	-framework CoreFoundation -framework CoreMedia -framework CoreVideo -framework VideoToolbox \
+	-framework CoreFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework VideoToolbox \
 	-o out/vtvenus.dylib vtvenus.c ../wifi/venus_hevc.c
 for f in vtstub vtvenus; do
 	../../tools/linux-ios-sign out/$f.dylib

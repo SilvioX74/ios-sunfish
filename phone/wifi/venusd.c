@@ -12,7 +12,7 @@
  * died is undone at the next start. Don't run venusctl while venusd runs (same STATE).
  * Polling, no IRQ: the message queue every 1 ms while a session runs, nothing while idle. One session at a time
  * (a second OPEN: -EBUSY). Frames go back over the socket (copy-out through the kernel160 sweetpmemwc=2 mapping);
- * IOSurface hand-off is 4b.
+ * or straight into a credited IOSurface (vdcredit below).
  * Switches: /var/local/venus-off (OPEN -> -ENODEV), VENUSD_VERBOSE=1 (venusctl's per-buffer lines in the log),
  * VENUSD_IDLE_S, VENUSD_PHYS (0xa5100000), VENUSD_BUF_MB (160), VENUSD_IN_KB (input buffer floor, 1024),
  * VENUSD_DEBUG (firmware debug mask, 0x18); the VENUSCTL_* decoder switches work as in venusctl.
@@ -39,6 +39,16 @@
  * "client fd N connected|gone (reason), K connected".
  * vdnopay (copy-cost test): /var/local/venusd-nopayload present at an OPEN: that session's frames are still copied out
  * of Venus, but DECODED goes with len 0 (no pixels; vtvenus emits an unfilled pool buffer). Absent: as before.
+ * vdcredit (2026-11-03, video.md's copy saving): CREDIT gives venusd an IOSurface ID of the client's (vtvenus: VT's
+ * pixel-buffer pool); while one is queued and fits the picture (2 planes 420v/420f, plane 0 the visible width x
+ * height, rows wide enough, x crop a multiple of 4), the picture's visible rect is pread from /dev/pmem straight into
+ * its planes (one read per plane when bytes per row == Venus's stride, else per row) and DECODED goes with len 0 +
+ * surface. No credit: the copy-out buffer and the payload as before; a credit that doesn't fit goes back (UNCREDIT
+ * d->c, -EINVAL).
+ * Credits end at UNCREDIT, EOS_DONE, ERROR, CLOSE and a disconnect (never written after); looked-up surfaces (at most
+ * VSURF_MAX, least recently used out) are released at the session's end. One log line per session for each path.
+ * VENUSD_SURF=0: every CREDIT handed back with -ENOTSUP (the client stops crediting), the socket path only.
+ * IOSurface lookups by ID work across processes here (SweetSurface sel 4 has no owner check).
  * vdstamp: every line of the log (venus_core's too) and of the console starts "[ssss.mmm] ": seconds since boot from
  * mach_absolute_time, the clock (and format) of the kernel's per-boot log lines, so they line up; the first line after
  * a minute without one, the start and each session open add "[wall YYYY-MM-DD HH:MM:SS] ". VENUSD_STAMP=0: no stamps.
@@ -60,6 +70,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <mach/mach_time.h>
+#include <IOSurface/IOSurfaceRef.h>
 #include "pmem.h"
 #include "venus_core.h"
 #include "venus_hevc.h"
@@ -67,6 +78,7 @@
 
 #define LOG_MAX		(1 << 20)
 #define MAXCL		16	/* vdleak: was 4 */
+#define VSURF_MAX	16	/* vdcredit: looked-up surfaces kept per session */
 #ifndef LOCKF	/* -D for a host test build */
 #define LOCKF		"/var/run/venusd.pid"
 #define OFF_FILE	"/var/local/venus-off"
@@ -97,6 +109,15 @@ static jmp_buf stop_jb, rec_jb;	/* vdstop: the main loop; recover() itself */
 static int stop_armed, recovering, opening = -1, ending, warmed;
 static int nopay;	/* vdnopay: NOPAY_FILE at this session's OPEN */
 static unsigned nstops, test_frame, test_k;	/* VENUSD_TEST_CLKOFF / TEST_FILE: frame F, K reads */
+/* vdcredit: the owner's credits (FIFO), the surfaces looked up for them, the one a frame is being read into */
+static int surf_on = 1;	/* VENUSD_SURF */
+static uint32_t cred[VENUSD_MAX_CREDITS];
+static unsigned cred_h, cred_n, n_placed, n_copied, n_returned;
+static unsigned path_logged;	/* this session's path lines: 1 credit, 2 socket copy, 4 handed back */
+static struct { uint32_t id; IOSurfaceRef s; unsigned long use; } vsurf[VSURF_MAX];
+static unsigned long vsurf_clock;
+static IOSurfaceRef placed_s;
+static uint32_t placed_id;
 
 /* vdcold: the warm-up stream, one 320x240 grey IDR (SPS, PPS, slice; ffmpeg color=gray, libx264 constrained baseline,
  * SEI removed; 320x240 is a size stage 3 decoded bit-exact) */
@@ -260,6 +281,133 @@ static void reply(int i, int type, int32_t status, uint32_t seq)
 	send_msg(i, &m, NULL);
 }
 
+/* ---- vdcredit: the client's IOSurfaces ---- */
+
+/* a credit back to the owner unused (UNCREDIT d->c): status why, w x h the picture it was meant for */
+static void cred_return(uint32_t id, int32_t status, uint32_t w, uint32_t h)
+{
+	struct venusd_msg m = { .type = VD_UNCREDIT, .status = status, .surface = id, .width = w, .height = h };
+	n_returned++;
+	send_msg(owner, &m, NULL);
+}
+
+/* every queued credit void (UNCREDIT, EOS_DONE, ERROR, CLOSE, disconnect, STOP); how many there were */
+static unsigned cred_drop(void)
+{
+	unsigned n = cred_n;
+	if (placed_s)	/* a STOP unwound a placed read: the surface stays the client's, its credit is gone */
+		IOSurfaceUnlock(placed_s, 0, NULL), placed_s = NULL;
+	cred_h = cred_n = 0;
+	return n;
+}
+
+/* the looked-up surfaces released (the session's end) */
+static void vsurf_drop(void)
+{
+	for (int i = 0; i < VSURF_MAX; i++)
+		if (vsurf[i].s)
+			CFRelease(vsurf[i].s), vsurf[i].s = NULL, vsurf[i].id = 0;
+}
+
+static IOSurfaceRef vsurf_get(uint32_t id)
+{
+	int lru = 0;
+	for (int i = 0; i < VSURF_MAX; i++) {
+		if (vsurf[i].s && vsurf[i].id == id) {
+			vsurf[i].use = ++vsurf_clock;
+			return vsurf[i].s;
+		}
+		if (!vsurf[i].s || (vsurf[lru].s && vsurf[i].use < vsurf[lru].use))
+			lru = i;
+	}
+	IOSurfaceRef s = IOSurfaceLookup(id);
+	if (!s)
+		return NULL;
+	if (vsurf[lru].s)
+		CFRelease(vsurf[lru].s);
+	vsurf[lru].id = id, vsurf[lru].s = s, vsurf[lru].use = ++vsurf_clock;
+	return s;
+}
+
+#define FCC(a, b, c, d) ((uint32_t)(a) << 24 | (uint32_t)(b) << 16 | (uint32_t)(c) << 8 | (uint32_t)(d))
+
+/* NULL if surface s can take picture f as venus_core's place_io writes it, else why not */
+static const char *vsurf_misfit(IOSurfaceRef s, const struct vdec_frame *f)
+{
+	uint32_t fmt = IOSurfaceGetPixelFormat(s);
+	size_t w4 = ((size_t)f->cw + 3) & ~(size_t)3;
+	if (IOSurfaceGetPlaneCount(s) != 2 || (fmt != FCC('4', '2', '0', 'v') && fmt != FCC('4', '2', '0', 'f')))
+		return "not 2-plane 420v/420f";
+	if (IOSurfaceGetWidthOfPlane(s, 0) != (size_t)f->cw || IOSurfaceGetHeightOfPlane(s, 0) != (size_t)f->ch ||
+	    IOSurfaceGetHeightOfPlane(s, 1) < ((size_t)f->ch + 1) / 2)
+		return "size";
+	if (IOSurfaceGetBytesPerRowOfPlane(s, 0) < w4 || IOSurfaceGetBytesPerRowOfPlane(s, 1) < w4)
+		return "bytes per row";
+	if (f->cx & 3 || f->cx + w4 > f->stride)
+		return "x crop";
+	return NULL;
+}
+
+/* venus_core's vdec_place: the oldest credit that fits, locked, its planes in d; misfits go back. f NULL: the read
+ * into the placed surface failed (no DECODED for that frame; the credit goes back) */
+static int place(const struct vdec_frame *f, struct vdec_dest *d)
+{
+	if (!f) {
+		if (placed_s) {
+			IOSurfaceUnlock(placed_s, 0, NULL);
+			placed_s = NULL;
+			cred_return(placed_id, -EIO, 0, 0);
+		}
+		return 0;
+	}
+	if (owner < 0 || nopay)
+		return 0;
+	while (cred_n) {
+		uint32_t id = cred[cred_h];
+		cred_h = (cred_h + 1) % VENUSD_MAX_CREDITS, cred_n--;
+		IOSurfaceRef s = vsurf_get(id);
+		const char *why = !s ? "lookup failed" : vsurf_misfit(s, f);
+		if (!why && IOSurfaceLock(s, 0, NULL))
+			why = "lock failed";
+		if (!why) {
+			d->y = IOSurfaceGetBaseAddressOfPlane(s, 0), d->c = IOSurfaceGetBaseAddressOfPlane(s, 1);
+			d->ybpr = IOSurfaceGetBytesPerRowOfPlane(s, 0), d->cbpr = IOSurfaceGetBytesPerRowOfPlane(s, 1);
+			if (d->y && d->c) {
+				placed_s = s, placed_id = id;
+				return 1;
+			}
+			IOSurfaceUnlock(s, 0, NULL);
+			why = "no plane address";
+		}
+		if (!(path_logged & 4)) {
+			path_logged |= 4;
+			printf("venusd: session %u: credited IOSurface %u handed back: %s (picture %dx%d at %d,%d, stride %u;"
+			       " surface %zux%zu, %zu planes, bytes per row %zu/%zu)\n", nsess, id, why, f->cw, f->ch, f->cx,
+			       f->cy, f->stride, s ? IOSurfaceGetWidthOfPlane(s, 0) : 0, s ? IOSurfaceGetHeightOfPlane(s, 0) : 0,
+			       s ? IOSurfaceGetPlaneCount(s) : 0, s ? IOSurfaceGetBytesPerRowOfPlane(s, 0) : 0,
+			       s ? IOSurfaceGetBytesPerRowOfPlane(s, 1) : 0);
+		}
+		cred_return(id, -EINVAL, (uint32_t)f->cw, (uint32_t)f->ch);
+	}
+	return 0;
+}
+
+/* CREDIT from the owner: queued while the session can still output pictures */
+static void do_credit(int i, const struct venusd_msg *m)
+{
+	if (i != owner || (sess != S_OPEN && sess != S_RUN && sess != S_EOS) || !m->surface)
+		return;	/* the client released its credits with the session's end */
+	if (!surf_on) {
+		cred_return(m->surface, -ENOTSUP, 0, 0);
+		return;
+	}
+	if (cred_n == VENUSD_MAX_CREDITS) {
+		cred_return(m->surface, -ENOSPC, 0, 0);
+		return;
+	}
+	cred[(cred_h + cred_n++) % VENUSD_MAX_CREDITS] = m->surface;
+}
+
 /* the decoder's frames (venus_core frame_out) -> DECODED to the session's client */
 static void sink(const struct vdec_frame *f)
 {
@@ -270,6 +418,24 @@ static void sink(const struct vdec_frame *f)
 		.copy_us = (uint32_t)(f->copy_ms * 1e3) };
 	if (nopay)
 		m.len = 0;	/* vdnopay: header only */
+	if (f->placed) {	/* vdcredit: the pixels are in the credited surface */
+		IOSurfaceUnlock(placed_s, 0, NULL);
+		m.len = 0, m.surface = placed_id;
+		placed_s = NULL;
+		n_placed++;
+		if (!(path_logged & 1)) {
+			path_logged |= 1;
+			printf("venusd: session %u: frame %d into credited IOSurface %u (%.2f ms read)\n", nsess, f->index,
+			       m.surface, f->copy_ms);
+		}
+	} else {
+		n_copied++;
+		if (!(path_logged & 2)) {
+			path_logged |= 2;
+			printf("venusd: session %u: frame %d over the socket (%s)\n", nsess, f->index,
+			       nopay ? "nopayload test" : !surf_on ? "VENUSD_SURF=0" : "no credit queued");
+		}
+	}
 	if (!f->index)
 		t_first = mono();
 	t_last_frame = mono();
@@ -362,10 +528,11 @@ static void sess_log(const char *how)
 	vdec_status(&st);
 	double span = t_last_frame > t_first ? t_last_frame - t_first : 0;
 	note("venusd: session %u %s: %u AUs in, %d frames, %.2f s from OPEN, first frame %.0f ms after it, %.1f fps"
-	     " (frame 0 -> %d), copy-out mean %.2f ms max %.2f ms, error %#x%s", nsess, how, sent, st.frames,
+	     " (frame 0 -> %d), copy-out mean %.2f ms max %.2f ms, error %#x%s; credited %u, socket %u, handed back %u",
+	     nsess, how, sent, st.frames,
 	     mono() - t_open, st.frames ? 1e3 * (t_first - t_open) : 0.0, st.frames > 1 && span > 0 ? (st.frames - 1) / span : 0.0,
 	     st.frames ? st.frames - 1 : 0, st.frames ? 1e3 * st.cp_sum / st.frames : 0.0, 1e3 * st.cp_max, st.err,
-	     st.fw_dead ? ", firmware sys error" : "");
+	     st.fw_dead ? ", firmware sys error" : "", n_placed, n_copied, n_returned);
 }
 
 /* the HFI session down (if it started), the firmware too after a sys error */
@@ -384,6 +551,7 @@ static void sess_stop(void)
 static void sess_fail(int32_t status, uint32_t seq)
 {
 	printf("venusd: session %u failed: status %d (%#x) at frame %u\n", nsess, status, (unsigned)status, seq);
+	cred_drop();	/* vdcredit: the client lets go of them at the ERROR */
 	if (owner >= 0)
 		reply(owner, VD_ERROR, status, seq);
 	sess = S_FAILED;	/* vdstop: before sess_stop, so a STOP in it sends no second VD_ERROR */
@@ -393,12 +561,14 @@ static void sess_fail(int32_t status, uint32_t seq)
 
 static void sess_end(const char *how)
 {
+	cred_drop();	/* vdcredit: before the decoder's last pictures (they go over the socket) */
 	if (sess != S_FAILED) {
 		ending = 1;	/* vdstop: a STOP in here: recover() finishes the end */
 		sess_stop();
 		ending = 0;
 		sess_log(how);
 	}
+	vsurf_drop();
 	sess = S_NONE;
 	owner = -1;
 	idle_since = mono();
@@ -458,6 +628,8 @@ static void do_open(int i, const struct venusd_msg *m)
 		sess_hevc = m->codec == VD_CODEC_HEVC;
 		t_open = mono();
 		t_first = t_last_frame = 0;
+		cred_drop();	/* vdcredit */
+		n_placed = n_copied = n_returned = path_logged = 0;
 		wall_due = 0;	/* vdstamp: the wall clock on this line */
 		note("venusd: session %u opened (fd %d, %s, hint %ux%u)", nsess, cl[i].fd, sess_hevc ? "HEVC" : "H.264", hint_w,
 		     hint_h);
@@ -524,11 +696,21 @@ static void command(int i)
 		do_open(i, &m);
 		return;
 	}
+	if (m.type == VD_CREDIT) {	/* vdcredit: before the owner and state checks: never an ERROR */
+		do_credit(i, &m);
+		return;
+	}
+	if (m.type == VD_UNCREDIT) {
+		struct venusd_msg r = { .type = VD_UNCREDIT, .frames = i == owner ? cred_drop() : 0 };
+		send_msg(i, &r, NULL);
+		return;
+	}
 	if (i != owner) {
 		reply(i, VD_ERROR, -EINVAL, m.seq);
 		return;
 	}
 	if (m.type == VD_CLOSE) {
+		cred_drop();	/* vdcredit: none written after the reply */
 		reply(i, VD_CLOSE, 0, 0);
 		sess_end("closed");
 		return;
@@ -564,6 +746,7 @@ static void command(int i)
 	}
 	if (m.type == VD_EOS) {
 		if (sess == S_OPEN) {	/* nothing decoded: nothing to drain */
+			cred_drop();	/* vdcredit: they end with EOS_DONE */
 			reply(i, VD_EOS_DONE, 0, 0);
 			sess = S_DONE;
 			return;
@@ -598,6 +781,7 @@ static void sess_poll(void)
 		return;
 	}
 	if (sess == S_EOS && st.eos) {
+		cred_drop();	/* vdcredit: they end with EOS_DONE */
 		reply(owner, VD_EOS_DONE, 0, 0);
 		sess = S_DONE;
 		printf("venusd: EOS done %.0f ms after EOS, %d frames\n", 1e3 * (t - t_eos), st.frames);
@@ -609,6 +793,7 @@ static void sess_poll(void)
 	if (t - t_prog > quiet && (sess == S_EOS || !vdec_can_etb())) {
 		printf("venusd: no firmware progress for %.0f s (%s)\n", quiet, sname[sess]);
 		if (sess == S_EOS) {
+			cred_drop();
 			reply(owner, VD_EOS_DONE, -ETIMEDOUT, 0);
 			sess = S_DONE;
 		} else {
@@ -683,6 +868,7 @@ static void recover(void)
 {
 	struct stat sb;
 	nstops++;
+	cred_drop();	/* vdcredit: the client gets an ERROR (or the session ends) below */
 	note("venusd: recovering from STOP %u (session %u %s, %s)", nstops, nsess, sname[sess],
 	     opening >= 0 ? "in an OPEN's bring-up" : ending ? "while ending it" : owner >= 0 ? "client attached" : "no client");
 	if (opening >= 0) {
@@ -802,6 +988,7 @@ int main(int argc, char **argv)
 		cold_s = (unsigned)atoi(getenv("VENUSD_COLD_S"));
 	int warm = !getenv("VENUSD_WARMUP") || atoi(getenv("VENUSD_WARMUP"));
 	hevc_ok = !getenv("VENUSD_HEVC") || atoi(getenv("VENUSD_HEVC"));
+	surf_on = !getenv("VENUSD_SURF") || atoi(getenv("VENUSD_SURF"));	/* vdcredit */
 	if (!getenv("VENUSD_RECOVER") || atoi(getenv("VENUSD_RECOVER")))
 		vc_stop_hook = on_stop;
 	vc_frame_tag = !getenv("VENUSD_FW_FRAME") || atoi(getenv("VENUSD_FW_FRAME"));
@@ -812,9 +999,9 @@ int main(int argc, char **argv)
 	if (!au)
 		return 1;
 	note("venusd: start, pid %d, idle %u s, idle client %u s, max %d clients, queues %#llx, window %llu MB, inputs >= %u KB,"
-	     " quiet %d, cold %u s, warm-up %d, recover %d, hevc %d", getpid(), idle_s, idle_cl_s, MAXCL,
+	     " quiet %d, cold %u s, warm-up %d, recover %d, hevc %d, surf %d", getpid(), idle_s, idle_cl_s, MAXCL,
 	     (unsigned long long)phys, (unsigned long long)buf_mb, in_min >> 10, vc_quiet, cold_s, warm, vc_stop_hook != NULL,
-	     hevc_ok);
+	     hevc_ok, surf_on);
 	pm_init();
 	stale_drop(STATE);
 	stale_drop(AHB_STATE);
@@ -829,6 +1016,7 @@ int main(int argc, char **argv)
 	signal(SIGTERM, on_term);
 	signal(SIGINT, on_term);
 	vdec_sink = sink;
+	vdec_place = place;	/* vdcredit */
 	int ls = sock_create();
 	if (ls < 0)
 		return 1;

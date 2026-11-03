@@ -5,6 +5,7 @@
  *   - the stage 3 decoder split into session steps (vdec_prepare/start/etb/poll/close, venus_core.h); venusctl decode
  *     runs its old loop over the same steps
  *   - vdec_sink: decoded frames to a callback (venusd) instead of venusctl's crop + CRC + OUT file
+ *   - vdec_place (vdcredit): the callback may name where a frame goes (a credited IOSurface's planes) before its read
  *   - vc_quiet: no per-buffer lines (ETB/FTB commands, EBD/FBD packets) for the daemon's log; venusctl leaves it 0
  * The bitstream helpers (access units, SPS, CRC32) are in venus_h264.c, HEVC's in venus_hevc.c.
  * 4e: HEVC 8-bit Main decode (vdec_prepare's hevc, decode's --hevc): SESSION_INIT codec HFI_VIDEO_CODEC_HEVC 0x2000,
@@ -1928,6 +1929,26 @@ static unsigned cpu_now(void)
 }
 
 void (*vdec_sink)(const struct vdec_frame *f);
+int (*vdec_place)(const struct vdec_frame *f, struct vdec_dest *d);
+
+/* vdcredit: the visible rect of the picture at pa into d's planes (vdec_place's rule: whole planes when the rows line
+ * up, else row by row) */
+static int place_io(uint64_t pa, const struct vdec_dest *d)
+{
+	size_t st = dc.ystride, ylen = st * dc.yscan, w = ((size_t)dc.cw + 3) & ~(size_t)3, crows = ((size_t)dc.ch + 1) / 2;
+	uint64_t y0 = pa + (size_t)dc.cy * st + (size_t)dc.cx;
+	uint64_t c0 = pa + ylen + (size_t)(dc.cy / 2) * st + (size_t)(dc.cx & ~1);
+	int whole = !dc.cx && d->ybpr == st && d->cbpr == st;
+	if (whole)
+		return big_io(y0, d->y, (size_t)dc.ch * st, 0) || big_io(c0, d->c, crows * st, 0) ? -1 : 0;
+	for (size_t r = 0; r < (size_t)dc.ch; r++)
+		if (pm_rd(y0 + r * st, d->y + r * d->ybpr, w))
+			return -1;
+	for (size_t r = 0; r < crows; r++)
+		if (pm_rd(c0 + r * st, d->c + r * d->cbpr, w))
+			return -1;
+	return 0;
+}
 
 /* one decoded frame: crop to the visible rect, append NV12 (Y w*h, then CbCr w*h/2) to OUT, CRC32 of that luma;
  * 4a: with vdec_sink set, the whole buffer as read goes there instead */
@@ -1950,8 +1971,14 @@ static void frame_out(uint32_t pa, const uint32_t *f)
 		dc.frames++;
 		return;
 	}
+	struct vdec_frame vf = { .stride = dc.ystride, .scanlines = dc.yscan,
+		.cx = dc.cx, .cy = dc.cy, .cw = dc.cw, .ch = dc.ch, .ts = ((uint64_t)f[6] << 32) | f[7],
+		.flags = f[8], .filled = f[13], .fbd_w = f[15], .fbd_h = f[16], .fbd_x = f[17], .fbd_y = f[18],
+		.pic_type = f[22], .index = dc.frames };
+	struct vdec_dest d;
+	int placed = vdec_sink && vdec_place && vdec_place(&vf, &d) == 1;	/* vdcredit */
 	unsigned k0 = cpu_now();
-	int rd = !dc.fbuf || big_io(pa, dc.fbuf, need, 0);
+	int rd = placed ? place_io(pa, &d) : !dc.fbuf || big_io(pa, dc.fbuf, need, 0);
 	double c1 = now_s();
 	unsigned k1 = cpu_now();
 	if (k0 == k1 && k0 < 8) {
@@ -1966,14 +1993,14 @@ static void frame_out(uint32_t pa, const uint32_t *f)
 		dc.t_first = c0;
 	dc.t_last = c1;
 	if (rd) {
-		printf("venus: frame %d: can't read %#x\n", dc.frames, pa);
+		printf("venus: frame %d: can't read %#x%s\n", dc.frames, pa, placed ? " (into a credited surface)" : "");
+		if (placed)
+			vdec_place(NULL, NULL);
 		return;
 	}
 	if (vdec_sink) {
-		struct vdec_frame vf = { .buf = dc.fbuf, .len = need, .stride = dc.ystride, .scanlines = dc.yscan,
-			.cx = dc.cx, .cy = dc.cy, .cw = dc.cw, .ch = dc.ch, .ts = ((uint64_t)f[6] << 32) | f[7],
-			.flags = f[8], .filled = f[13], .fbd_w = f[15], .fbd_h = f[16], .fbd_x = f[17], .fbd_y = f[18],
-			.pic_type = f[22], .index = dc.frames, .copy_ms = 1e3 * (c1 - c0) };
+		vf.buf = placed ? NULL : dc.fbuf, vf.len = placed ? 0 : need, vf.placed = placed;
+		vf.copy_ms = 1e3 * (c1 - c0);
 		vdec_sink(&vf);
 		dc.frames++;
 		return;

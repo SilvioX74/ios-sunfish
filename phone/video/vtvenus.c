@@ -52,12 +52,22 @@
  *    0: given up stays given up (the connection is still closed).
  * vdnopay (copy-cost test, venusd's /var/local/venusd-nopayload): a DECODED with len 0 gets a pool buffer emitted
  * unfilled (stale pixels, no copy); one log line per venusd session. len > 0: as before.
+ *  - VTVENUS_SURF (1; vdcredit, venus_proto.h CREDIT): VTVENUS_CREDITS (6, 1-16) buffers of VT's pool are held and
+ *    their IOSurface IDs credited to venusd, which reads the picture straight into one and sends DECODED len 0 +
+ *    surface: that buffer is emitted as it is (no lock, no copy) and the next DecodeFrame credits a fresh one before
+ *    its FRAME (only that thread writes: the reader never blocks on a send). Held buffers are released when their
+ *    credits end (venusd's EOS_DONE, ERROR, CLOSE reply, UNCREDIT reply, a lost connection, Invalidate); a buffer
+ *    venusd hands back (UNCREDIT d->c: didn't fit) is released at once. A new pool (VT made another) gets UNCREDIT
+ *    first, then fresh credits; the pool must be the picture's size first. -ENOTSUP back, or 2 x VTVENUS_CREDITS
+ *    handed back without a picture through a surface: no credits for the rest of that venusd session. A DECODED with
+ *    pixels (len > 0: venusd had no credit) is copied as before. 0: no credits, the socket path only, as before.
  * Log: /var/local/vtvenus.log (0666, cut past 1 MB) + os_log. Off: touch /var/local/venus-off (both this and venusd
  * refuse), or tools/sunfish-install-vtvenus.sh remove.
  */
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreMedia/CoreMedia.h>
 #include <CoreVideo/CoreVideo.h>
+#include <IOSurface/IOSurfaceRef.h>
 #include <VideoToolbox/VideoToolbox.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -145,8 +155,9 @@ enum {	/* VTErrors.h */
 struct slot { int used; uint64_t tag; VTVideoDecoderFrame frame; int no_out; };
 
 /* vdcold switches (header) */
-static struct { int cold_ms, wait_ms, lazy, reconnect, resync, recon_wait, err_gap_ms, hevc, revive_ms; } cfg = {
-	20000, 10000, 1, 1, 1, 1, 5000, 1, 10000 };
+static struct {
+	int cold_ms, wait_ms, lazy, reconnect, resync, recon_wait, err_gap_ms, hevc, revive_ms, surf, credits;
+} cfg = { 20000, 10000, 1, 1, 1, 1, 5000, 1, 10000, 1, 6 };	/* surf, credits: vdcredit */
 static pthread_once_t cfg_once = PTHREAD_ONCE_INIT;
 
 static void cfg_set(const char *k, const char *val)
@@ -170,13 +181,17 @@ static void cfg_set(const char *k, const char *val)
 		cfg.hevc = n;
 	else if (!strcmp(k, "VTVENUS_REVIVE_MS") && n >= 0)
 		cfg.revive_ms = n;
+	else if (!strcmp(k, "VTVENUS_SURF"))	/* vdcredit */
+		cfg.surf = n;
+	else if (!strcmp(k, "VTVENUS_CREDITS") && n > 0)
+		cfg.credits = n > VENUSD_MAX_CREDITS ? VENUSD_MAX_CREDITS : n;
 }
 
 static void cfg_load(void)
 {
 	static const char *const keys[] = { "VTVENUS_COLD_MS", "VTVENUS_WAIT_MS", "VTVENUS_LAZY_OPEN", "VTVENUS_RECONNECT",
 					    "VTVENUS_RESYNC", "VTVENUS_RECON_WAIT", "VTVENUS_ERR_GAP_MS", "VTVENUS_HEVC",
-					    "VTVENUS_REVIVE_MS" };
+					    "VTVENUS_REVIVE_MS", "VTVENUS_SURF", "VTVENUS_CREDITS" };
 	for (size_t i = 0; i < sizeof keys / sizeof *keys; i++)
 		if (getenv(keys[i]))
 			cfg_set(keys[i], getenv(keys[i]));
@@ -222,6 +237,13 @@ struct vd {
 	size_t rx_cap, tx_cap, in_cap;
 	unsigned n_in, n_out, n_drop, n_sess;
 	unsigned nopay_sess;	/* vdnopay: the venusd session last logged (0: none) */
+	/* vdcredit: the pool buffers whose surfaces venusd may fill, the pool they come from (retained), UNCREDIT
+	 * answer due, off for this venusd session, handed back since the last surface picture, the last picture size */
+	struct { CVPixelBufferRef pb; uint32_t id; } cr[VENUSD_MAX_CREDITS];
+	int cr_n, cr_uncred, cr_off, cr_miss, pic_w, pic_h;
+	CVPixelBufferPoolRef cr_pool;
+	unsigned cr_logged, n_surf;	/* cr_logged: the venusd session whose paths were logged (bits in cr_bits) */
+	int cr_bits;
 	uint8_t *gop, *rp;	/* vdcold: the access units since the last IDR/I frame (HEVC: IRAP; no parameter sets); replay */
 	size_t gop_len, gop_cap, rp_cap;
 	uint32_t gop_off[GOP_MAX], gop_alen[GOP_MAX];
@@ -354,6 +376,10 @@ static void vd_unref(struct vd *v)
 		close(v->fd);
 	if (v->fmt)
 		CFRelease(v->fmt);
+	for (int i = 0; i < v->cr_n; i++)	/* vdcredit: the reader is gone, so is the connection */
+		CFRelease(v->cr[i].pb);
+	if (v->cr_pool)
+		CFRelease(v->cr_pool);
 	free(v->ps);
 	free(v->rx);
 	free(v->tx);
@@ -406,6 +432,155 @@ static void drop_all(struct vd *v)
 	emit_dropped(v, f, n);
 }
 
+/* ---- vdcredit: VT's pool buffers lent to venusd ---- */
+
+/* the held buffer of surface id, out of the table (the caller gets its reference), or NULL; v->mu held */
+static CVPixelBufferRef cr_take(struct vd *v, uint32_t id)
+{
+	for (int i = 0; i < v->cr_n; i++)
+		if (v->cr[i].id == id) {
+			CVPixelBufferRef pb = v->cr[i].pb;
+			v->cr[i] = v->cr[--v->cr_n];
+			return pb;
+		}
+	return NULL;
+}
+
+/* every held buffer released: their credits ended (venusd writes none of them from now on); v->mu not held */
+static void cr_release(struct vd *v)
+{
+	CVPixelBufferRef pb[VENUSD_MAX_CREDITS];
+	pthread_mutex_lock(&v->mu);
+	int n = v->cr_n;
+	for (int i = 0; i < n; i++)
+		pb[i] = v->cr[i].pb;
+	v->cr_n = 0;
+	pthread_mutex_unlock(&v->mu);
+	for (int i = 0; i < n; i++)
+		CFRelease(pb[i]);
+}
+
+/* the paths of this venusd session, one line each: bit 1 surface, 2 socket copy, 4 credits off; v->mu not held */
+static void cr_log(struct vd *v, int bit, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
+static void cr_log(struct vd *v, int bit, const char *fmt, ...)
+{
+	char b[200];
+	pthread_mutex_lock(&v->mu);
+	if (v->cr_logged != v->n_sess)
+		v->cr_logged = v->n_sess, v->cr_bits = 0;
+	int now = !(v->cr_bits & bit);
+	v->cr_bits |= bit;
+	pthread_mutex_unlock(&v->mu);
+	if (!now)
+		return;
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(b, sizeof b, fmt, ap);
+	va_end(ap);
+	say("venusd session %u: %s", v->n_sess, b);
+}
+
+static int send_credit(struct vd *v, int type, uint32_t id, uint32_t w, uint32_t h, uint32_t bpr)
+{
+	struct venusd_msg m = { .magic = VENUSD_MAGIC, .type = (uint16_t)type, .version = VENUSD_VERSION, .surface = id,
+		.width = w, .height = h, .stride = bpr };
+	int ms = io_ms(v);
+	pthread_mutex_lock(&v->txmu);
+	int r = v->fd < 0 || wr_full(v->fd, &m, sizeof m, ms) ? -1 : 0;
+	pthread_mutex_unlock(&v->txmu);
+	return r;
+}
+
+static int cr_usable(struct vd *v)	/* credits may go out now; v->mu held */
+{
+	return cfg.surf && v->opened && !v->dead && !v->lost && !v->invalid && !v->drained && !v->reopen && !v->cr_off &&
+	       !v->cr_uncred && v->session;
+}
+
+static void send_broke(struct vd *v);
+
+/* DecodeFrame's thread, before a FRAME: credits up to VTVENUS_CREDITS from VT's pool (once the pool has the picture's
+ * size); VT made a new pool: UNCREDIT first (the reader releases the old ones at its answer) */
+static void cr_topup(struct vd *v)
+{
+	pthread_mutex_lock(&v->mu);
+	CVPixelBufferPoolRef pool = cr_usable(v) ? VTDecoderSessionGetPixelBufferPool(v->session) : NULL;
+	int sized = !v->pic_w || (v->pic_w == v->pool_w && v->pic_h == v->pool_h);
+	int uncred = pool && v->cr_n && v->cr_pool && pool != v->cr_pool;
+	int want = pool && sized && !uncred ? cfg.credits - v->cr_n : 0;
+	CVPixelBufferPoolRef old = NULL;
+	if (uncred)
+		v->cr_uncred = 1;
+	else if (want > 0 && pool != v->cr_pool)
+		old = v->cr_pool, v->cr_pool = (CVPixelBufferPoolRef)CFRetain(pool);
+	pthread_mutex_unlock(&v->mu);
+	if (old)
+		CFRelease(old);
+	if (uncred) {
+		say("venusd session %u: VT's pixel buffer pool changed: UNCREDIT, fresh credits after the answer", v->n_sess);
+		if (send_credit(v, VD_UNCREDIT, 0, 0, 0, 0))
+			send_broke(v);
+		return;
+	}
+	for (int k = 0; k < want; k++) {
+		CVPixelBufferRef pb = NULL;
+		IOSurfaceRef ios = NULL;
+		CVReturn r = CVPixelBufferPoolCreatePixelBuffer(NULL, pool, &pb);
+		if (!r && pb)
+			ios = CVPixelBufferGetIOSurface(pb);
+		uint32_t id = ios ? IOSurfaceGetID(ios) : 0;
+		if (!id) {
+			if (pb)
+				CFRelease(pb);
+			pthread_mutex_lock(&v->mu);
+			v->cr_off = 1;
+			pthread_mutex_unlock(&v->mu);
+			cr_log(v, 4, "no IOSurface-backed buffer from VT's pool (CVReturn %d, buffer %p): no credits", r, (void *)pb);
+			return;
+		}
+		pthread_mutex_lock(&v->mu);
+		int ok = cr_usable(v) && v->cr_n < VENUSD_MAX_CREDITS;
+		if (ok)
+			v->cr[v->cr_n].pb = pb, v->cr[v->cr_n++].id = id;	/* held before venusd can use it */
+		pthread_mutex_unlock(&v->mu);
+		if (!ok) {
+			CFRelease(pb);
+			return;
+		}
+		if (send_credit(v, VD_CREDIT, id, (uint32_t)CVPixelBufferGetWidth(pb), (uint32_t)CVPixelBufferGetHeight(pb),
+				(uint32_t)CVPixelBufferGetBytesPerRowOfPlane(pb, 0))) {
+			ERRLOG(v, "CREDIT: send failed (%s)%s", strerror(errno), cfg.reconnect ? ": reconnect" : "");
+			send_broke(v);	/* the reader releases them with the lost connection */
+			return;
+		}
+	}
+}
+
+/* UNCREDIT from venusd: one credit handed back (surface != 0), or the answer to ours (0: all of them ended) */
+static void cr_returned(struct vd *v, const struct venusd_msg *m)
+{
+	if (!m->surface) {
+		cr_release(v);
+		pthread_mutex_lock(&v->mu);
+		v->cr_uncred = 0;
+		pthread_mutex_unlock(&v->mu);
+		return;
+	}
+	pthread_mutex_lock(&v->mu);
+	CVPixelBufferRef pb = cr_take(v, m->surface);
+	if (m->width)
+		v->pic_w = (int)m->width, v->pic_h = (int)m->height;
+	int off = m->status == -ENOTSUP || ++v->cr_miss >= 2 * cfg.credits;
+	int was = v->cr_off;
+	v->cr_off |= off;
+	pthread_mutex_unlock(&v->mu);
+	if (pb)
+		CFRelease(pb);
+	if (off && !was)
+		cr_log(v, 4, "credit IOSurface %u handed back (%d%s): no credits for the rest of this session", m->surface,
+		       m->status, m->status == -ENOTSUP ? ", venusd's credit path is off" : ", too many in a row");
+}
+
 /* ---- the pool and the copy ---- */
 
 static CFDictionaryRef pb_attrs(int w, int h)
@@ -441,10 +616,25 @@ static int set_pool(struct vd *v, int w, int h)
 	return 0;
 }
 
-/* DECODED payload (Venus OUTPUT2: Y stride * scanlines, then CbCr stride * scanlines / 2) -> a pool buffer */
-static CVPixelBufferRef picture(struct vd *v, const struct venusd_msg *m)
+/* DECODED payload (Venus OUTPUT2: Y stride * scanlines, then CbCr stride * scanlines / 2) -> a pool buffer.
+ * vdcredit: surface != 0: spb, the held buffer venusd wrote (its reference passes to the caller) */
+static CVPixelBufferRef picture(struct vd *v, const struct venusd_msg *m, CVPixelBufferRef spb)
 {
 	size_t ylen = (size_t)m->stride * m->scanlines;
+	if (m->surface) {
+		if (!spb) {
+			ERRLOG(v, "frame %u: written into IOSurface %u, which isn't one of ours: dropped", m->seq, m->surface);
+			return NULL;
+		}
+		if (((int)m->width != v->pool_w || (int)m->height != v->pool_h)) {	/* the pool follows the picture */
+			say("picture size %ux%u, pool %dx%d: new pool attributes", m->width, m->height, v->pool_w, v->pool_h);
+			set_pool(v, (int)m->width, (int)m->height);
+		}
+		cr_log(v, 1, "frames through credited IOSurfaces (%d credits): emitted without a copy", cfg.credits);
+		return spb;
+	}
+	if (cfg.surf)
+		cr_log(v, 2, "frame %u copied from the socket (venusd had no credit)", m->seq);
 	int nopay = !m->len;	/* vdnopay: venusd sent no pixels */
 	if (nopay && v->nopay_sess != v->n_sess) {
 		v->nopay_sess = v->n_sess;
@@ -512,8 +702,14 @@ static void decoded(struct vd *v, const struct venusd_msg *m)
 	uint64_t tag = m->pts / PTS_STEP;
 	pthread_mutex_lock(&v->mu);
 	v->got_pic = 1, v->recon_used = 0;	/* vdcold: Venus decodes in this session */
+	CVPixelBufferRef spb = m->surface ? cr_take(v, m->surface) : NULL;	/* vdcredit: ours now, venusd is done */
+	if (spb)
+		v->cr_miss = 0, v->n_surf++;
+	v->pic_w = (int)m->width, v->pic_h = (int)m->height;
 	if (m->pts % PTS_STEP == 1) {	/* a resync access unit's picture: shown before already */
 		pthread_mutex_unlock(&v->mu);
+		if (spb)
+			CFRelease(spb);
 		return;
 	}
 	struct slot *s = &v->slot[tag % NSLOT];
@@ -529,12 +725,16 @@ static void decoded(struct vd *v, const struct venusd_msg *m)
 	emit_dropped(v, stale, n);
 	if (!frame) {
 		ERRLOG(v, "DECODED pts %llu (seq %u): no pending frame for it", (unsigned long long)m->pts, m->seq);
+		if (spb)
+			CFRelease(spb);
 		return;
 	}
 	pthread_mutex_lock(&v->mu);
 	v->emitting++;
 	pthread_mutex_unlock(&v->mu);
-	CVPixelBufferRef pb = no_out || v->invalid ? NULL : picture(v, m);
+	CVPixelBufferRef pb = no_out || v->invalid ? NULL : picture(v, m, spb);
+	if (spb && (no_out || v->invalid))
+		CFRelease(spb);
 	if (!v->invalid) {
 		if (pb)
 			VTDecoderSessionEmitDecodedFrame(v->session, frame, noErr, 0, pb);
@@ -580,6 +780,7 @@ static void *reader(void *arg)
 			if (stop)
 				break;
 			if (dead) {	/* vdleak: hang_up shut it down: park (a revive reconnects) */
+				cr_release(v);	/* vdcredit */
 				pthread_mutex_lock(&v->mu);
 				v->lost = 1, v->parked = 1;
 				pthread_cond_broadcast(&v->cv);
@@ -599,6 +800,7 @@ static void *reader(void *arg)
 			pthread_cond_broadcast(&v->cv);
 			pthread_mutex_unlock(&v->mu);
 			drop_all(v);
+			cr_release(v);	/* vdcredit: the credits went with the connection */
 			pthread_mutex_lock(&v->mu);
 			v->parked = 1;
 			pthread_cond_broadcast(&v->cv);
@@ -653,6 +855,7 @@ static void *reader(void *arg)
 				v->got_eos = 1, v->eos_status = m.status;	/* an EOS waiter ends too */
 				pthread_mutex_unlock(&v->mu);
 				drop_all(v);
+				cr_release(v);	/* vdcredit: venusd dropped them before the ERROR */
 			}
 			break;
 		case VD_OPEN:
@@ -662,16 +865,21 @@ static void *reader(void *arg)
 			pthread_mutex_unlock(&v->mu);
 			break;
 		case VD_EOS_DONE:
+			cr_release(v);	/* vdcredit: they end with EOS_DONE */
 			pthread_mutex_lock(&v->mu);
 			v->got_eos = 1, v->eos_status = m.status;
 			pthread_cond_broadcast(&v->cv);
 			pthread_mutex_unlock(&v->mu);
 			break;
 		case VD_CLOSE:
+			cr_release(v);	/* vdcredit */
 			pthread_mutex_lock(&v->mu);
 			v->got_close = 1;
 			pthread_cond_broadcast(&v->cv);
 			pthread_mutex_unlock(&v->mu);
+			break;
+		case VD_UNCREDIT:	/* vdcredit */
+			cr_returned(v, &m);
 			break;
 		default:
 			ERRLOG(v, "unexpected venusd message type %u", m.type);
@@ -683,6 +891,7 @@ static void *reader(void *arg)
 	pthread_cond_broadcast(&v->cv);
 	pthread_mutex_unlock(&v->mu);
 	drop_all(v);
+	cr_release(v);	/* vdcredit */
 	vd_unref(v);
 	return NULL;
 }
@@ -757,7 +966,7 @@ static int venus_open(struct vd *v)
 		mark_broken(v);
 	else if (!st)
 		v->opened = 1, v->sent_cfg = 0, v->drained = 0, v->reopen = 0, v->got_eos = 0, v->n_sess++,
-		v->need_sync = 1, v->sync_wait = 0;
+		v->need_sync = 1, v->sync_wait = 0, v->cr_off = 0, v->cr_miss = 0, v->cr_uncred = 0;	/* vdcredit */
 	pthread_mutex_unlock(&v->mu);
 	if (r) {
 		ERRLOG(v, "OPEN: no answer from venusd in %d ms", cfg.cold_ms);
@@ -778,11 +987,14 @@ static void venus_close(struct vd *v)
 	v->got_close = 0;
 	v->opened = 0;
 	pthread_mutex_unlock(&v->mu);
-	if (!opened)
+	if (!opened) {
+		cr_release(v);	/* vdcredit: no session or no connection: no credits */
 		return;
+	}
 	if (send_msg(v, VD_CLOSE, 0, 0, NULL, 0)) {
 		ERRLOG(v, "CLOSE: send failed (%s)", strerror(errno));
 		send_broke(v);	/* half a message on the wire */
+		cr_release(v);
 		return;
 	}
 	pthread_mutex_lock(&v->mu);
@@ -790,6 +1002,7 @@ static void venus_close(struct vd *v)
 	if (wait_reply(v, &v->got_close, ms))
 		ERRLOG(v, "CLOSE: no answer from venusd in %d ms", ms);
 	pthread_mutex_unlock(&v->mu);
+	cr_release(v);	/* vdcredit: the reader did at the answer; after a timeout too (worst case one garbled frame) */
 }
 
 static int venusd_connect(void);
@@ -898,7 +1111,9 @@ static OSStatus dec_invalidate(CMBaseObjectRef o)
 		v->fd = -1;
 		pthread_mutex_unlock(&v->txmu);
 	}
-	say("invalidated: %u frames in, %u out, %u dropped, %u venusd session(s)", v->n_in, v->n_out, v->n_drop, v->n_sess);
+	cr_release(v);	/* vdcredit */
+	say("invalidated: %u frames in, %u out (%u through credited surfaces), %u dropped, %u venusd session(s)", v->n_in,
+	    v->n_out, v->n_surf, v->n_drop, v->n_sess);
 	return 0;
 }
 
@@ -1271,6 +1486,16 @@ static OSStatus submit(struct vd *v, VTVideoDecoderFrame frame, CMSampleBufferRe
 		return ERR_MALFUNCTION;
 	if (lost)
 		return RETRY;
+	if (cfg.surf) {	/* vdcredit: credits go out ahead of the FRAME, from this thread only */
+		cr_topup(v);
+		pthread_mutex_lock(&v->mu);
+		lost = v->lost, dead = v->dead;
+		pthread_mutex_unlock(&v->mu);
+		if (dead)
+			return ERR_MALFUNCTION;
+		if (lost)
+			return RETRY;
+	}
 	int sync = 0, with_ps = !v->sent_cfg;
 	ssize_t len = to_annexb(v, sb, with_ps, &sync);
 	if (len < 0) {
@@ -1454,9 +1679,9 @@ static OSStatus create_instance(FourCharCode codec, CFAllocatorRef alloc, CMBase
 		snprintf(why, sizeof why, "no venusd at %s (%s)", VENUSD_SOCK, strerror(errno));
 	if (!__atomic_exchange_n(&process_logged, 1, __ATOMIC_ACQ_REL))
 		say("first CreateInstance in this process: %s%s (cold %d ms, wait %d ms, lazy open %d, reconnect %d, resync %d,"
-		    " reconnect wait %d, error gap %d ms, revive %d ms)", why[0] ? "refused, software decoder: " : "venusd connected",
-		    why, cfg.cold_ms, cfg.wait_ms, cfg.lazy, cfg.reconnect, cfg.resync, cfg.recon_wait, cfg.err_gap_ms,
-		    cfg.revive_ms);
+		    " reconnect wait %d, error gap %d ms, revive %d ms, surf %d, credits %d)",
+		    why[0] ? "refused, software decoder: " : "venusd connected", why, cfg.cold_ms, cfg.wait_ms, cfg.lazy,
+		    cfg.reconnect, cfg.resync, cfg.recon_wait, cfg.err_gap_ms, cfg.revive_ms, cfg.surf, cfg.credits);
 	if (why[0])
 		return ERR_NO_DECODER;
 	struct vd *v = calloc(1, sizeof *v);

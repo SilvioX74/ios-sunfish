@@ -50,9 +50,16 @@ struct vdec_frame {	/* one decoded picture as read out of its OUTPUT2 buffer */
 	uint32_t flags, filled, fbd_w, fbd_h, fbd_x, fbd_y, pic_type;	/* FBD words, as venusctl prints them */
 	int index;		/* frames before this one in the session */
 	double copy_ms;		/* the copy-out (pread of the window) */
+	int placed;		/* vdcredit: read straight into vdec_place's planes (buf NULL, len 0) */
 };
 /* NULL (default): venusctl's frame handling (crop, luma CRC32, append to OUT, one line per frame) */
 extern void (*vdec_sink)(const struct vdec_frame *f);
+/* vdcredit (venusd's credit path): with vdec_sink set, asked before each copy-out with the picture's layout (buf NULL);
+ * 1 = read the visible rect straight into d's planes (Y rows, then CbCr rows, each the visible width rounded up to 4
+ * bytes; one read per plane when there's no x crop and the row pitch is Venus's stride), the sink then gets placed 1.
+ * 0 = the whole buffer into the copy-out buffer as before. Called with f NULL after a failed placed read: undo it */
+struct vdec_dest { uint8_t *y, *c; size_t ybpr, cbpr; };
+extern int (*vdec_place)(const struct vdec_frame *f, struct vdec_dest *d);
 
 /* SYS_INIT if due, debug config, the buffer window (bufphys, or the next 1 MB after the --phys queue block; mb MB),
  * NV12 layout for the SPS's coded size. Up to want frames are handed out. hevc (4e): an HEVC session (8-bit Main;

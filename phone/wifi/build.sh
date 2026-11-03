@@ -9,9 +9,9 @@ mkdir -p out
 ../../tools/linux-ios-sign out/adspboot 2>/dev/null
 ../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/venusctl venusctl.c venus_core.c venus_h264.c venus_hevc.c pmem.c smmu.c	# video stage 2
 ../../tools/linux-ios-sign out/venusctl 2>/dev/null
-../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/venusd venusd.c venus_core.c venus_h264.c venus_hevc.c pmem.c smmu.c	# video 4a
+../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/venusd venusd.c venus_core.c venus_h264.c venus_hevc.c pmem.c smmu.c -framework CoreFoundation -framework IOSurface	# video 4a (vdcredit: IOSurface)
 ../../tools/linux-ios-sign out/venusd 2>/dev/null
-../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/venusc venusc.c venus_h264.c venus_hevc.c	# video 4a: venusd test client
+../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/venusc venusc.c venus_h264.c venus_hevc.c -framework CoreFoundation -framework CoreVideo -framework IOSurface	# video 4a: venusd test client (--surf: CoreVideo)
 ../../tools/linux-ios-sign out/venusc 2>/dev/null
 ../../work/userland/bin/ios-cc -O2 -Wall -Wextra -Wno-unused-parameter -o out/af_feed af_feed.c -lm	# sp23: test feeder for --audio-fifo
 ../../tools/linux-ios-sign out/af_feed 2>/dev/null
