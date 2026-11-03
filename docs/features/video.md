@@ -89,6 +89,16 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 21:00 vsoak (15 min, 13 HLS 1080p clips): venusd client leak; MM3 vote failures; one GPU hang
+Boot bat1b (20261103-144012.log), 14:44-14:59. 12 of 13 clips reached k=ended (HLS beacons report frames=0: the page's
+counter doesn't work for HLS). /var/local/venusd.log (cut at 1 MB) shows only 4 session opens for 13 clips, then 21x
+`venusd: too many clients`; vtvenus: `venusd connection lost or bad message ... giving up (errors from now on)` ->
+software decode for the rest. Earlier starts in that log: `venus: STOP: bcm MM3 vote failed`, `venusd: power on failed`.
+One GPU hang at 766.054 s, 33 s into clip 8 (HEVC): `present: GPU hang or fault (fence 9658, done 9651, smmu fsr
+40000002 far 1f620000 fsynr0 2): reset`, backboardd killed after recovery; offset from a session open unknown (venusd
+log lines have no timestamps). Max 72.2 C, no cap. Fixes being written: client slot leak (both sides), MM3 vote retry,
+timestamps in venusd's log.
+
 ### 2026-11-03 18:10 Direct planar conversion (691c87d): backboardd 92 -> 45 % during 1080p video
 Bundle work/metal2-next-direct (LC_UUID 4C4C44C2): vImage converts each frame straight into a buffer-backed texture
 (rows at the linear pitch, read via a linear alias) instead of temp -> replaceRegion -> Turnip host-image-copy retile
