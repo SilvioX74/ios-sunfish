@@ -35,6 +35,14 @@ Path: raw Bayer through RDI (CSIPHY -> CSID -> IFE RDI write master -> memory), 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:23 Cause of camiB's first-start fault: the camera PMIC was still off (correction of the guess below)
+Boot log 20261103-161317: camd exec 22.885 s; a boot-time START (no camclient running) ran camclk 27.712 s, camid 28.303 s;
+the kernel enables the SLG51000 (campmic_late, thread_call 10 s after SweetBattery::start) only at 30.24-30.29 s. camid's
+first read (PATN_ID 0x1105) got ENXIO (NACK), before any power-up step: no sleep was too short. Interactive made camd
+ready early enough to take that START. The fault latched because camd.c sets `latch` on any bring-up failure. Fix being
+written: camid waits up to 15 s (monotonic) for the SLG; camd retries camid/camclk failures instead of latching.
+Same boot: an SPMI collision (B59) skipped a GPIO EN write (harmless that time).
+
 ### 2026-11-03 16:19 camd as an Interactive launchd job (O-launchd A/B camiA/camiB, kernel161): faster, but a first-start fault
 `CAMD_INTERACTIVE=1 tools/sunfish-install-camera.sh --job` (5299c39). Battery 4454 mV, no hangs.
 | side | camclient START (3 runs) | fps read | dropped | Camera.app START | camd idle CPU | camd preview CPU |
