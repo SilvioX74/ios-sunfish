@@ -50,6 +50,8 @@
  *    venusd connection at once; Invalidate closes it too (not only at the last release). After this many ms a
  *    given-up instance gets one fresh try at the next frame (reconnect, OPEN, resync), as a new instance would.
  *    0: given up stays given up (the connection is still closed).
+ * vdnopay (copy-cost test, venusd's /var/local/venusd-nopayload): a DECODED with len 0 gets a pool buffer emitted
+ * unfilled (stale pixels, no copy); one log line per venusd session. len > 0: as before.
  * Log: /var/local/vtvenus.log (0666, cut past 1 MB) + os_log. Off: touch /var/local/venus-off (both this and venusd
  * refuse), or tools/sunfish-install-vtvenus.sh remove.
  */
@@ -219,6 +221,7 @@ struct vd {
 	uint8_t *rx, *tx, *in;	/* reader's payload; DecodeFrame's FRAME and sample copy */
 	size_t rx_cap, tx_cap, in_cap;
 	unsigned n_in, n_out, n_drop, n_sess;
+	unsigned nopay_sess;	/* vdnopay: the venusd session last logged (0: none) */
 	uint8_t *gop, *rp;	/* vdcold: the access units since the last IDR/I frame (HEVC: IRAP; no parameter sets); replay */
 	size_t gop_len, gop_cap, rp_cap;
 	uint32_t gop_off[GOP_MAX], gop_alen[GOP_MAX];
@@ -442,7 +445,12 @@ static int set_pool(struct vd *v, int w, int h)
 static CVPixelBufferRef picture(struct vd *v, const struct venusd_msg *m)
 {
 	size_t ylen = (size_t)m->stride * m->scanlines;
-	if (!m->width || !m->height || m->len < ylen + ylen / 2 || m->crop_x + m->width > m->stride ||
+	int nopay = !m->len;	/* vdnopay: venusd sent no pixels */
+	if (nopay && v->nopay_sess != v->n_sess) {
+		v->nopay_sess = v->n_sess;
+		say("venusd session %u: nopayload test: frames emitted unfilled", v->n_sess);
+	}
+	if (!m->width || !m->height || (!nopay && m->len < ylen + ylen / 2) || m->crop_x + m->width > m->stride ||
 	    m->crop_y + m->height > m->scanlines) {
 		ERRLOG(v, "frame %u: bad layout (len %u, stride %u, scanlines %u, %ux%u at %u,%u)", m->seq, m->len, m->stride,
 		       m->scanlines, m->width, m->height, m->crop_x, m->crop_y);
@@ -481,7 +489,7 @@ static CVPixelBufferRef picture(struct vd *v, const struct venusd_msg *m)
 	if (crows > ch)
 		crows = ch;
 	const uint8_t *src = v->rx;
-	if (y && c) {
+	if (y && c && !nopay) {
 		for (size_t r0 = 0; r0 < h; r0++)
 			memcpy(y + r0 * ybpr, src + (size_t)(r0 + m->crop_y) * m->stride + m->crop_x, w);
 		for (size_t r0 = 0; r0 < crows; r0++)

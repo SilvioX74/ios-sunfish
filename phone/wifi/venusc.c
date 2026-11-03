@@ -99,7 +99,7 @@ static void decoded(const struct venusd_msg *m)
 			rt_max = rt;
 	}
 	cp_sum += m->copy_us / 1e3;
-	if (nullout) {
+	if (nullout || !m->len) {	/* vdnopay: venusd's no-pixels test sends len 0 */
 		frames++;
 		return;
 	}

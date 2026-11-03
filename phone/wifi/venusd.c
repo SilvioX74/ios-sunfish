@@ -37,6 +37,8 @@
  * or after VENUSD_IDLE_CLIENT_S (30; 0: never) without a message while it has no session or one with nothing to do
  * (opened without a FRAME, EOS done, failed: such a held session refused every other OPEN); each connect/drop logs
  * "client fd N connected|gone (reason), K connected".
+ * vdnopay (copy-cost test): /var/local/venusd-nopayload present at an OPEN: that session's frames are still copied out
+ * of Venus, but DECODED goes with len 0 (no pixels; vtvenus emits an unfilled pool buffer). Absent: as before.
  * vdstamp: every line of the log (venus_core's too) and of the console starts "[ssss.mmm] ": seconds since boot from
  * mach_absolute_time, the clock (and format) of the kernel's per-boot log lines, so they line up; the first line after
  * a minute without one, the start and each session open add "[wall YYYY-MM-DD HH:MM:SS] ". VENUSD_STAMP=0: no stamps.
@@ -70,6 +72,9 @@
 #define OFF_FILE	"/var/local/venus-off"
 #define TEST_FILE	"/var/local/venusd-test-clkoff"
 #endif
+#ifndef NOPAY_FILE
+#define NOPAY_FILE	"/var/local/venusd-nopayload"
+#endif
 
 enum { S_NONE, S_OPEN, S_RUN, S_EOS, S_DONE, S_FAILED };	/* the session (owner connection) */
 static const char *const sname[] = { "none", "open", "running", "eos sent", "eos done", "failed" };
@@ -90,6 +95,7 @@ static unsigned cold_s = 20;	/* vdcold: VENUSD_COLD_S */
 static int sess_hevc, hevc_ok = 1;	/* 4e: the session's codec; VENUSD_HEVC */
 static jmp_buf stop_jb, rec_jb;	/* vdstop: the main loop; recover() itself */
 static int stop_armed, recovering, opening = -1, ending, warmed;
+static int nopay;	/* vdnopay: NOPAY_FILE at this session's OPEN */
 static unsigned nstops, test_frame, test_k;	/* VENUSD_TEST_CLKOFF / TEST_FILE: frame F, K reads */
 
 /* vdcold: the warm-up stream, one 320x240 grey IDR (SPS, PPS, slice; ffmpeg color=gray, libx264 constrained baseline,
@@ -262,6 +268,8 @@ static void sink(const struct vdec_frame *f)
 		.stride = f->stride, .scanlines = f->scanlines, .filled = f->filled, .pic_type = f->pic_type,
 		.seq = (uint32_t)f->index, .fbd_w = f->fbd_w, .fbd_h = f->fbd_h, .fbd_x = f->fbd_x, .fbd_y = f->fbd_y,
 		.copy_us = (uint32_t)(f->copy_ms * 1e3) };
+	if (nopay)
+		m.len = 0;	/* vdnopay: header only */
 	if (!f->index)
 		t_first = mono();
 	t_last_frame = mono();
@@ -454,6 +462,9 @@ static void do_open(int i, const struct venusd_msg *m)
 		note("venusd: session %u opened (fd %d, %s, hint %ux%u)", nsess, cl[i].fd, sess_hevc ? "HEVC" : "H.264", hint_w,
 		     hint_h);
 		test_file();
+		nopay = !stat(NOPAY_FILE, &sb);	/* vdnopay */
+		if (nopay)
+			note("venusd: nopayload test: frames sent without pixels");
 	}
 	reply(i, VD_OPEN, rc, 0);
 }
