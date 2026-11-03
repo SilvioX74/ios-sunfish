@@ -1,0 +1,997 @@
+/*
+ * vtvenus: video stage 4b (docs/features/video.md "Stage 4 spec", research/notes/venus-stage4-design-2026-11-03.md
+ * sections 3-4): a VideoToolbox H.264 decoder that is a thin client of venusd (phone/wifi/venus_proto.h).
+ * Installed as the flat Mach-O /System/Library/VideoDecoders/ExampleIPB.videodecoder (tools/sunfish-install-vtvenus.sh),
+ * the free slot _VTLoadVideoDecoders dlopens in every VideoToolbox process; ExampleIPBDecoderRegister only registers
+ * 'avc1' (VTRegisterVideoDecoderWithInfo: hardware, as AVD's VTRegisterVideoDecoder), nothing else at load.
+ *  - CreateInstance refuses (kVTCouldNotFindVideoDecoderErr: VT moves on to the software decoder) when
+ *    /var/local/venus-off exists or venusd's socket doesn't connect. One line per process (getprogname) to the log.
+ *  - StartSession: avcC parameter sets -> Annex B (sent before the first FRAME of each venusd session), pool
+ *    attributes '420v' at the visible size, IOSurface, rows aligned to 64; OPEN with the size as the hint.
+ *  - DecodeFrame: AVCC length prefixes -> start codes, FRAME with pts = tag * 33333 (tag = the instance's frame
+ *    number; venusc's spacing) and seq = tag; returns asynchronous. A reader thread takes DECODED (display order),
+ *    copies Y and CbCr row by row from the padded Venus NV12 into a buffer of VT's pool and emits frame[tag]. Frames
+ *    venusd never returns are emitted as dropped: 24 tags behind a returned one, at EOS_DONE, on a session error,
+ *    at Invalidate. Backpressure: at most 32 frames in flight (DecodeFrame waits; 2 s without any frame back drops
+ *    the oldest), and venusd stops reading while its inputs are full.
+ *  - FinishDelayedFrames: EOS, wait for EOS_DONE (2 s without a message ends it), leftovers dropped; the next
+ *    DecodeFrame CLOSEs and OPENs a new venusd session (FRAME after EOS is refused). Invalidate: CLOSE, leftovers
+ *    dropped, reader stopped. A session ERROR (not -E2BIG): pending dropped, reopened at the next frame (5 reopens without a picture: off).
+ * Never crashes its host (mediaserverd holds audio too): every failure returns a VT error and logs, no asserts,
+ * 2 s timeouts on socket reads and writes (OPEN's answer: 4 s, Venus may boot ~1.1 s). The reader's state is a
+ * separately allocated, reference-counted struct, so a release from inside an emit can't free it under the thread.
+ * Log: /var/local/vtvenus.log (0666, cut past 1 MB) + os_log. Off: touch /var/local/venus-off (both this and venusd
+ * refuse), or tools/sunfish-install-vtvenus.sh remove.
+ */
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreMedia/CoreMedia.h>
+#include <CoreVideo/CoreVideo.h>
+#include <VideoToolbox/VideoToolbox.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <os/log.h>
+#include <poll.h>
+#include <pthread.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
+#include <time.h>
+#include <unistd.h>
+#include "../wifi/venus_proto.h"
+
+#define LOG_PATH	"/var/local/vtvenus.log"
+#define LOG_MAX		(1 << 20)
+#define OFF_FILE	"/var/local/venus-off"
+#define PTS_STEP	33333u		/* tag spacing in the Venus timestamp (venusc's) */
+#define NSLOT		64
+#define MAX_INFLIGHT	32
+#define STALE		24		/* pending this many tags behind a returned picture: dropped */
+#define IO_MS		2000
+#define OPEN_MS		4000
+#define MAX_FAILS	5
+#define RX_MAX		(32u << 20)
+#define LOG_ERR_MAX	50		/* error lines per instance */
+
+/* VideoToolbox's decoder plug-in ABI (AVD.videodecoder's _kH264VideoDecoderVTable; stage 1 notes section 4) */
+typedef struct OpaqueCMBaseObject *CMBaseObjectRef;
+typedef const void *CMBaseClassID;
+typedef struct OpaqueVTVideoDecoderSession *VTVideoDecoderSession;
+typedef struct OpaqueVTVideoDecoderFrame *VTVideoDecoderFrame;
+
+struct base_class {
+	uint64_t version;	/* 1 */
+	uint64_t storage_size;
+	Boolean (*equal)(CMBaseObjectRef, CMBaseObjectRef);
+	OSStatus (*invalidate)(CMBaseObjectRef);
+	void (*finalize)(CMBaseObjectRef);
+	CFStringRef (*copy_debug_description)(CMBaseObjectRef);
+	OSStatus (*copy_property)(CMBaseObjectRef, CFStringRef, CFAllocatorRef, void *);
+	OSStatus (*set_property)(CMBaseObjectRef, CFStringRef, CFTypeRef);
+	OSStatus (*notification_barrier)(CMBaseObjectRef);
+	const void *protocols, *reserved;
+};
+struct decoder_class {	/* VTVideoDecoderClass; VT reads +0x30/+0x38 only for version >= 2 */
+	uint64_t version;	/* 3, as AVD */
+	OSStatus (*start_session)(CMBaseObjectRef, VTVideoDecoderSession, CMVideoFormatDescriptionRef);
+	OSStatus (*decode_frame)(CMBaseObjectRef, VTVideoDecoderFrame, CMSampleBufferRef, VTDecodeFrameFlags,
+				 VTDecodeInfoFlags *);
+	OSStatus (*copy_supported_property_dictionary)(CMBaseObjectRef, CFDictionaryRef *);
+	void *set_properties, *copy_serializable_properties;
+	Boolean (*can_accept_format_description)(CMBaseObjectRef, CMFormatDescriptionRef);
+	OSStatus (*finish_delayed_frames)(CMBaseObjectRef);
+	void *start_tile_session, *decode_tile;
+};
+struct vtable {
+	const void *reserved;
+	const struct base_class *base;
+	const struct decoder_class *derived;
+};
+
+extern OSStatus CMDerivedObjectCreate(CFAllocatorRef, const struct vtable *, CMBaseClassID, CMBaseObjectRef *);
+extern void *CMBaseObjectGetDerivedStorage(CMBaseObjectRef);
+extern CMBaseClassID VTVideoDecoderGetClassID(void);
+extern OSStatus VTRegisterVideoDecoderWithInfo(FourCharCode, CFDictionaryRef, void *);
+extern OSStatus VTDecoderSessionSetPixelBufferAttributes(VTVideoDecoderSession, CFDictionaryRef);
+extern CVPixelBufferPoolRef VTDecoderSessionGetPixelBufferPool(VTVideoDecoderSession);
+extern OSStatus VTDecoderSessionEmitDecodedFrame(VTVideoDecoderSession, VTVideoDecoderFrame, OSStatus, VTDecodeInfoFlags,
+						 CVImageBufferRef);
+extern const CFStringRef kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder;	/* macOS-only in the SDK */
+
+enum {	/* VTErrors.h */
+	ERR_PROPERTY = -12900, ERR_PARAM = -12902, ERR_INVALID = -12903, ERR_NO_DECODER = -12906, ERR_BAD_DATA = -12909,
+	ERR_FORMAT = -12910, ERR_MALFUNCTION = -12911, ERR_NOT_NOW = -12913,
+};
+
+struct slot { int used; uint64_t tag; VTVideoDecoderFrame frame; int no_out; };
+
+/* everything the reader thread touches; refs: the decoder object + the reader */
+struct vd {
+	int refs;
+	pthread_mutex_t mu, txmu;
+	pthread_cond_t cv;
+	int fd, stop, dead, invalid, emitting, reader_on, opened, sent_cfg, drained, reopen, fails, nerr;
+	pthread_t reader;
+	VTVideoDecoderSession session;
+	CMVideoFormatDescriptionRef fmt;
+	uint8_t *ps;		/* SPS + PPS, Annex B */
+	size_t ps_len;
+	int nal_len, w, h, pool_w, pool_h;
+	uint64_t next_tag;
+	struct slot slot[NSLOT];
+	int inflight;
+	int got_open, got_close, got_eos;
+	int32_t open_status, eos_status;
+	double last_rx;
+	uint8_t *rx, *tx, *in;	/* reader's payload; DecodeFrame's FRAME and sample copy */
+	size_t rx_cap, tx_cap, in_cap;
+	unsigned n_in, n_out, n_drop, n_sess;
+};
+struct storage { struct vd *v; };
+
+static pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
+static int process_logged;
+
+static void say(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+static void say(const char *fmt, ...)
+{
+	char line[400], out[480];
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(line, sizeof line, fmt, ap);
+	va_end(ap);
+	int n = snprintf(out, sizeof out, "vtvenus: %d %s %ld: %s\n", getpid(), getprogname(), (long)time(NULL), line);
+	if (n <= 0)
+		return;
+	if (n >= (int)sizeof out)
+		n = (int)sizeof out - 1, out[n - 1] = '\n';
+	os_log(OS_LOG_DEFAULT, "%{public}s", out);
+	pthread_mutex_lock(&log_lock);
+	int fd = open(LOG_PATH, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0666);
+	if (fd >= 0) {
+		struct stat st;
+		if (!fstat(fd, &st) && st.st_size > LOG_MAX)
+			(void)ftruncate(fd, 0);
+		(void)fchmod(fd, 0666);
+		(void)write(fd, out, (size_t)n);
+		close(fd);
+	}
+	pthread_mutex_unlock(&log_lock);
+}
+
+/* error lines: LOG_ERR_MAX per instance, then quiet */
+#define ERRLOG(v, ...) do { if ((v)->nerr++ < LOG_ERR_MAX) say(__VA_ARGS__); } while (0)
+
+static double mono(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static void wait_ms(struct vd *v, int ms)	/* v->mu held */
+{
+	struct timespec ts = { ms / 1000, (long)(ms % 1000) * 1000000L };
+	pthread_cond_timedwait_relative_np(&v->cv, &v->mu, &ts);
+}
+
+static int wr_full(int fd, const void *b, size_t n)
+{
+	const uint8_t *p = b;
+	while (n) {
+		ssize_t k = write(fd, p, n);
+		if (k < 0 && errno == EINTR)
+			continue;
+		if (k <= 0)
+			return -1;
+		p += k, n -= (size_t)k;
+	}
+	return 0;
+}
+
+static int rd_full(int fd, void *b, size_t n)	/* SO_RCVTIMEO 2 s per read */
+{
+	uint8_t *p = b;
+	while (n) {
+		ssize_t k = read(fd, p, n);
+		if (k < 0 && errno == EINTR)
+			continue;
+		if (k <= 0)
+			return -1;
+		p += k, n -= (size_t)k;
+	}
+	return 0;
+}
+
+static int grow(uint8_t **b, size_t *cap, size_t want)
+{
+	if (want <= *cap)
+		return 0;
+	uint8_t *n = realloc(*b, want);
+	if (!n)
+		return -1;
+	*b = n, *cap = want;
+	return 0;
+}
+
+static int send_msg(struct vd *v, int type, uint64_t pts, uint32_t seq, const void *payload, uint32_t len)
+{
+	struct venusd_msg m = { .magic = VENUSD_MAGIC, .type = (uint16_t)type, .version = VENUSD_VERSION, .len = len,
+		.pts = pts, .seq = seq, .codec = type == VD_OPEN ? VD_CODEC_H264 : 0,
+		.width = type == VD_OPEN ? (uint32_t)v->w : 0, .height = type == VD_OPEN ? (uint32_t)v->h : 0 };
+	pthread_mutex_lock(&v->txmu);
+	int r = v->fd < 0 || wr_full(v->fd, &m, sizeof m) || (len && wr_full(v->fd, payload, len)) ? -1 : 0;
+	pthread_mutex_unlock(&v->txmu);
+	return r;
+}
+
+static void vd_unref(struct vd *v)
+{
+	if (__atomic_sub_fetch(&v->refs, 1, __ATOMIC_ACQ_REL))
+		return;
+	if (v->fd >= 0)
+		close(v->fd);
+	if (v->fmt)
+		CFRelease(v->fmt);
+	free(v->ps);
+	free(v->rx);
+	free(v->tx);
+	free(v->in);
+	pthread_mutex_destroy(&v->mu);
+	pthread_mutex_destroy(&v->txmu);
+	pthread_cond_destroy(&v->cv);
+	free(v);
+}
+
+/* ---- pending frames ---- */
+
+/* takes (removes) pending frames into out[]: all (keep_from = UINT64_MAX), or those with tag + STALE < keep_from;
+ * v->mu held. Returns how many; emitting is raised by one for the caller's emit_dropped. */
+static int take(struct vd *v, uint64_t keep_from, int all, VTVideoDecoderFrame *out)
+{
+	int n = 0;
+	for (int i = 0; i < NSLOT; i++) {
+		struct slot *s = &v->slot[i];
+		if (s->used && (all || s->tag + STALE < keep_from)) {
+			out[n++] = s->frame;
+			s->used = 0;
+			v->inflight--;
+		}
+	}
+	v->emitting++;
+	return n;
+}
+
+static void emit_dropped(struct vd *v, VTVideoDecoderFrame *f, int n)	/* after take(); v->mu not held */
+{
+	if (!v->invalid)
+		for (int i = 0; i < n; i++)
+			VTDecoderSessionEmitDecodedFrame(v->session, f[i], noErr, kVTDecodeInfo_FrameDropped, NULL);
+	pthread_mutex_lock(&v->mu);
+	v->n_drop += (unsigned)n;
+	v->emitting--;
+	pthread_cond_broadcast(&v->cv);
+	pthread_mutex_unlock(&v->mu);
+}
+
+static void drop_all(struct vd *v)
+{
+	VTVideoDecoderFrame f[NSLOT];
+	pthread_mutex_lock(&v->mu);
+	int n = take(v, 0, 1, f);
+	pthread_mutex_unlock(&v->mu);
+	emit_dropped(v, f, n);
+}
+
+/* ---- the pool and the copy ---- */
+
+static CFDictionaryRef pb_attrs(int w, int h)
+{
+	int fmt = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, align = 64;
+	CFNumberRef nf = CFNumberCreate(NULL, kCFNumberIntType, &fmt), nw = CFNumberCreate(NULL, kCFNumberIntType, &w),
+		    nh = CFNumberCreate(NULL, kCFNumberIntType, &h), na = CFNumberCreate(NULL, kCFNumberIntType, &align);
+	CFDictionaryRef ios = CFDictionaryCreate(NULL, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks,
+						 &kCFTypeDictionaryValueCallBacks);
+	const void *k[] = { kCVPixelBufferPixelFormatTypeKey, kCVPixelBufferWidthKey, kCVPixelBufferHeightKey,
+			    kCVPixelBufferBytesPerRowAlignmentKey, kCVPixelBufferIOSurfacePropertiesKey };
+	const void *val[] = { nf, nw, nh, na, ios };
+	CFDictionaryRef d = nf && nw && nh && na && ios ? CFDictionaryCreate(NULL, k, val, 5, &kCFTypeDictionaryKeyCallBacks,
+								&kCFTypeDictionaryValueCallBacks) : NULL;
+	const void *all[] = { nf, nw, nh, na, ios };
+	for (int i = 0; i < 5; i++)
+		if (all[i])
+			CFRelease(all[i]);
+	return d;
+}
+
+static int set_pool(struct vd *v, int w, int h)
+{
+	CFDictionaryRef a = pb_attrs(w, h);
+	OSStatus st = a ? VTDecoderSessionSetPixelBufferAttributes(v->session, a) : ERR_MALFUNCTION;
+	if (a)
+		CFRelease(a);
+	if (st) {
+		ERRLOG(v, "pixel buffer attributes %dx%d: OSStatus %d", w, h, (int)st);
+		return -1;
+	}
+	v->pool_w = w, v->pool_h = h;
+	return 0;
+}
+
+/* DECODED payload (Venus OUTPUT2: Y stride * scanlines, then CbCr stride * scanlines / 2) -> a pool buffer */
+static CVPixelBufferRef picture(struct vd *v, const struct venusd_msg *m)
+{
+	size_t ylen = (size_t)m->stride * m->scanlines;
+	if (!m->width || !m->height || m->len < ylen + ylen / 2 || m->crop_x + m->width > m->stride ||
+	    m->crop_y + m->height > m->scanlines) {
+		ERRLOG(v, "frame %u: bad layout (len %u, stride %u, scanlines %u, %ux%u at %u,%u)", m->seq, m->len, m->stride,
+		       m->scanlines, m->width, m->height, m->crop_x, m->crop_y);
+		return NULL;
+	}
+	if (((int)m->width != v->pool_w || (int)m->height != v->pool_h)) {
+		say("picture size %ux%u, pool %dx%d: new pool attributes", m->width, m->height, v->pool_w, v->pool_h);
+		if (set_pool(v, (int)m->width, (int)m->height))
+			return NULL;
+	}
+	CVPixelBufferPoolRef pool = VTDecoderSessionGetPixelBufferPool(v->session);
+	CVPixelBufferRef pb = NULL;
+	CVReturn r = pool ? CVPixelBufferPoolCreatePixelBuffer(NULL, pool, &pb) : kCVReturnInvalidArgument;
+	if (r || !pb) {
+		ERRLOG(v, "frame %u: no pixel buffer from VT's pool (pool %p, CVReturn %d)", m->seq, (void *)pool, r);
+		return NULL;
+	}
+	if (CVPixelBufferGetPlaneCount(pb) != 2 || CVPixelBufferLockBaseAddress(pb, 0)) {
+		ERRLOG(v, "frame %u: pool buffer not a lockable 2-plane buffer", m->seq);
+		CFRelease(pb);
+		return NULL;
+	}
+	uint8_t *y = CVPixelBufferGetBaseAddressOfPlane(pb, 0), *c = CVPixelBufferGetBaseAddressOfPlane(pb, 1);
+	size_t ybpr = CVPixelBufferGetBytesPerRowOfPlane(pb, 0), cbpr = CVPixelBufferGetBytesPerRowOfPlane(pb, 1);
+	size_t w = m->width, h = m->height, pw = CVPixelBufferGetWidthOfPlane(pb, 0), ph = CVPixelBufferGetHeightOfPlane(pb, 0);
+	size_t ch = CVPixelBufferGetHeightOfPlane(pb, 1);
+	if (w > pw)
+		w = pw;
+	if (w > ybpr)
+		w = ybpr;
+	if (h > ph)
+		h = ph;
+	size_t cw = (w + 1) & ~(size_t)1, crows = (h + 1) / 2;
+	if (cw > cbpr)
+		cw = cbpr;
+	if (crows > ch)
+		crows = ch;
+	const uint8_t *src = v->rx;
+	if (y && c) {
+		for (size_t r0 = 0; r0 < h; r0++)
+			memcpy(y + r0 * ybpr, src + (size_t)(r0 + m->crop_y) * m->stride + m->crop_x, w);
+		for (size_t r0 = 0; r0 < crows; r0++)
+			memcpy(c + r0 * cbpr, src + ylen + (size_t)(r0 + m->crop_y / 2) * m->stride + (m->crop_x & ~1u), cw);
+	}
+	CVPixelBufferUnlockBaseAddress(pb, 0);
+	if (!y || !c) {
+		ERRLOG(v, "frame %u: pool buffer without plane addresses", m->seq);
+		CFRelease(pb);
+		return NULL;
+	}
+	return pb;
+}
+
+/* one DECODED: frame[tag] gets the picture; pending far behind it are dropped */
+static void decoded(struct vd *v, const struct venusd_msg *m)
+{
+	VTVideoDecoderFrame stale[NSLOT], frame = NULL;
+	int no_out = 0;
+	uint64_t tag = m->pts / PTS_STEP;
+	pthread_mutex_lock(&v->mu);
+	struct slot *s = &v->slot[tag % NSLOT];
+	if (m->pts % PTS_STEP == 0 && s->used && s->tag == tag) {
+		frame = s->frame, no_out = s->no_out;
+		s->used = 0;
+		v->inflight--;
+	}
+	int n = take(v, tag, 0, stale);
+	pthread_mutex_unlock(&v->mu);
+	if (n)
+		ERRLOG(v, "%d frame(s) more than %d behind tag %llu never came back: dropped", n, STALE, (unsigned long long)tag);
+	emit_dropped(v, stale, n);
+	if (!frame) {
+		ERRLOG(v, "DECODED pts %llu (seq %u): no pending frame for it", (unsigned long long)m->pts, m->seq);
+		return;
+	}
+	pthread_mutex_lock(&v->mu);
+	v->emitting++;
+	pthread_mutex_unlock(&v->mu);
+	CVPixelBufferRef pb = no_out || v->invalid ? NULL : picture(v, m);
+	if (!v->invalid) {
+		if (pb)
+			VTDecoderSessionEmitDecodedFrame(v->session, frame, noErr, 0, pb);
+		else
+			VTDecoderSessionEmitDecodedFrame(v->session, frame, noErr, kVTDecodeInfo_FrameDropped, NULL);
+	}
+	if (pb)
+		CFRelease(pb);
+	pthread_mutex_lock(&v->mu);
+	if (pb)
+		v->n_out++, v->fails = 0;	/* decoding again: the reopen count starts over */
+	else
+		v->n_drop++;
+	v->emitting--;
+	pthread_cond_broadcast(&v->cv);
+	pthread_mutex_unlock(&v->mu);
+}
+
+static void *reader(void *arg)
+{
+	struct vd *v = arg;
+	for (;;) {
+		pthread_mutex_lock(&v->mu);
+		int stop = v->stop;
+		pthread_mutex_unlock(&v->mu);
+		if (stop)
+			break;
+		struct pollfd p = { .fd = v->fd, .events = POLLIN };
+		int r = poll(&p, 1, 250);
+		if (r == 0 || (r < 0 && errno == EINTR))
+			continue;
+		struct venusd_msg m = { 0 };
+		if (r < 0 || rd_full(v->fd, &m, sizeof m) || m.magic != VENUSD_MAGIC || m.len > RX_MAX ||
+		    grow(&v->rx, &v->rx_cap, m.len) || (m.len && rd_full(v->fd, v->rx, m.len))) {
+			pthread_mutex_lock(&v->mu);
+			stop = v->stop;
+			pthread_mutex_unlock(&v->mu);
+			if (!stop)
+				ERRLOG(v, "venusd connection lost or bad message (magic %#x, len %u): decoder unusable", m.magic, m.len);
+			break;
+		}
+		pthread_mutex_lock(&v->mu);
+		v->last_rx = mono();
+		pthread_mutex_unlock(&v->mu);
+		switch (m.type) {
+		case VD_DECODED:
+			decoded(v, &m);
+			break;
+		case VD_ERROR:
+			if (m.status == -E2BIG) {
+				VTVideoDecoderFrame f[1];
+				int n = 0;
+				pthread_mutex_lock(&v->mu);
+				struct slot *s = &v->slot[m.seq % NSLOT];
+				if (s->used && (uint32_t)s->tag == m.seq)
+					f[n++] = s->frame, s->used = 0, v->inflight--;
+				v->emitting++;
+				pthread_mutex_unlock(&v->mu);
+				ERRLOG(v, "frame %u longer than venusd's input buffers: dropped", m.seq);
+				emit_dropped(v, f, n);
+			} else {
+				ERRLOG(v, "venusd session error %d (%#x) at frame %u: pending dropped, reopen at the next frame",
+				       m.status, (unsigned)m.status, m.seq);
+				pthread_mutex_lock(&v->mu);
+				v->reopen = 1;
+				v->got_eos = 1, v->eos_status = m.status;	/* an EOS waiter ends too */
+				pthread_mutex_unlock(&v->mu);
+				drop_all(v);
+			}
+			break;
+		case VD_OPEN:
+			pthread_mutex_lock(&v->mu);
+			v->got_open = 1, v->open_status = m.status;
+			pthread_cond_broadcast(&v->cv);
+			pthread_mutex_unlock(&v->mu);
+			break;
+		case VD_EOS_DONE:
+			pthread_mutex_lock(&v->mu);
+			v->got_eos = 1, v->eos_status = m.status;
+			pthread_cond_broadcast(&v->cv);
+			pthread_mutex_unlock(&v->mu);
+			break;
+		case VD_CLOSE:
+			pthread_mutex_lock(&v->mu);
+			v->got_close = 1;
+			pthread_cond_broadcast(&v->cv);
+			pthread_mutex_unlock(&v->mu);
+			break;
+		default:
+			ERRLOG(v, "unexpected venusd message type %u", m.type);
+		}
+	}
+	pthread_mutex_lock(&v->mu);
+	v->dead = 1;
+	v->reader_on = 0;
+	pthread_cond_broadcast(&v->cv);
+	pthread_mutex_unlock(&v->mu);
+	drop_all(v);
+	vd_unref(v);
+	return NULL;
+}
+
+/* ---- venusd session ---- */
+
+/* waits (v->mu held) until *flag, the reader's end, or ms without any message from venusd */
+static int wait_reply(struct vd *v, int *flag, int ms)
+{
+	double t0 = mono();
+	while (!*flag && !v->dead) {
+		double since = mono() - (v->last_rx > t0 ? v->last_rx : t0);
+		if (since * 1e3 >= ms)
+			return -1;
+		wait_ms(v, 100);
+	}
+	return *flag ? 0 : -1;
+}
+
+static int venus_open(struct vd *v)
+{
+	pthread_mutex_lock(&v->mu);
+	v->got_open = 0;
+	pthread_mutex_unlock(&v->mu);
+	double t0 = mono();
+	if (send_msg(v, VD_OPEN, 0, 0, NULL, 0)) {
+		ERRLOG(v, "OPEN: send failed (%s)", strerror(errno));
+		return ERR_MALFUNCTION;
+	}
+	pthread_mutex_lock(&v->mu);
+	int r = wait_reply(v, &v->got_open, OPEN_MS);
+	int32_t st = v->open_status;
+	if (r)
+		v->dead = 1;	/* an OPEN answered later would leave the state unknown */
+	else if (!st)
+		v->opened = 1, v->sent_cfg = 0, v->drained = 0, v->reopen = 0, v->got_eos = 0, v->n_sess++;
+	pthread_mutex_unlock(&v->mu);
+	if (r) {
+		ERRLOG(v, "OPEN: no answer from venusd in %d ms", OPEN_MS);
+		return ERR_MALFUNCTION;
+	}
+	if (st) {
+		ERRLOG(v, "OPEN refused by venusd: %d (%s)", st, st < 0 ? strerror(-st) : "firmware");
+		return st == -EBUSY ? ERR_NOT_NOW : ERR_MALFUNCTION;
+	}
+	say("venusd session %u open for %dx%d in %.0f ms", v->n_sess, v->w, v->h, 1e3 * (mono() - t0));
+	return 0;
+}
+
+static void venus_close(struct vd *v)
+{
+	pthread_mutex_lock(&v->mu);
+	int opened = v->opened && !v->dead;
+	v->got_close = 0;
+	v->opened = 0;
+	pthread_mutex_unlock(&v->mu);
+	if (!opened)
+		return;
+	if (send_msg(v, VD_CLOSE, 0, 0, NULL, 0)) {
+		ERRLOG(v, "CLOSE: send failed (%s)", strerror(errno));
+		return;
+	}
+	pthread_mutex_lock(&v->mu);
+	if (wait_reply(v, &v->got_close, IO_MS))
+		ERRLOG(v, "CLOSE: no answer from venusd in %d ms", IO_MS);
+	pthread_mutex_unlock(&v->mu);
+}
+
+/* ---- the decoder's functions ---- */
+
+static struct vd *vd_of(CMBaseObjectRef o)
+{
+	struct storage *s = o ? CMBaseObjectGetDerivedStorage(o) : NULL;
+	return s ? s->v : NULL;
+}
+
+static OSStatus dec_invalidate(CMBaseObjectRef o)
+{
+	struct vd *v = vd_of(o);
+	if (!v)
+		return 0;
+	pthread_mutex_lock(&v->mu);
+	int was = v->invalid;
+	pthread_mutex_unlock(&v->mu);
+	if (was)
+		return 0;
+	venus_close(v);
+	drop_all(v);
+	pthread_mutex_lock(&v->mu);
+	int self = v->reader_on && pthread_equal(pthread_self(), v->reader);
+	int join = v->reader_on && !self;
+	v->invalid = 1, v->stop = 1;
+	for (double t0 = mono(); v->emitting > (self ? 1 : 0) && mono() - t0 < 2;)
+		wait_ms(v, 50);
+	pthread_mutex_unlock(&v->mu);
+	if (v->fd >= 0)
+		shutdown(v->fd, SHUT_RDWR);
+	if (join)
+		pthread_join(v->reader, NULL);
+	else if (self)
+		pthread_detach(v->reader);
+	say("invalidated: %u frames in, %u out, %u dropped, %u venusd session(s)", v->n_in, v->n_out, v->n_drop, v->n_sess);
+	return 0;
+}
+
+static void dec_finalize(CMBaseObjectRef o)
+{
+	struct storage *s = o ? CMBaseObjectGetDerivedStorage(o) : NULL;
+	if (!s || !s->v)
+		return;
+	dec_invalidate(o);
+	vd_unref(s->v);
+	s->v = NULL;
+}
+
+static CFStringRef dec_description(CMBaseObjectRef o)
+{
+	struct vd *v = vd_of(o);
+	return CFStringCreateWithFormat(NULL, NULL, CFSTR("<vtvenus %p: Venus H.264 via venusd, %u in, %u out, %u dropped>"),
+					(void *)o, v ? v->n_in : 0, v ? v->n_out : 0, v ? v->n_drop : 0);
+}
+
+static OSStatus dec_copy_property(CMBaseObjectRef o, CFStringRef key, CFAllocatorRef a, void *out)
+{
+	if (out && key && CFEqual(key, kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder)) {
+		*(CFTypeRef *)out = CFRetain(kCFBooleanTrue);
+		return 0;
+	}
+	return ERR_PROPERTY;
+}
+
+static OSStatus dec_set_property(CMBaseObjectRef o, CFStringRef key, CFTypeRef value)
+{
+	return ERR_PROPERTY;
+}
+
+static OSStatus dec_supported(CMBaseObjectRef o, CFDictionaryRef *out)
+{
+	if (!out)
+		return ERR_PARAM;
+	const void *pk[] = { kVTPropertyTypeKey, kVTPropertyReadWriteStatusKey };
+	const void *pv[] = { kVTPropertyType_Boolean, kVTPropertyReadWriteStatus_ReadOnly };
+	CFDictionaryRef p = CFDictionaryCreate(NULL, pk, pv, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	const void *k[] = { kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder };
+	const void *val[] = { p };
+	*out = p ? CFDictionaryCreate(NULL, k, val, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks) : NULL;
+	if (p)
+		CFRelease(p);
+	return *out ? 0 : ERR_MALFUNCTION;
+}
+
+/* the format's SPS/PPS as Annex B, its NAL length size and size; 0 = usable by Venus */
+static OSStatus parse_format(struct vd *v, CMFormatDescriptionRef fmt, uint8_t **ps, size_t *ps_len, int *nal_len,
+			     int *w, int *h)
+{
+	size_t count = 0;
+	int nl = 0;
+	if (!fmt || CMFormatDescriptionGetMediaSubType(fmt) != kCMVideoCodecType_H264 ||
+	    CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, 0, NULL, NULL, &count, &nl) || !count ||
+	    (nl != 1 && nl != 2 && nl != 4)) {
+		ERRLOG(v, "format: not avc1 with parameter sets (count %zu, NAL length size %d)", count, nl);
+		return ERR_FORMAT;
+	}
+	size_t total = 0;
+	for (size_t i = 0; i < count; i++) {
+		const uint8_t *p = NULL;
+		size_t n = 0;
+		if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, i, &p, &n, NULL, NULL) || !p || !n)
+			return ERR_FORMAT;
+		total += 4 + n;
+	}
+	uint8_t *b = malloc(total), *q = b;
+	if (!b)
+		return ERR_MALFUNCTION;
+	int profile = -1;
+	for (size_t i = 0; i < count; i++) {
+		const uint8_t *p = NULL;
+		size_t n = 0;
+		CMVideoFormatDescriptionGetH264ParameterSetAtIndex(fmt, i, &p, &n, NULL, NULL);
+		if ((p[0] & 0x1f) == 7 && n > 1 && profile < 0)
+			profile = p[1];
+		memcpy(q, "\0\0\0\1", 4);
+		memcpy(q + 4, p, n);
+		q += 4 + n;
+	}
+	CMVideoDimensions d = CMVideoFormatDescriptionGetDimensions(fmt);
+	int big = d.width > d.height ? d.width : d.height, small = d.width > d.height ? d.height : d.width;
+	/* 8-bit 4:2:0 only (High 10 110, High 4:2:2 122, High 4:4:4 244), up to 1920x1088 */
+	if (profile == 110 || profile == 122 || profile == 244 || d.width <= 0 || d.height <= 0 || big > 1920 || small > 1088) {
+		ERRLOG(v, "format: profile %d, %dx%d: not for Venus here", profile, d.width, d.height);
+		free(b);
+		return ERR_FORMAT;
+	}
+	*ps = b, *ps_len = total, *nal_len = nl, *w = d.width, *h = d.height;
+	return 0;
+}
+
+static OSStatus dec_start_session(CMBaseObjectRef o, VTVideoDecoderSession session, CMVideoFormatDescriptionRef fmt)
+{
+	struct vd *v = vd_of(o);
+	if (!v || !session)
+		return ERR_PARAM;
+	if (v->session || v->invalid || v->dead)
+		return ERR_INVALID;
+	OSStatus st = parse_format(v, fmt, &v->ps, &v->ps_len, &v->nal_len, &v->w, &v->h);
+	if (st)
+		return st;
+	v->fmt = CFRetain(fmt);
+	v->session = session;
+	if (set_pool(v, v->w, v->h))
+		return ERR_MALFUNCTION;
+	__atomic_add_fetch(&v->refs, 1, __ATOMIC_ACQ_REL);
+	v->reader_on = 1;
+	if (pthread_create(&v->reader, NULL, reader, v)) {
+		v->reader_on = 0;
+		__atomic_sub_fetch(&v->refs, 1, __ATOMIC_ACQ_REL);
+		ERRLOG(v, "no reader thread");
+		return ERR_MALFUNCTION;
+	}
+	st = venus_open(v);
+	if (!st)
+		say("session started: avc1 %dx%d, NAL length %d, parameter sets %zu B", v->w, v->h, v->nal_len, v->ps_len);
+	return st;
+}
+
+static Boolean dec_can_accept(CMBaseObjectRef o, CMFormatDescriptionRef fmt)
+{
+	struct vd *v = vd_of(o);
+	uint8_t *ps = NULL;
+	size_t ps_len = 0;
+	int nl = 0, w = 0, h = 0;
+	if (!v || v->invalid || parse_format(v, fmt, &ps, &ps_len, &nl, &w, &h))
+		return false;
+	if (w != v->w || h != v->h) {	/* a new size: VT makes a new instance */
+		free(ps);
+		return false;
+	}
+	/* same size, maybe new parameter sets: they go before the next frame */
+	free(v->ps);
+	v->ps = ps, v->ps_len = ps_len, v->nal_len = nl;
+	v->sent_cfg = 0;
+	if (v->fmt)
+		CFRelease(v->fmt);
+	v->fmt = CFRetain(fmt);
+	return true;
+}
+
+/* the sample's AVCC NALs -> Annex B in v->tx (after the parameter sets when they are due); its length, or -1 */
+static ssize_t to_annexb(struct vd *v, CMSampleBufferRef sb, int with_ps)
+{
+	CMBlockBufferRef bb = CMSampleBufferGetDataBuffer(sb);
+	size_t len = bb ? CMBlockBufferGetDataLength(bb) : 0;
+	if (!len || grow(&v->in, &v->in_cap, len) || CMBlockBufferCopyDataBytes(bb, 0, len, v->in))
+		return -1;
+	size_t nal = 0, out = with_ps ? v->ps_len : 0;
+	for (size_t i = 0; i < len;) {	/* sizes first */
+		size_t n = 0;
+		if (i + (size_t)v->nal_len > len)
+			return -1;
+		for (int k = 0; k < v->nal_len; k++)
+			n = n << 8 | v->in[i + k];
+		i += (size_t)v->nal_len;
+		if (!n || n > len - i)
+			return -1;
+		i += n, out += 4 + n, nal++;
+	}
+	if (!nal || out > VENUSD_MAX_AU || grow(&v->tx, &v->tx_cap, out))
+		return -1;
+	uint8_t *q = v->tx;
+	if (with_ps)
+		memcpy(q, v->ps, v->ps_len), q += v->ps_len;
+	for (size_t i = 0; i < len;) {
+		size_t n = 0;
+		for (int k = 0; k < v->nal_len; k++)
+			n = n << 8 | v->in[i + k];
+		i += (size_t)v->nal_len;
+		memcpy(q, "\0\0\0\1", 4);
+		memcpy(q + 4, v->in + i, n);
+		q += 4 + n, i += n;
+	}
+	return (ssize_t)out;
+}
+
+static OSStatus dec_decode_frame(CMBaseObjectRef o, VTVideoDecoderFrame frame, CMSampleBufferRef sb, VTDecodeFrameFlags flags,
+				 VTDecodeInfoFlags *info)
+{
+	struct vd *v = vd_of(o);
+	if (info)
+		*info = 0;
+	if (!v || !frame || !sb)
+		return ERR_PARAM;
+	pthread_mutex_lock(&v->mu);
+	int bad = v->invalid || !v->session, dead = v->dead, reopen = v->drained || v->reopen || !v->opened;
+	pthread_mutex_unlock(&v->mu);
+	if (bad)
+		return ERR_INVALID;
+	if (dead)
+		return ERR_MALFUNCTION;
+	if (reopen) {	/* after EOS (FinishDelayedFrames) or a session error: a new venusd session */
+		pthread_mutex_lock(&v->mu);
+		int fails = ++v->fails;	/* back to 0 with the next picture (decoded) */
+		if (fails > MAX_FAILS)
+			v->dead = 1;
+		pthread_mutex_unlock(&v->mu);
+		if (fails > MAX_FAILS) {
+			ERRLOG(v, "%d venusd sessions failed or were reopened in a row: giving up", MAX_FAILS);
+			return ERR_MALFUNCTION;
+		}
+		venus_close(v);
+		drop_all(v);
+		OSStatus st = venus_open(v);
+		if (st)
+			return st;
+	}
+	/* backpressure: MAX_INFLIGHT frames out; 2 s without anything back drops the oldest */
+	pthread_mutex_lock(&v->mu);
+	double t0 = mono();
+	while (v->inflight >= MAX_INFLIGHT && !v->dead && !v->invalid) {
+		double last = v->last_rx > t0 ? v->last_rx : t0;
+		if (mono() - last > IO_MS / 1e3) {
+			VTVideoDecoderFrame f[1];
+			int n = 0;
+			uint64_t old = UINT64_MAX;
+			struct slot *os = NULL;
+			for (int i = 0; i < NSLOT; i++)
+				if (v->slot[i].used && v->slot[i].tag < old)
+					old = v->slot[i].tag, os = &v->slot[i];
+			if (os)
+				f[n++] = os->frame, os->used = 0, v->inflight--;
+			v->emitting++;
+			pthread_mutex_unlock(&v->mu);
+			ERRLOG(v, "%d frames in flight, none back for %d ms: oldest (tag %llu) dropped", MAX_INFLIGHT, IO_MS,
+			       (unsigned long long)old);
+			emit_dropped(v, f, n);
+			pthread_mutex_lock(&v->mu);
+			t0 = mono();
+			continue;
+		}
+		wait_ms(v, 100);
+	}
+	dead = v->dead || v->invalid;
+	pthread_mutex_unlock(&v->mu);
+	if (dead)
+		return ERR_MALFUNCTION;
+	ssize_t len = to_annexb(v, sb, !v->sent_cfg);
+	if (len < 0) {
+		ERRLOG(v, "frame %llu: sample not AVCC with %d-byte lengths (or too long): bad data",
+		       (unsigned long long)v->next_tag, v->nal_len);
+		return ERR_BAD_DATA;
+	}
+	VTVideoDecoderFrame stale[1];
+	int ns = 0;
+	pthread_mutex_lock(&v->mu);
+	uint64_t tag = v->next_tag++;
+	struct slot *s = &v->slot[tag % NSLOT];
+	if (s->used)	/* NSLOT tags back and never returned */
+		stale[ns++] = s->frame, v->inflight--;
+	*s = (struct slot){ .used = 1, .tag = tag, .frame = frame, .no_out = !!(flags & kVTDecodeFrame_DoNotOutputFrame) };
+	v->inflight++;
+	v->emitting++;
+	pthread_mutex_unlock(&v->mu);
+	emit_dropped(v, stale, ns);
+	if (send_msg(v, VD_FRAME, tag * PTS_STEP, (uint32_t)tag, v->tx, (uint32_t)len)) {
+		pthread_mutex_lock(&v->mu);
+		if (s->used && s->tag == tag)
+			s->used = 0, v->inflight--;
+		v->dead = 1;
+		pthread_mutex_unlock(&v->mu);
+		ERRLOG(v, "FRAME %llu: send failed (%s): decoder unusable", (unsigned long long)tag, strerror(errno));
+		return ERR_MALFUNCTION;
+	}
+	v->sent_cfg = 1;
+	v->n_in++;
+	if (info)
+		*info = kVTDecodeInfo_Asynchronous;
+	return 0;
+}
+
+static OSStatus dec_finish_delayed(CMBaseObjectRef o)
+{
+	struct vd *v = vd_of(o);
+	if (!v)
+		return ERR_PARAM;
+	pthread_mutex_lock(&v->mu);
+	int skip = v->invalid || v->dead || !v->opened || v->drained || v->reopen || !v->sent_cfg;
+	v->got_eos = 0;
+	pthread_mutex_unlock(&v->mu);
+	if (skip) {	/* nothing sent in this venusd session: nothing to drain */
+		drop_all(v);
+		return v->dead ? ERR_MALFUNCTION : 0;
+	}
+	double t0 = mono();
+	if (send_msg(v, VD_EOS, 0, (uint32_t)v->next_tag, NULL, 0)) {
+		ERRLOG(v, "EOS: send failed (%s)", strerror(errno));
+		pthread_mutex_lock(&v->mu);
+		v->dead = 1;
+		pthread_mutex_unlock(&v->mu);
+		drop_all(v);
+		return ERR_MALFUNCTION;
+	}
+	pthread_mutex_lock(&v->mu);
+	int r = wait_reply(v, &v->got_eos, IO_MS);
+	int32_t st = v->eos_status;
+	v->drained = 1;
+	pthread_mutex_unlock(&v->mu);
+	if (r || st)
+		ERRLOG(v, "EOS: %s (status %d) after %.0f ms", r ? "no EOS_DONE" : "EOS_DONE", st, 1e3 * (mono() - t0));
+	drop_all(v);	/* what the firmware never returned */
+	return 0;
+}
+
+static const struct base_class dec_base = {
+	1, sizeof(struct storage), NULL, dec_invalidate, dec_finalize, dec_description, dec_copy_property, dec_set_property,
+	NULL, NULL, NULL
+};
+static const struct decoder_class dec_class = {
+	3, dec_start_session, dec_decode_frame, dec_supported, NULL, NULL, dec_can_accept, dec_finish_delayed, NULL, NULL
+};
+static const struct vtable dec_vtable = { NULL, &dec_base, &dec_class };
+
+static int venusd_connect(void)
+{
+	struct sockaddr_un a = { .sun_family = AF_UNIX };
+	snprintf(a.sun_path, sizeof a.sun_path, "%s", VENUSD_SOCK);
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0)
+		return -1;
+	struct timeval tv = { IO_MS / 1000, 0 };
+	int sz = 4 << 20, one = 1;
+	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+	setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);	/* a dead venusd must not SIGPIPE the host */
+	if (connect(fd, (struct sockaddr *)&a, sizeof a)) {
+		int e = errno;
+		close(fd);
+		errno = e;
+		return -1;
+	}
+	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sz, sizeof sz);
+	fcntl(fd, F_SETFD, FD_CLOEXEC);
+	return fd;
+}
+
+static OSStatus create_instance(FourCharCode codec, CFAllocatorRef alloc, CMBaseObjectRef *out)
+{
+	struct stat sb;
+	char why[96] = "";
+	int fd = -1;
+	if (!out)
+		return ERR_PARAM;
+	*out = NULL;
+	if (codec != kCMVideoCodecType_H264)
+		snprintf(why, sizeof why, "codec %#x", (unsigned)codec);
+	else if (!stat(OFF_FILE, &sb))
+		snprintf(why, sizeof why, "%s exists", OFF_FILE);
+	else if ((fd = venusd_connect()) < 0)
+		snprintf(why, sizeof why, "no venusd at %s (%s)", VENUSD_SOCK, strerror(errno));
+	if (!__atomic_exchange_n(&process_logged, 1, __ATOMIC_ACQ_REL))
+		say("first CreateInstance in this process: %s%s", why[0] ? "refused, software decoder: " : "venusd connected", why);
+	if (why[0])
+		return ERR_NO_DECODER;
+	struct vd *v = calloc(1, sizeof *v);
+	CMBaseObjectRef o = NULL;
+	if (!v || CMDerivedObjectCreate(alloc, &dec_vtable, VTVideoDecoderGetClassID(), &o) || !o) {
+		say("CreateInstance: no memory or no decoder object");
+		free(v);
+		close(fd);
+		return ERR_MALFUNCTION;
+	}
+	v->refs = 1, v->fd = fd;
+	pthread_mutex_init(&v->mu, NULL);
+	pthread_mutex_init(&v->txmu, NULL);
+	pthread_cond_init(&v->cv, NULL);
+	((struct storage *)CMBaseObjectGetDerivedStorage(o))->v = v;
+	*out = o;
+	return 0;
+}
+
+/* _VTLoadVideoDecoders: dlopen(RTLD_LOCAL), then this with no meaningful arguments. Registration only. */
+__attribute__((visibility("default"))) void ExampleIPBDecoderRegister(void)
+{
+	const void *k[] = { CFSTR("CMClassImplementationID") };
+	const void *val[] = { CFSTR("org.iosonpixel.venus") };
+	CFDictionaryRef info = CFDictionaryCreate(NULL, k, val, 1, &kCFTypeDictionaryKeyCallBacks,
+						  &kCFTypeDictionaryValueCallBacks);
+	/* hardware (VT's default) at rating 0: hardware wins a tie (_vtSortRegistryItemsByRating) */
+	OSStatus st = VTRegisterVideoDecoderWithInfo(kCMVideoCodecType_H264, info, (void *)create_instance);
+	if (info)
+		CFRelease(info);
+	if (st)
+		say("VTRegisterVideoDecoderWithInfo avc1: OSStatus %d", (int)st);
+}

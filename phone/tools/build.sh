@@ -8,7 +8,7 @@
 #   oslog    [-p PID|-n NAME] [-t S] [-g STR] [-l]: unified log (ActivityStream SPI); oslogls = live-store reader
 #   prefs    CFPreferences read/write (no defaults)
 #   imgtest  does ImageIO decode real pixels (HEIC: no)       membw    CPU memory bandwidth
-#   vtdecode FILE [SEC]: AVAssetReader/VideoToolbox decode fps, hardware or not
+#   vtdecode FILE [SEC]: AVAssetReader/VideoToolbox decode fps, hardware or not; --raw IN.h264: one VT session (video 4b)
 #   vcopy    SRC DST: tree copy keeping xattrs, ACLs, flags; -l PATH, -c SRC DST compare
 #   sctl     NAME[=INT]: read or set a sysctl (no sysctl binary on the phone)
 #   sysq     NAME [INT]: print an int/string sysctl, or set an int one (0238 v2 kern.sweet_ui_*)
@@ -41,7 +41,7 @@ for m in expt exq fpdump nettest openapp oslogls prefs proxon runmigrator; do bu
 build imgtest imgtest.m -fobjc-arc -framework Foundation -framework ImageIO -framework CoreGraphics
 build lsreg lsreg.m -fobjc-arc -framework Foundation -framework MobileCoreServices
 build netsvc netsvc.m -fobjc-arc -framework Foundation -framework SystemConfiguration
-build vtdecode vtdecode.m -fobjc-arc -framework Foundation -framework AVFoundation -framework VideoToolbox -framework CoreMedia -framework CoreVideo
+build vtdecode vtdecode.m ../wifi/venus_h264.c -fobjc-arc -framework Foundation -framework AVFoundation -framework VideoToolbox -framework CoreMedia -framework CoreVideo
 build memwarn memwarn.c
 build pmem pmem.c
 build pinsample pinsample.c	# sp15: fast read-only register sampler
