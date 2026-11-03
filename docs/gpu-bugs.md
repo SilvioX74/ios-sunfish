@@ -259,6 +259,7 @@ Newest first. Earlier soaks were shorter or used other loads, so compare rates, 
 
 | Date | Kernel, bundle | Length | Submits | G1 | G2 | G4 | Other |
 |---|---|---|---|---|---|---|---|
+| 2026-11-02 n8 | kernel158 sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetwdtcrumb=1 (everyday), bundle 82f6b41, SWEET_CULL=3 | 60 min, full soak, done (3607 s) | 399 k | 0 | 0 | 0 | First soak with 0 hangs of any kind; 0 backboardd restarts, max 82.8 C, 0 caps, nits 33 |
 | 2026-11-02 n7 | kernel152 sweethwcg=1 sweetcxcycle=1 sweetwdtcrumb=1 sweetsmmutcr=3, metal2-cpu, mode 3, cache, knobs on, luma boost off, A55 1497 MHz, GPU 650 MHz | 60 min, full soak, done | 397 k | 0 | 0 | 1 | First full clean soak. G4 at 2564 s recovered, 1 backboardd restart; no silent reset, no CX cycle; max 95.7 C, 60 of 730 readings at 90 C or more, 0 caps, nits 5 |
 | 2026-11-01 n6 | kernel149, as n5 | 12.6 min of 60; G4 at 461 s recovered in 36.9 ms; real G1 at 897 s, `ack 1`, CX cycle ran: `gdsc won't collapse` after 500 ms, recovery failed | 76.5 k | 1 | 0 | 1 | backboardd restart 1, max 93.8 C, 0 caps, nits 5; no silent reset |
 | 2026-11-01 n5 | kernel149 sweethwcg=1 sweetcxcycle=1, metal2-cpu, mode 3, shadow cache, knobs on, A55 1497 MHz, GPU 650 MHz | 11 min of 60; silent reset at uptime 695 s in Maps, just after `texture refused: OutOfMemory(Device)` (pool peak 620 MB) | 61 k | 0 | 0 | 0 | Reset to fastboot, no panic line, no CX cycle ran; 0 restarts, max 88.3 C (at 217 s; 79 C at the end), nits 5 |

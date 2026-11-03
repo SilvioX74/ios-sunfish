@@ -1,5 +1,5 @@
 # GPU
-**State:** 🟡 Adreno 618 at 650 MHz; injected and SMMU-fault hangs recover (~37 ms); real no-fault hangs (G1) don't, but none in the first full 1 h soak with stock SMMU walks (n7, 397 k submits, one soak). **Updated:** 2026-11-02.
+**State:** 🟡 Adreno 618 at 650 MHz; injected and SMMU-fault hangs recover (~37 ms); real no-fault hangs (G1) don't, but none in two full 1 h soaks (n8 2026-11-02: 399 k submits, 0 G1/G2/G4; n7 397 k submits, one soak). **Updated:** 2026-11-02.
 
 ## How to use
 - Default clock 565 MHz (`sweetgpufreq=5`); 430 MHz = `sweetgpufreq=4`; stock levels 650/800/825 = `sweetgpufreq=6..8` (xnu 0148).
@@ -22,6 +22,11 @@
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-02 22:39 n8: second full soak, first with 0 hangs of any kind (everyday setup)
+- Soak n8, kernel158 everyday args + `sweetwdtcrumb=1`, bundle 82f6b41, mtl2-env with SWEET_CULL=3, slider at minimum
+  (nits 33), 21:31-22:31: 3607 s, 398 526 submits, G1 0, G2 0, G4 0, backboardd restarts 0, max 82.8 C, caps 0,
+  critical 0, failed recoveries 0. SWEET_CULL=3 did not raise G1. Two clean full soaks in a row (n7, n8).
 
 ### 2026-11-02 00:51 n7: first full clean soak: 397 k submits, 0 G1 with stock SMMU walks
 - Soak n7, kernel152, base args + `sweetcxcycle=1 sweetwdtcrumb=1 sweetsmmutcr=3`, luma boost off, boot 20261101-235007, 23:50:57-00:51:05: 3608 s, 397 k submits, G1 0, G2 0, G4 1 (2564 s, fsr 40000002, recovered), 1 backboardd restart, no silent reset, no CX cycle.
