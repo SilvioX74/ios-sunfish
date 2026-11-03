@@ -50,9 +50,12 @@ Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfen
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. Without the phone: stage 1 research (investigator), the plan's video.md spec.
-2. Phone (it's back): stage 0 baseline + the WebGL test (about 30 min together), in parallel with step 1. At 9:30 pm: night flag and the soak (step 3).
-3. Night soak n8 (did not run 2026-11-02): `tools/sunfish-nightsoak.sh n8` (kernel158; watch G1 with SWEET_CULL=3).
+1. Tonight (night rules from 21:30: minimum brightness, no sound): set `work/night`, then night soak n8 (did not run
+   2026-11-02): `tools/sunfish-nightsoak.sh n8` (kernel158; watch G1 with SWEET_CULL=3). Meanwhile, no phone needed:
+   stage 1 research (investigator) -> the staged spec in video.md.
+2. Morning (night flag off): stage 0 Safari video baseline + the WebGL test (about 30 min together; video muted
+   before 5 am).
+3. Then stage 2 per the spec.
 4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuild first (the 2026-11-02 build was
    stopped half way: don't install work/metal2-next before rebuilding), then a 5-boot A/B on settings, cc, home.
 
