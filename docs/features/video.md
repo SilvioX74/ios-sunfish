@@ -60,6 +60,17 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 23:10 venusctl: pre-run review fixes
+(research/notes/venus-stage1-2026-11-02.md 8.5; built with phone/wifi/build.sh, not run on the phone yet)
+- 1 Stale state: STATE and AHB_STATE carry `boot <kern.bootsessionuuid>` (fallback kern.boottime); a file from another boot (or without the line) is dropped unread ("stale state from an earlier boot: dropped"; VENUSCTL_NO_BOOTID=1 keeps it). Teardown releases an SMR only if it still reads exactly 1<<31|sid with S2CR translate -> our CB, else prints why and leaves it.
+- 2 `power off` refuses while STATE says pas 1 (`--force` overrides). Script: an exit 124 or a failed shutdown stops the run with no power off and prints "LEFT POWERED: reboot needed".
+- 3 Script passes `--cvp` to every power on/off.
+- 4 init re-reads the mnoc_sf_0_tbu vote (0x17d044 PWR_ON) right before CTRL_INIT, q_write before each doorbell; STOP if off (status 0x15182220 printed, bits unknown; VENUSCTL_NO_TBUCHECK=1 skips). No vote of our own.
+- 5 gdsc_on clears a set HW_CONTROL (SW mode, as downstream) and prints it; STOP if it stays set.
+- 6 `init --phys` (and the queue check): 1 MB aligned, ADDR+3 MB+4 KB within 0xa5030000-0xbcc00000 and 0x25800000-0xe0000000.
+- 7 `pas-check --no-shutdown` writes STATE pas 1 (with the boot id), so `shutdown` undoes it.
+- 8 New `venusctl memtest ADDR SIZE write|check` (pattern addr ^ 0x5a5a5a5a, /dev/pmem as init; count + first 5 mismatches); script step `memtest` (0xa5100000+0x301000, 60 s, check).
+
 ### 2026-11-02 23:00 venusctl: boot, init, ping, shutdown written (stage 2 steps 4-6), not run yet
 - phone/wifi/venusctl.c: `boot [--fw DIR] [--keep]` (exact SMRs via smmu.c smmu_identity mask 0 for 0x1080/0x10a0/
   0x10c0/0x10e0, one translation-off bank each; refuses if any SMR already matches; CPU_CGC_DIS/CPU_CLOCK_CONFIG = 0;

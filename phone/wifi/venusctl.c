@@ -7,10 +7,11 @@
  *                           Never reads the core (0x0aa00000).
  *   venusctl power on [--cvp]   BCM MM3 + MM2 minimal votes (no MX/CX), gcc_video_ahb/axi, PLL0 480 MHz, iris RCG /2
  *                           = 240 MHz, GDSC mvsc then mvs0 (--cvp: + mvs1), branches; then WRAPPER_HW_VERSION
- *   venusctl power off [--cvp]  the reverse; gcc_video_ahb stays on (critical in mainline gcc-sm7150), votes last;
- *                           its HW_CTL bit goes back if power on cleared it (state in AHB_STATE)
+ *   venusctl power off [--cvp] [--force]  the reverse; gcc_video_ahb stays on (critical in mainline gcc-sm7150),
+ *                           votes last; its HW_CTL bit goes back if power on cleared it (state in AHB_STATE).
+ *                           Refuses while STATE says pas 1 (firmware may run: venusctl shutdown first) unless --force.
  *   venusctl pas-check [--fw DIR] [--no-shutdown]  needs power on: PAS is_supported(9), init_image(9, venus.mdt
- *                           metadata), shutdown(9). No mem_setup, no auth_and_reset.
+ *                           metadata), shutdown(9). No mem_setup, no auth_and_reset. --no-shutdown: STATE pas 1.
  *   venusctl boot [--fw DIR] [--keep]  needs power on: exact SMRs for SIDs 0x1080/0x10a0/0x10c0/0x10e0 (smmu.c
  *                           smmu_identity, mask 0), CPU_CGC_DIS/CPU_CLOCK_CONFIG = 0, PAS init_image(9), mem_setup,
  *                           segments to 0x94800000, auth_and_reset(9), memory protect 0x42000c08, status reads.
@@ -21,6 +22,11 @@
  *   venusctl ping [--debug MASK]  after init: SYS_INIT -> INIT_DONE, debug to the debug queue, IMAGE_VERSION,
  *                           SYS_PING -> PING_ACK; polls the message queue (no IRQ), prints every packet
  *   venusctl shutdown       undoes boot --keep/init from STATE: PAS shutdown(9), queue memory, SMRs. Then power off.
+ *   venusctl memtest ADDR SIZE write|check  the --phys region check (pre-run review 8.1): fill ADDR..ADDR+SIZE through
+ *                           /dev/pmem (as init) with addr ^ 0x5a5a5a5a per word, or count the words that changed
+ * Pre-run review fixes (notes section 8.5): STATE and AHB_STATE carry the boot session id; a file from an earlier
+ * boot is dropped unread (VENUSCTL_NO_BOOTID=1: keep the old behaviour). smmu release only of a slot that still reads
+ * our exact SMR and S2CR. init/ping re-check the mnoc_sf_0_tbu vote before CTRL_INIT and each doorbell.
  *   -v                      print every register write (address, old, new, read-back)
  * Writes only: GCC video_ahb/video_axi CBCRs, the videocc PLL0/RCG/GDSC/CBCR registers below, RPMh BCMs MM3/MM2,
  * the core registers in allowed() (boot/init/ping), the firmware carveout, the queue block; SMMU writes only through
@@ -38,6 +44,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
+#include <sys/time.h>
 #include "pmem.h"
 #include "smmu.h"
 
@@ -133,8 +141,9 @@ static const uint16_t venus_sids[] = { 0x1080, 0x10a0, 0x10c0, 0x10e0 };	/* venu
 #define QWORDS		(QSIZE / 4)
 #define SFR_OFF		0x2fe000u
 #define SFR_SIZE	0x1000u
-#define FIXED_LO	0xa5100000ull	/* free below 4 GB per the notes (section 2 "Memory"; unproven) */
+#define FIXED_LO	0xa5030000ull	/* free below 4 GB: after ramdumplog to the DRAM hole (notes 8.1; unproven) */
 #define FIXED_HI	0xbcc00000ull
+#define POOL_END	0xe0000000ull	/* venus_ns IOVA pool 0x25800000-0xe0000000 (notes 8.4) */
 
 #define PAS_VENUS	9
 #define SCM_PIL(cmd)	(0x42000000ull | (2u << 8) | (cmd))
@@ -155,7 +164,47 @@ static const struct br branches[] = {	/* enable order (spec); disable runs it ba
 #define NBR (sizeof(branches) / sizeof(branches[0]))
 #define VIDEO_CC_XO	(VCC + 0x984)	/* CLK_IS_CRITICAL: read only */
 
-static int verbose, cvp;
+static int verbose, cvp, force;
+
+/* ---- boot session id (pre-run review 8.5.1): state files from an earlier boot are dropped unread ---- */
+
+static char bootid[64];
+
+static const char *boot_id(void)
+{
+	if (bootid[0])
+		return bootid;
+	size_t n = sizeof(bootid) - 1;
+	if (sysctlbyname("kern.bootsessionuuid", bootid, &n, NULL, 0) || !bootid[0]) {
+		struct timeval bt = { 0, 0 };
+		n = sizeof(bt);
+		sysctlbyname("kern.boottime", &bt, &n, NULL, 0);
+		snprintf(bootid, sizeof(bootid), "boottime-%ld.%06d", (long)bt.tv_sec, (int)bt.tv_usec);
+	}
+	return bootid;
+}
+
+/* a state file without our "boot ID" line is from an earlier boot (or older venusctl): delete it, act on nothing */
+static void stale_drop(const char *path)
+{
+	FILE *f = fopen(path, "r");
+	if (!f)
+		return;
+	char line[256], id[128] = "";
+	while (fgets(line, sizeof(line), f))
+		if (sscanf(line, "boot %127s", id) == 1)
+			break;
+	fclose(f);
+	if (!strcmp(id, boot_id()))
+		return;
+	if (getenv("VENUSCTL_NO_BOOTID")) {
+		printf("venus: %s is from boot %s, not %s: kept (VENUSCTL_NO_BOOTID)\n", path, id[0] ? id : "?", boot_id());
+		return;
+	}
+	printf("venus: %s: stale state from an earlier boot: dropped (boot %s, now %s)\n", path, id[0] ? id : "?",
+	       boot_id());
+	unlink(path);
+}
 
 static int ahb_on(void)
 {
@@ -444,8 +493,16 @@ static void branch_off(uint32_t pa, const char *name, int voted)
 static int gdsc_on(uint32_t pa, const char *name)
 {
 	uint32_t v = vrd(pa);
-	if (v & HW_CONTROL)
-		printf("venus: note: gdsc %s HW_CONTROL set (%#010x)\n", name, v);
+	if (v & HW_CONTROL) {	/* review 8.5.5: in HW mode the domain can collapse under us; downstream SW mode first */
+		upd(pa, HW_CONTROL, 0, "gdsc SW mode");
+		uint32_t n = vrd(pa);
+		printf("venus: gdsc %s HW_CONTROL was set (%#010x): cleared (%#010x)\n", name, v, n);
+		if (n & HW_CONTROL) {
+			printf("venus: STOP: gdsc %s HW_CONTROL won't clear (%#010x)\n", name, n);
+			return -1;
+		}
+		v = n;
+	}
 	if (!(v & PWR_ON) || (v & SW_COLLAPSE))
 		upd(pa, SW_COLLAPSE, 0, name);
 	if (poll(pa, PWR_ON, PWR_ON, 100)) {
@@ -579,7 +636,7 @@ static void ahb_hwctl_clear(void)
 	}
 	FILE *f = fopen(AHB_STATE, "w");
 	if (f) {
-		fprintf(f, "%#x\n", v);
+		fprintf(f, "%#x\nboot %s\n", v, boot_id());
 		fclose(f);
 	} else {
 		printf("venus: can't write %s, power off won't restore HW_CTL\n", AHB_STATE);
@@ -637,8 +694,32 @@ static int power_on(void)
 	return 0;
 }
 
+/* STATE's pas line: 1 = TZ holds an image (pas-check --no-shutdown, boot --keep), the firmware may run */
+static int state_pas(void)
+{
+	int p = 0;
+	char line[256];
+	FILE *f = fopen(STATE, "r");
+	if (!f)
+		return 0;
+	while (fgets(line, sizeof(line), f))
+		if (sscanf(line, "pas %d", &p) == 1)
+			break;
+	fclose(f);
+	return p;
+}
+
 static int power_off(void)
 {
+	/* review 8.5.2: collapsing GDSCs/clocks/BCMs under a live ARM9 hangs the bus */
+	if (state_pas()) {
+		if (!force) {
+			printf("venus: refused: %s says pas 1 (TZ image loaded, firmware may run): venusctl shutdown first,"
+			       " or power off --force\n", STATE);
+			return 1;
+		}
+		printf("venus: --force: powering off with %s pas 1\n", STATE);
+	}
 	if (ahb_on()) {
 		for (unsigned i = NBR; i-- > 0;)
 			if (!branches[i].cvp || cvp || (vrd(branches[i].pa) & CBCR_EN))
@@ -780,6 +861,16 @@ static int pas_check(const char *fw, int no_shutdown)
 	printf("venus: pas init_image -> %lld/%llx\n", (long long)rc, (unsigned long long)r1);
 	pm_free(meta_pa);
 	int init_ok = !rc && !r1;
+	if (no_shutdown && init_ok) {	/* review 8.5.8: record it, so shutdown can undo it */
+		FILE *sf = fopen(STATE, "w");
+		if (sf) {
+			fprintf(sf, "boot %s\npas 1\nq 0 0\ninit 0\nsysinit 0\n", boot_id());
+			fclose(sf);
+			printf("venus: %s: pas 1 (venusctl shutdown undoes it)\n", STATE);
+		} else {
+			printf("venus: can't write %s: a PAS shutdown(9) is owed, nothing records it\n", STATE);
+		}
+	}
 	/* adspboot adsp3: a shutdown with nothing in TZ blocked forever, so only after an accepted init */
 	if (no_shutdown || !init_ok) {
 		printf("venus: pas shutdown skipped (%s)\n", no_shutdown ? "--no-shutdown" : "init failed");
@@ -797,6 +888,7 @@ struct vstate {
 	int pas;		/* init_image accepted: PAS shutdown(9) owed */
 	int nsmr;
 	struct smmu_saved smr[4];	/* what smmu_identity wrote, for smmu_release */
+	uint32_t sid[4];		/* the SID each smr[] entry was written for */
 	uint64_t q;		/* HFI block (QSHARED) */
 	int qkind;		/* 1 PMEM_ALLOC32 (pm_free), 2 --phys region */
 	int init, sysinit;
@@ -809,12 +901,12 @@ static void state_save(const struct vstate *v)
 		printf("venus: can't write %s: shutdown won't know what to undo\n", STATE);
 		return;
 	}
-	fprintf(f, "pas %d\nq %#llx %d\ninit %d\nsysinit %d\n", v->pas, (unsigned long long)v->q, v->qkind, v->init,
+	fprintf(f, "boot %s\npas %d\nq %#llx %d\ninit %d\nsysinit %d\n", boot_id(), v->pas, (unsigned long long)v->q, v->qkind, v->init,
 		v->sysinit);
 	for (int i = 0; i < v->nsmr; i++) {
 		const struct smmu_saved *m = &v->smr[i];
-		fprintf(f, "smr %d %d %#llx %#llx %#x %#x %#x %#x %#x\n", m->slot, m->cb, (unsigned long long)m->cbp,
-			(unsigned long long)m->gr1, m->smr, m->s2cr, m->cbar, m->cba2r, m->sctlr);
+		fprintf(f, "smr %d %d %#llx %#llx %#x %#x %#x %#x %#x %#x\n", m->slot, m->cb, (unsigned long long)m->cbp,
+			(unsigned long long)m->gr1, m->smr, m->s2cr, m->cbar, m->cba2r, m->sctlr, v->sid[i]);
 	}
 	fclose(f);
 	rename(STATE ".new", STATE);
@@ -837,10 +929,12 @@ static int state_load(struct vstate *v)
 			v->q = a;
 			continue;
 		}
-		if (v->nsmr < 4 && sscanf(line, "smr %d %d %llx %llx %x %x %x %x %x", &m.slot, &m.cb, &a, &b, &m.smr,
-					  &m.s2cr, &m.cbar, &m.cba2r, &m.sctlr) == 9) {
+		unsigned sid;
+		if (v->nsmr < 4 && sscanf(line, "smr %d %d %llx %llx %x %x %x %x %x %x", &m.slot, &m.cb, &a, &b, &m.smr,
+					  &m.s2cr, &m.cbar, &m.cba2r, &m.sctlr, &sid) == 10) {
 			m.cbp = a;
 			m.gr1 = b;
+			v->sid[v->nsmr] = sid;
 			v->smr[v->nsmr++] = m;
 		}
 	}
@@ -898,12 +992,45 @@ static int teardown(struct vstate *v)
 	}
 	int rc = 0;
 	while (v->nsmr > 0) {
-		smmu_last = v->smr[--v->nsmr];
-		rc |= smmu_release("venus");
+		/* review 8.5.1: only a slot that still holds exactly what we wrote (WLAN/ADSP may own it now) */
+		const struct smmu_saved *m = &v->smr[--v->nsmr];
+		uint32_t sid = v->sid[v->nsmr], smr = rd32(0x15000800ull + 4 * m->slot), s2cr = rd32(0x15000c00ull + 4 * m->slot);
+		if (smr != ((1u << 31) | sid) || ((s2cr >> 16) & 3) || (s2cr & 0xff) != (uint32_t)m->cb) {
+			printf("venus: SMR%d left alone: reads SMR %08x S2CR %08x, we wrote SMR %08x S2CR -> CB%d (not ours now)\n",
+			       m->slot, smr, s2cr, (1u << 31) | sid, m->cb);
+		} else {
+			smmu_last = *m;
+			rc |= smmu_release("venus");
+		}
 		state_save(v);
 	}
 	unlink(STATE);
 	return rc ? 1 : 0;
+}
+
+/* review 8.5.4: SIDs 0x1000-0x13ff go through mnoc_sf_0_tbu, powered only by someone else's vote (ours = collapse).
+ * Re-read right before the firmware starts DMA; no vote of our own. The status words are printed only (their bits
+ * are not known). VENUSCTL_NO_TBUCHECK=1: skip the check. 0 = on. */
+static int tbu_ok(const char *when)
+{
+	uint32_t vote = rd32(GCC_TBU_SF_VOTE);
+	if (vote & PWR_ON)
+		return 0;
+	printf("venus: %s mnoc_sf_0_tbu vote %#x = %#010x has no PWR_ON (status %#010x %#010x) before %s\n",
+	       getenv("VENUSCTL_NO_TBUCHECK") ? "note (VENUSCTL_NO_TBUCHECK):" : "STOP:", GCC_TBU_SF_VOTE, vote,
+	       rd32(TBU_SF_STATUS), rd32(TBU_SF_STATUS + 4), when);
+	return getenv("VENUSCTL_NO_TBUCHECK") ? 0 : -1;
+}
+
+/* review 8.5.6: a block the firmware may DMA into: 1 MB aligned, in the free gap 0xa5030000-0xbcc00000 and inside
+ * the venus_ns pool [0x25800000, 0xe0000000). 0 = ok. */
+static int range_ok(uint64_t a, uint64_t len, const char *what)
+{
+	if (!(a & 0xfffff) && len && a >= CP_SIZE && a + len <= POOL_END && a >= FIXED_LO && a + len <= FIXED_HI)
+		return 0;
+	printf("venus: refused: %s %#llx+%#llx: needs 1 MB alignment, inside %#llx-%#llx (and %#x-%#llx)\n", what,
+	       (unsigned long long)a, (unsigned long long)len, FIXED_LO, FIXED_HI, CP_SIZE, POOL_END);
+	return -1;
 }
 
 static void core_status(const char *when)
@@ -977,6 +1104,7 @@ static int boot(const char *fw, int keep)
 		smmu_last.slot = -1;	/* a failed call leaves smmu_last alone: don't record the previous SID twice */
 		int bad = smmu_identity("venus", venus_sids[k], 0);
 		if (smmu_last.slot >= 0) {
+			v.sid[v.nsmr] = venus_sids[k];
 			v.smr[v.nsmr++] = smmu_last;
 			state_save(&v);
 			printf("venus: SID %#x: SMR%d + CB%d added\n", venus_sids[k], smmu_last.slot, smmu_last.cb);
@@ -1108,8 +1236,11 @@ static int q_write(const uint32_t *w)
 	wr32(qhdr(0) + QH_WRITE, (wi + n) % QWORDS);
 	uint32_t rx = rd32(qhdr(0) + QH_RX_REQ);
 	printf("venus: cmd %#x size %u at %u, rx_req %u%s\n", w[1], w[0], wi, rx, rx == 1 ? ", doorbell" : "");
-	if (rx == 1)	/* __iface_cmdq_write: interrupt only if the firmware asked for one */
+	if (rx == 1) {	/* __iface_cmdq_write: interrupt only if the firmware asked for one */
+		if (tbu_ok("doorbell"))
+			return -1;
 		wr(IC_SOFTINT, SOFTINT_H2A, "doorbell");
+	}
 	return 0;
 }
 
@@ -1218,11 +1349,8 @@ static int init(uint64_t phys)
 	core_status("before init");
 	uint64_t q;
 	if (phys) {
-		if ((phys & 0xfffff) || phys < FIXED_LO || phys + QSHARED > FIXED_HI) {
-			printf("venus: refused: --phys %#llx: 1 MB aligned, %#llx-%#llx\n", (unsigned long long)phys,
-			       FIXED_LO, FIXED_HI);
+		if (range_ok(phys, QSHARED + SFR_SIZE, "--phys"))	/* 3 MB + the SFR page, as the review asks */
 			return 1;
-		}
 		q = phys;
 		v.qkind = 2;
 	} else {
@@ -1237,8 +1365,8 @@ static int init(uint64_t phys)
 	v.q = q;
 	state_save(&v);
 	/* device addresses are physical (identity bank) and 32-bit; below CP_SIZE is the content-protected range */
-	if (q < CP_SIZE || q + QSHARED > 0x100000000ull) {
-		printf("venus: STOP: queue block %#llx outside %#x-4 GB\n", (unsigned long long)q, CP_SIZE);
+	if (q < CP_SIZE || q + QSHARED > POOL_END) {
+		printf("venus: STOP: queue block %#llx outside %#x-%#llx\n", (unsigned long long)q, CP_SIZE, POOL_END);
 		return 1;
 	}
 	qb = q;
@@ -1282,6 +1410,8 @@ static int init(uint64_t phys)
 	wr(CS_VMIMSGAG0, (uint32_t)q, "DSP_UC_REGION_ADDR");
 	wr(CS_VMIMSGAG1, QSHARED, "DSP_UC_REGION_SIZE");
 	/* __boot_firmware (venus_hfi.c:1265-1290): CTRL_INIT = 1 (no CVP domain in the DT), wait for a status */
+	if (tbu_ok("CTRL_INIT"))
+		return 1;
 	wr(CTRL_INIT, 1, "CTRL_INIT");
 	uint32_t st = 0;
 	unsigned ms;
@@ -1363,6 +1493,42 @@ static int ping(uint32_t debug)
 	return 0;
 }
 
+/* review 8.1: is the --phys region really unused? write a pattern, let the load run, check it (/dev/pmem as init) */
+static int memtest(uint64_t a, uint64_t len, int write)
+{
+	if (range_ok(a, len, "memtest") || (len & 3))
+		return 1;
+	static uint32_t buf[0x4000];
+	uint64_t bad = 0;
+	unsigned shown = 0;
+	for (uint64_t o = 0; o < len; o += sizeof(buf)) {
+		uint64_t n = len - o < sizeof(buf) ? len - o : sizeof(buf);
+		if (!write && pm_rd(a + o, buf, n))
+			return 1;
+		for (uint64_t k = 0; k < n / 4; k++) {
+			uint64_t pa = a + o + 4 * k;
+			uint32_t want = (uint32_t)pa ^ 0x5a5a5a5au;
+			if (write) {
+				buf[k] = want;
+			} else if (buf[k] != want) {
+				if (shown++ < 5)
+					printf("venus: memtest mismatch at %#llx: %#010x, want %#010x\n", (unsigned long long)pa,
+					       buf[k], want);
+				bad++;
+			}
+		}
+		if (write && pm_wr(a + o, buf, n))
+			return 1;
+	}
+	if (write)
+		printf("venus: memtest wrote %#llx+%#llx (addr ^ 0x5a5a5a5a): next memtest ... check\n",
+		       (unsigned long long)a, (unsigned long long)len);
+	else
+		printf("venus: memtest %#llx+%#llx: %llu of %llu words changed -> %s\n", (unsigned long long)a,
+		       (unsigned long long)len, (unsigned long long)bad, (unsigned long long)(len / 4), bad ? "IN USE" : "ok");
+	return bad ? 1 : 0;
+}
+
 static int shutdown_cmd(void)
 {
 	struct vstate v;
@@ -1384,7 +1550,7 @@ static int shutdown_cmd(void)
 
 int main(int argc, char **argv)
 {
-	const char *fw = NULL, *cmd = NULL, *arg = NULL;
+	const char *fw = NULL, *cmd = NULL, *arg = NULL, *arg2 = NULL, *arg3 = NULL;
 	int no_shutdown = 0, keep = 0;
 	uint64_t phys = 0;
 	uint32_t debug = 0x18;	/* HFI_DEBUG_MSG_ERROR | FATAL (guess: msm_vidc_debug.c's default is not in our source copy) */
@@ -1394,6 +1560,8 @@ int main(int argc, char **argv)
 			verbose = 1;
 		else if (!strcmp(argv[i], "--cvp"))
 			cvp = 1;
+		else if (!strcmp(argv[i], "--force"))
+			force = 1;
 		else if (!strcmp(argv[i], "--no-shutdown"))
 			no_shutdown = 1;
 		else if (!strcmp(argv[i], "--keep"))
@@ -1408,6 +1576,10 @@ int main(int argc, char **argv)
 			cmd = argv[i];
 		else if (!arg)
 			arg = argv[i];
+		else if (!arg2)
+			arg2 = argv[i];
+		else if (!arg3)
+			arg3 = argv[i];
 		else
 			goto usage;
 	}
@@ -1418,6 +1590,12 @@ int main(int argc, char **argv)
 		fw = stat("/vendor/firmware/venus.mdt", &st) == 0 ? "/vendor/firmware" : "/var/local/fw/venus";
 	}
 	pm_init();
+	stale_drop(STATE);
+	stale_drop(AHB_STATE);
+	if (arg2 && strcmp(cmd, "memtest"))
+		goto usage;
+	if (!strcmp(cmd, "memtest") && arg && arg2 && arg3 && (!strcmp(arg3, "write") || !strcmp(arg3, "check")))
+		return memtest(strtoull(arg, NULL, 0), strtoull(arg2, NULL, 0), !strcmp(arg3, "write"));
 	if (!strcmp(cmd, "probe") && !arg)
 		return probe();
 	if (!strcmp(cmd, "power") && arg && !strcmp(arg, "on"))
@@ -1435,7 +1613,8 @@ int main(int argc, char **argv)
 	if (!strcmp(cmd, "shutdown") && !arg)
 		return shutdown_cmd();
 usage:
-	fprintf(stderr, "usage: venusctl [-v] probe | power on|off [--cvp] | pas-check [--fw DIR] [--no-shutdown]\n"
-		"       | boot [--fw DIR] [--keep] | init [--phys ADDR] | ping [--debug MASK] | shutdown\n");
+	fprintf(stderr, "usage: venusctl [-v] probe | power on|off [--cvp] [--force] | pas-check [--fw DIR] [--no-shutdown]\n"
+		"       | boot [--fw DIR] [--keep] | init [--phys ADDR] | ping [--debug MASK] | shutdown\n"
+		"       | memtest ADDR SIZE write|check\n");
 	return 2;
 }
