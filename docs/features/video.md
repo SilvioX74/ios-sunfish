@@ -70,10 +70,16 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VENUSCTL_ROUTE, VENUSCTL_NOUT, VENUSCTL_YSTRIDE/YSCAN.
 
 ## Open
-- Stages 3-5; stage 2 step 7 part 2 (15 min under GPU load); 10 rounds pass (s7b). Stage 2 go 2026-11-03 (v2c). Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
+- Stages 3-5. Stage 2 complete 2026-11-03 (s7b 10/10 idle, s7c 29/29 under UI load). Stage 2 go 2026-11-03 (v2c). Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 08:05 Stage 2 step 7 part 2 (s7c): 29/29 rounds under 15 min of UI load; stage 2 complete
+venusctl dcf8abc, boot venusR (kernel158). research/notes/venus-runs/2026-11-03-s7c-{session,uisoak}.txt. One
+bring-up round (power, PAS boot, init, session init/end, shutdown, power off) every 30 s during `sunfish-uisoak.sh s7c
+900`. 29/29 exit 0; init 7-8 ms; session errors 0 every round. Soak: `s7c: 907 s (done), 117994 submits, G1 0, G2 0,
+G4 0, backboardd restarts 0, max 82.2 C, caps 0, critical 0, failed recoveries 0`. No reset. Stage 2 spec done.
 
 ### 2026-11-03 08:00 Stage 3: why "Not enough output2 buffers" (read-only, firmware disassembly)
 research/notes/venus-stage3-continue-2026-11-03.md. In venus.b02 (A32), h264Dec_Continue (0x8aa1c) calls a check

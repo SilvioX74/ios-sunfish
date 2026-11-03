@@ -23,7 +23,7 @@ Only items Claude can move now. User tasks are listed below and never gate work;
 1. ▶ **Hardware video decode** (Snapdragon 730G video engine, "Venus"), in stages, each a go/no-go (video.md):
    0. Done 2026-11-03: all 4 clips play in software, 250-590 % of one core, max 64 C (video.md s0).
    1. Done 2026-11-02: research, staged spec in video.md (PAS ID 9, HFI gen1, plugin slot ExampleIPB.videodecoder).
-   2. Go 2026-11-03 (v2c): firmware boots, H.264 decoder session opens/closes, clean teardown. Left: step 7 (repeat + soak).
+   2. Done 2026-11-03: firmware boots, H.264 session opens/closes; 10/10 rounds idle, 29/29 under 15 min UI load (s7c).
    3. ▶ First frame: `venusctl decode` (implementer writing it) decodes a raw H.264 file to YUV, checked against ffmpeg.
    4. VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
