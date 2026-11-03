@@ -1,5 +1,5 @@
 # Video playback and hardware decode
-**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus engine decodes H.264 bit-exact from a phone tool (stage 3 go, 720p). **Updated:** 2026-11-03.
+**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus engine decodes H.264 bit-exact from a phone tool, 1080p at 217 fps without the copy-out (stage 3 go, 4a0). **Updated:** 2026-11-03.
 
 ## Facts
 - The iPhone X decodes video in hardware (AppleAVD); the port has no AVD, so iOS falls back to software decoders.
@@ -88,6 +88,22 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 08:20 Stage 4a0 (v4a0): kernel159 (0277 WC window); 1080p bit-exact; Venus decodes 1080p at 217 fps
+Kernel159 = kernel158 + xnu 0277 (sweetpmemwc default 1), boot v4a0 07:44 (4456 mV), per-boot log
+../logs/boots/20261103-074436.log (starts at 25 s, so 0277's "/dev/pmem ready ... Venus window" line from init is not in
+it). venusctl 555f5a3 + NOCOPY switch. Outputs research/notes/venus-runs/2026-11-03-v4a0*.
+- Memtest of the whole window 0xa5500000+0xa000000 (160 MB): 0 of 41943040 words changed.
+- 1080p x264 High, 10 frames, VENUSCTL_BUF_MB=160: 10/10, EOS in 0.49 s; yuvcmp all 10 frames luma exact
+  2073600/2073600, PSNR inf, frame 0 crc 2a544a75 = ffmpeg's.
+- 1080p 300 frames to /dev/null (buffers 0xa5500000-0xadf2b000, 141 MB): 300/300 in 12.75 s; `copy-out 300 frames:
+  mean 25.17 ms, max 38.17 ms (3133440 bytes each); frame 0 -> 299: 12.70 s = 23.5 fps` (~124 MB/s: ~9x the device
+  path's 14 MB/s, far from camd's ~900 MB/s with 0233).
+- Same with VENUSCTL_NOCOPY=1 (no copy, no CRC, no write): 300/300, EOS in 1.41 s, frame 0 -> 299 in 1.38 s =
+  **216.7 fps**. The engine is ~2x the CPU decoder's 112 fps (vtdecode) at no CPU decode cost; the copy is the limit.
+- Next: fast frame copy (why 124 not ~900 MB/s: 64 KB pread chunks? mapping per call? try a user mmap of the WC
+  window or a cached mapping + invalidate), or skip the copy (stage 5 zero-copy). At 25 ms/frame, 1080p30 would cost
+  ~75 % of a core in copies, against the < 15 % target.
 
 ### 2026-11-03 08:20 Stage 3 GO (v3e): Venus decodes H.264 bit-exact, 320x240 and 1280x720
 venusctl dba0c44 (sha256 2432c900...), boot venusR (kernel158). Outputs research/notes/venus-runs/2026-11-03-v3e-
