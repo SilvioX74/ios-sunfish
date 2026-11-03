@@ -56,10 +56,13 @@ int smmu_identity(const char *name, uint32_t sid, uint32_t mask)
 			return ((s2cr >> 16) & 3) == 0 && !(rd32(cbp) & 1) ? 0 : -1;
 		}
 	}
-	/* lowest free bank that nothing points at and nobody set up (the top ones may be secure) */
+	/* lowest free bank that nothing points at and nobody set up (the top ones may be secure). A bank we released
+	 * keeps CBAR 0001f000 (the hypervisor ignores the write back to 0: venus s7, 2026-11-03), so an unreferenced,
+	 * non-translating bank with exactly our CBAR counts as free too; otherwise every run leaks 4 of the 61 banks */
 	for (uint32_t c = 0; c < ncb && c < 256; c++) {
 		uint64_t cbp = s + (uint64_t)npage * psize + (uint64_t)c * psize;
-		if (!(used[c / 64] & (1ull << (c % 64))) && !(rd32(cbp) & 1) && rd32(s + psize + 4 * c) == 0) {
+		if (!(used[c / 64] & (1ull << (c % 64))) && !(rd32(cbp) & 1) &&
+		    (rd32(s + psize + 4 * c) == 0 || rd32(s + psize + 4 * c) == CB_CBAR)) {
 			cb = (int)c;
 			break;
 		}
