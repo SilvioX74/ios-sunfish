@@ -330,3 +330,6 @@ at 322.453 s came 70 s after the last venusd session opened and 8 s after it clo
 not tied to a Venus start. The two earlier fsr-40000002 hangs 1-2 s after a session open may be coincidence; keep logging
 offsets.
 
+### 2026-11-03 15:35 Correction
+Today's entry headings after ~12:00 EST run up to ~6.5 h ahead of the real clock (session clock error); the order and the quoted log stamps are right.
+

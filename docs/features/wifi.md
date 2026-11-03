@@ -19,6 +19,11 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 15:35 Correction: today's Log heading times run ahead of the clock
+Claude's session clock drifted: the `### 2026-11-03 HH:MM` headings written today after about 12:00 EST carry times up
+to ~6.5 h ahead of the real time (e.g. "21:40" was ~15:15 EST). The order of the entries is right; the real times are
+the wall/boot stamps quoted inside them and the per-boot logs (../logs/boots/). From here on headings use `date`.
+
 ### 2026-11-03 20:40 bat: batched pmem calls (356c09a) don't help; batch=3 breaks the join
 wland 7b08bed6 (old 933ec47e kept as /var/local/bin/wland.pre-batch). Cloudflare via Wi-Fi, HT20, kernel160:
 | boot | batch | MB/s | wland CPU | pmem/msdu | msdus/pass |

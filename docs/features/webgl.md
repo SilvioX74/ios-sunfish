@@ -22,6 +22,11 @@ hangs but only 7.4 fps (GPU-bound); HexGL parked (its loader stalls on iOS Safar
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 15:35 Correction: today's Log heading times run ahead of the clock
+Claude's session clock drifted: the `### 2026-11-03 HH:MM` headings written today after about 12:00 EST carry times up
+to ~6.5 h ahead of the real time (e.g. "21:40" was ~15:15 EST). The order of the entries is right; the real times are
+the wall/boot stamps quoted inside them and the per-boot logs (../logs/boots/). From here on headings use `date`.
+
 ### 2026-11-03 16:30 games_fps A/B: MSAA off +20 %, GMEM nothing: the lit shader itself is the cost
 research/notes/webgl-shader-2026-11-03.md: the 57 ms draw is the whole level (1 mesh, 5262 indices, MeshStandardMaterial,
 VSM shadows, ACES) into a 4x MSAA 1125x1905 target (pixel ratio 3), sysmem because Turnip's autotune picks sysmem for

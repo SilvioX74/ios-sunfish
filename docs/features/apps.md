@@ -48,6 +48,11 @@ from the backup with plistlib.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 15:35 Correction: today's Log heading times run ahead of the clock
+Claude's session clock drifted: the `### 2026-11-03 HH:MM` headings written today after about 12:00 EST carry times up
+to ~6.5 h ahead of the real time (e.g. "21:40" was ~15:15 EST). The order of the entries is right; the real times are
+the wall/boot stamps quoted inside them and the per-boot logs (../logs/boots/). From here on headings use `date`.
+
 ### 2026-11-03 18:30 B44/B53 resurvey after today's bridge fixes (bundle 691c87d)
 Flame-shots work/shots/b44-*.png, b50-*, b53-*: Tips banner clean (was black blocks); Mail, Voice Memos clean; Safari tab
 overview thumbnails still black (4 of 5); Maps map area black (B50), Work icon plain; Photos last thumbnail plain blue;

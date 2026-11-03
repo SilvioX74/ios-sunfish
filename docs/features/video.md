@@ -89,6 +89,11 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 15:35 Correction: today's Log heading times run ahead of the clock
+Claude's session clock drifted: the `### 2026-11-03 HH:MM` headings written today after about 12:00 EST carry times up
+to ~6.5 h ahead of the real time (e.g. "21:40" was ~15:15 EST). The order of the entries is right; the real times are
+the wall/boot stamps quoted inside them and the per-boot logs (../logs/boots/). From here on headings use `date`.
+
 ### 2026-11-03 21:40 vfix1: client leak fixed: 12/12 clips decoded on Venus, 0 "too many clients"
 venusd 09b15004 + vtvenus 05645f58 (f87343c leak, 41a2e8e BCM retry, f461433 timestamps), boot vfix1
 (20261103-151222.log, kernel160; no RPMh timeout this boot). Start line `[25.200] [wall 2026-11-03 15:12:10] venusd: start,
