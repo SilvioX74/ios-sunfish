@@ -22,6 +22,14 @@ renders white; WebGL 2 untested. **Updated:** 2026-11-03.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 11:30 HexGL white = its loader waits forever on .ogg audio (page bug, not ours)
+Error hook in work/webgl-games/hexgl/index.html (beacons to :8078). WebGL context healthy (ticks `lost=false err=0`
+every 5 s after one initial 1282), 2 programs compiled (SWEET SRC ok, 835 ms each on a cold MTLCompilerService), ~23
+WebKit submits then none. Beacons: `rej EncodingError: Decoding failed` x4 and `error Audio decode failed!` x4: Safari 16
+can't decode HexGL's .ogg files, and bkcore/Audio.js never calls its loader callback on a decode failure, so the race
+never starts (the canvas shows its undrawn white). Local copy changed (gitignored): .ogg -> .m4a (ffmpeg AAC 96k),
+Cityscape.js points at .m4a, Audio.js calls back on failure. Retest running.
+
 ### 2026-11-03 09:40 wgaa2: resolve textures passed through (4da54f0): antialiased WebGL works; HexGL white
 Bundle 4da54f0 (LC_UUID 4C4C44B9): the frontend used to drop every resolveTexture (NmbPassAttachment had no resolve
 fields), so all colour MSAA resolves did nothing and depth resolves were refused. ANGLE always sends a resolve texture
