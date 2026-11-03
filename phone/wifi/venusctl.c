@@ -1676,6 +1676,7 @@ static struct {
 	int split, w, h, cx, cy, cw, ch;	/* coded size; visible crop */
 	uint32_t ystride, yscan;
 	int frames, want, eos, err, hold, stopping, reconfig, rw, rh, rcount;
+	double cp_sum, cp_max, t_first, t_last;	/* v4a0: frame copy-out time (pread of the window), first/last FBD */
 	unsigned acts;		/* msgq packets handled: progress for the timeout */
 	FILE *out;
 	uint8_t *fbuf;
@@ -1830,6 +1831,8 @@ static struct vbuf *find_buf(struct vbuf *v, int n, uint32_t pa)
 	return NULL;
 }
 
+static double now_s(void);
+
 /* one decoded frame: crop to the visible rect, append NV12 (Y w*h, then CbCr w*h/2) to OUT, CRC32 of that luma */
 static void frame_out(uint32_t pa, const uint32_t *f)
 {
@@ -1839,7 +1842,16 @@ static void frame_out(uint32_t pa, const uint32_t *f)
 		dc.fbuf = malloc(need);
 		dc.fbuf_len = dc.fbuf ? need : 0;
 	}
-	if (!dc.fbuf || big_io(pa, dc.fbuf, need, 0)) {
+	double c0 = now_s();
+	int rd = !dc.fbuf || big_io(pa, dc.fbuf, need, 0);
+	double c1 = now_s();
+	dc.cp_sum += c1 - c0;
+	if (c1 - c0 > dc.cp_max)
+		dc.cp_max = c1 - c0;
+	if (!dc.frames)
+		dc.t_first = c0;
+	dc.t_last = c1;
+	if (rd) {
 		printf("venus: frame %d: can't read %#x\n", dc.frames, pa);
 		return;
 	}
@@ -2429,6 +2441,11 @@ static int decode(uint32_t debug, const char *in, const char *outp, int want, ui
 	}
 	printf("venus: decoded %d of %d frames%s%s in %.2f s\n", dc.frames, want, dc.eos ? ", EOS" : "",
 	       dc.err ? ", session error" : "", now_s() - t0);
+	if (dc.frames > 0)	/* v4a0: copy cost vs the decode itself (first to last frame) */
+		printf("venus: copy-out %d frames: mean %.2f ms, max %.2f ms (%zu bytes each); frame 0 -> %d: %.2f s = %.1f fps\n",
+		       dc.frames, 1e3 * dc.cp_sum / dc.frames, 1e3 * dc.cp_max,
+		       (size_t)dc.ystride * dc.yscan * 3 / 2, dc.frames - 1, dc.t_last - dc.t_first,
+		       dc.frames > 1 && dc.t_last > dc.t_first ? (dc.frames - 1) / (dc.t_last - dc.t_first) : 0.0);
 	rc = dc.frames >= want || (dc.eos && dc.frames > 0) ? 0 : 1;
 close:
 	if (dec_close(started))
