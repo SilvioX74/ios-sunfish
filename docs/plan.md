@@ -29,7 +29,7 @@ Only items Claude can move now. User tasks are listed below and never gate work;
       latency, 4d conversion cost, 4e HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
 2. **3D**: done 2026-11-03: three.js games_fps (WebGL 2) 15 min, 0 hangs (7.4 fps). Left: speed.
-3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
+3. **App Store access**: the app runs but shows "Cannot Connect to App Store" (B56, 2026-11-03): diagnosing.
 4. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
 5. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
 

@@ -89,6 +89,13 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 15:20 Still frames: the hardware-decoded picture is right for H.264 and HEVC
+index.html `?pause=10` (pauses the video, beacons k=paused) → flame-shot 3 s later, no tearing:
+work/shots/still-h264.png and still-hevc.png show the full testsrc2 frame (bars, rainbow diagonal, grey +, checker
+patch, timecode 00:00:10.1 / frame 300-302). Mid-row RGB: (254,0,0) (0,255,1) (255,255,0) (0,0,255) (255,0,254)
+(1,255,255) — exact bar colours (HEVC's sixth sample hit the diagonal). venusd sessions `H.264` and `HEVC` opened.
+Picture confirmed; the earlier white/blank webcam frames were exposure and the flame-shot tearing was capture time.
+
 ### 2026-11-03 15:00 hevc1 (stage 4e): HEVC 8-bit Main decodes on Venus, bit-exact; Safari plays HEVC via Venus
 venusctl/venusd/venusc/vtvenus 438e168 + 391985b (wall-clock waits; HEVC), installed then a reboot (no mediaserverd
 restart). Boot hevc1 (kernel160, 4455 mV). venusd `hevc 1`, warm-up first frame 430 ms (890 ms in all).
