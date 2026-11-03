@@ -8,6 +8,9 @@ the clear colour shows. **Updated:** 2026-11-03.
   (SWEET_FEATURESET=0: all NO, contexts lost again).
 - ANGLE compiles every WebGL program from Metal shader *source* (newLibraryWithSource); the metal2vulkan runtime
   only takes AIR (library.rs:99-107). Most likely why draws fail (research/notes/webgl/).
+- Shader source (B55 route A, frontend): `newLibraryWithSource:` runs Apple's compile (MTLCompilerService), serializes the
+  `_MTLLibrary` to a temp metallib and loads it as the bridge's NBLibrary; boot log `SWEET SRC: <proc> #N lib .. -> NBLibrary ok|fail (..)`,
+  refusals of other devices' functions log `SWEET MTL: foreign function <class> refused`. SWEET_SRCLIB=0: off (Apple's library, as before).
 - Test page: work/stage0/webgl.html (gitignored; beacons to the PC http.server on 192.168.7.1:8077, see video.md s0).
 
 ## Open

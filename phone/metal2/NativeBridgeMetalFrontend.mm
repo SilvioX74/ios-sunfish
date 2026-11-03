@@ -1877,9 +1877,20 @@ static void journalRenderPipeline(MTLRenderPipelineDescriptor *d,uint64_t began,
  for(char &c:line)if(c=='\n')c=' ';
  journal(line);
 }
+// B55 (WebGL): a pipeline asked with another device's function was refused without a word (wg2, 2026-11-03: ANGLE's functions came from
+// Apple's _MTLLibrary, every WebGL draw was GL_INVALID_OPERATION and the boot log said nothing; research/notes/webgl/context-lost-2026-11-03.md).
+// One line per (path, function class), at most 16 kinds per process.
+static void noteForeignFunction(const char *path,id function) {
+ static std::mutex lock;static std::vector<std::string> seen;
+ const char *cls=function?object_getClassName(function):"nil";const std::string kind=std::string(path)+" "+cls;
+ {std::lock_guard<std::mutex> hold(lock);if(seen.size()>=16||std::find(seen.begin(),seen.end(),kind)!=seen.end())return;seen.push_back(kind);}
+ NBLOG(@"SWEET MTL: foreign function %s refused (%s, %s)",cls,path,getprogname());
+}
 // A render pipeline descriptor in the bridge's form; false, with the error, for a function of another device.
 static bool renderDescriptor(MTLRenderPipelineDescriptor *d,NmbRenderPipelineDescriptor *p,NSError **error) {
  if(![(id)d.vertexFunction isKindOfClass:[NBFunction class]] || (d.fragmentFunction && ![(id)d.fragmentFunction isKindOfClass:[NBFunction class]])) {
+  if(![(id)d.vertexFunction isKindOfClass:[NBFunction class]])noteForeignFunction("render vertex",(id)d.vertexFunction);
+  else noteForeignFunction("render fragment",(id)d.fragmentFunction);
   if(error)*error=nbError(@"foreign function");return false;
  }
  p->vertex=[(NBFunction *)d.vertexFunction handle];p->fragment=d.fragmentFunction?[(NBFunction *)d.fragmentFunction handle]:nullptr;
@@ -1955,7 +1966,7 @@ static bool renderDescriptor(MTLRenderPipelineDescriptor *d,NmbRenderPipelineDes
 
 // Creation and archive population must use the same complete supported descriptor.
 static bool computeDescriptor(MTLComputePipelineDescriptor *d,NmbComputePipelineDescriptor *p,NSError **error) {
- if(!d || ![(id)d.computeFunction isKindOfClass:[NBFunction class]]){if(error)*error=nbError(@"foreign compute function");return false;}
+ if(!d || ![(id)d.computeFunction isKindOfClass:[NBFunction class]]){noteForeignFunction("compute descriptor",d?(id)d.computeFunction:nil);if(error)*error=nbError(@"foreign compute function");return false;}
  // Metal may materialize empty stage/linked descriptors on access. Preserve the
  // default meaning while refusing state this frontend cannot yet represent.
  MTLStageInputOutputDescriptor *stage=d.stageInputDescriptor;
@@ -2013,6 +2024,24 @@ static bool pipelineArchives(NSArray *list,std::vector<NmbBinaryArchive *> &arch
 
 @interface NBDeviceMethods : NSObject
 @end
+// B55 (WebGL, route A of research/notes/webgl/context-lost-2026-11-03.md): ANGLE compiles every WebGL program from MSL source with
+// newLibraryWithSource:options:error: (its only call site, mtl::CreateShaderLibrary 0x1ce411f34). The base class's version compiles it
+// through MTLCompilerService (it needs no Apple GPU; the backend runs only at pipeline creation) and gives an Apple _MTLLibrary, whose
+// functions renderDescriptor refuses. So: Apple's compile (its IMP, saved at open), its metallib (-[_MTLLibrary serializeToURL:error:],
+// Metal.s 255528: writes _libraryData's metallib, else "MTLLibrary is not formatted as a MetalLib file."; no in-memory form is proven:
+// -libraryDataContents is an unread vtable slot) to a temp file, then the same load as newLibraryWithData:. Any step failing returns
+// Apple's library, as before. SWEET_SRCLIB=0: neither selector is installed, the base class's runs exactly as before.
+static bool srcLibOn() {static const bool on=[]{const char *p=getenv("SWEET_SRCLIB");return !(p&&*p&&atoi(p)==0);}();return on;}
+typedef void *(*NBSourceLibraryIMP)(id,SEL,NSString *,MTLCompileOptions *,NSError *__autoreleasing *);   // +1 result, taken with __bridge_transfer
+static NBSourceLibraryIMP gAppleSourceLibrary;
+@protocol NBSerializableLibrary
+- (BOOL)serializeToURL:(NSURL *)url error:(NSError **)error;
+@end
+// One "SWEET SRC:" line per call: the first 32 of a process, then every 64th.
+static void srcLibLog(uint64_t n,NSString *line,bool failed) {
+ if(failed)noteProblem(line);
+ if(n<=32||n%64==0)sm2_logs([NSString stringWithFormat:@"SWEET SRC: %s #%llu %@",getprogname(),(unsigned long long)n,line].UTF8String);
+}
 // Bytes of one texel of the uncompressed formats Core Animation and RenderBox use (4 for the rest).
 static uint64_t sweetTexelBytes(MTLPixelFormat f) {
  switch((NSUInteger)f) {
@@ -2332,13 +2361,44 @@ static void planarFill(NBTexture *t) {
  return [(id<MTLDevice>)self newLibraryWithURL:url error:error];
 }
 - (id<MTLLibrary>)newDefaultLibrary {return [(id<MTLDevice>)self newDefaultLibraryWithBundle:[NSBundle mainBundle] error:nil];}
+// B55: Apple's source compile, re-loaded as this device's library (srcLibOn above). Installed only when on and the base class has it.
+- (id<MTLLibrary>)newLibraryWithSource:(NSString *)source options:(MTLCompileOptions *)options error:(NSError **)error {
+ static std::atomic<uint64_t> calls;const uint64_t n=++calls,began=nowUs();
+ const unsigned long sourceBytes=(unsigned long)[source lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+ NSError *appleError=nil;id apple=(__bridge_transfer id)gAppleSourceLibrary(self,_cmd,source,options,&appleError);
+ const uint64_t compiled=nowUs();unsigned long metallibBytes=0;
+ auto keepApple=[&](NSString *why)->id<MTLLibrary> {
+  srcLibLog(n,[NSString stringWithFormat:@"lib %lu bytes source -> %lu bytes metallib -> NBLibrary fail (%@; %s returned) compile %llu us",sourceBytes,metallibBytes,why,
+   apple?object_getClassName(apple):"nil",(unsigned long long)(compiled-began)],true);
+  if(error)*error=appleError;return (id<MTLLibrary>)apple;
+ };
+ if(!apple)return keepApple([NSString stringWithFormat:@"compile: %@",appleError.localizedDescription?:@"no library, no error"]);
+ if(![apple respondsToSelector:@selector(serializeToURL:error:)])return keepApple(@"no serializeToURL:error:");
+ NSURL *url=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"sweet-src-%d-%llu.metallib",getpid(),(unsigned long long)n]]];
+ NSError *why=nil;
+ if(![(id<NBSerializableLibrary>)apple serializeToURL:url error:&why])return keepApple([NSString stringWithFormat:@"serialize: %@",why.localizedDescription?:@"?"]);
+ NSData *bytes=[NSData dataWithContentsOfURL:url options:0 error:&why];unlink(url.fileSystemRepresentation);
+ if(!bytes.length)return keepApple([NSString stringWithFormat:@"read back: %@",why.localizedDescription?:@"empty"]);
+ metallibBytes=(unsigned long)bytes.length;
+ const uint64_t libraryBegan=nowUs();
+ NmbLibrary *handle=nmb_library_new(gDevice,bytes.bytes,bytes.length,false);gTimeLibrary.add(libraryBegan);
+ if(!handle)return keepApple([NSString stringWithFormat:@"load: %@",lastError()]);
+ NBLibrary *library=[NBLibrary new];library.handle=handle;
+ srcLibLog(n,[NSString stringWithFormat:@"lib %lu bytes source -> %lu bytes metallib -> NBLibrary ok (%u functions) compile %llu us load %llu us",sourceBytes,metallibBytes,
+  nmb_library_function_count(handle),(unsigned long long)(compiled-began),(unsigned long long)(nowUs()-libraryBegan)],false);
+ if(error)*error=nil;return (id<MTLLibrary>)library;
+}
+// Answered synchronously, as this file's other async forms (ANGLE uses only the form above).
+- (void)newLibraryWithSource:(NSString *)source options:(MTLCompileOptions *)options completionHandler:(void (^)(id<MTLLibrary>,NSError *))handler {
+ NSError *error=nil;id<MTLLibrary> library=[(id<MTLDevice>)self newLibraryWithSource:source options:options error:&error];handler(library,error);
+}
 - (id<MTLComputePipelineState>)newComputePipelineStateWithFunction:(id<MTLFunction>)function error:(NSError **)error {
  return [(id<MTLDevice>)self newComputePipelineStateWithFunction:function options:MTLPipelineOptionNone reflection:nil error:error];
 }
 - (id<MTLComputePipelineState>)newComputePipelineStateWithFunction:(id<MTLFunction>)function options:(MTLPipelineOption)options
                                                          reflection:(MTLAutoreleasedComputePipelineReflection *)reflection error:(NSError **)error {
  if(reflection)*reflection=nil;
- if(![(id)function isKindOfClass:[NBFunction class]]){if(error)*error=nbError(@"foreign function");return nil;}
+ if(![(id)function isKindOfClass:[NBFunction class]]){noteForeignFunction("compute function",(id)function);if(error)*error=nbError(@"foreign function");return nil;}
  const NmbPipelineOptions creation={(uint64_t)options,nullptr,0};
  const uint64_t pipelineBegan=nowUs();
  NmbComputePipeline *handle=nmb_compute_pipeline_new_with_options(gDevice,[(NBFunction *)function handle],&creation);gTimePipeline.add(pipelineBegan);
@@ -2532,7 +2592,14 @@ extern "C" id native_bridge_metal_open(const char *loader,const char *cache,uint
  if(!base)base=[NSObject class];
  Class cls=objc_allocateClassPair(base,"NativeBridgeMetalDevice",0);if(!cls)return nil;
  unsigned count=0;Method *methods=class_copyMethodList([NBDeviceMethods class],&count);
- for(unsigned i=0;i<count;i++)class_addMethod(cls,method_getName(methods[i]),method_getImplementation(methods[i]),method_getTypeEncoding(methods[i]));
+ // B55: the source-library pair only when SWEET_SRCLIB is on and the base class compiles source (srcLibOn); else the base class's runs.
+ {Method apple=class_getInstanceMethod(base,@selector(newLibraryWithSource:options:error:));
+  gAppleSourceLibrary=srcLibOn()&&apple?(NBSourceLibraryIMP)method_getImplementation(apple):nullptr;}
+ for(unsigned i=0;i<count;i++) {
+  const SEL sel=method_getName(methods[i]);
+  if(!gAppleSourceLibrary&&(sel==@selector(newLibraryWithSource:options:error:)||sel==@selector(newLibraryWithSource:options:completionHandler:)))continue;
+  class_addMethod(cls,sel,method_getImplementation(methods[i]),method_getTypeEncoding(methods[i]));
+ }
  free(methods);installAnswers(cls);class_addProtocol(cls,@protocol(MTLDevice));
  // The original registration (_MTLAddDevice) asserts that a plugin's device conforms to Metal's private device protocol as well; the target's own
  // drivers get it from their IOGPU base class. Conformance only answers conformsToProtocol:, the methods are still looked up one by one.
