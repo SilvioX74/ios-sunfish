@@ -31,6 +31,8 @@
  * clamped, between the other commands. Parked and VAF off on Q, stdin's end, signals and die().
  * Hazard rule: no CAMCC register but GDSC/GDSC_CLK before the GDSC is on, no CCI register before the GDSC and
  * the cci_0 branch are on (enforced in mrd/mwr). Needs SE9 clocks + pins (boot with sweetse9=2).
+ * cam41: an SLG51000 that NACKs its first read (not enabled by the kernel yet) is waited for up to 15 s, and the
+ * reset's 10 ms is a monotonic minimum. Off: CAMID_NO_SLG_WAIT=1.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -129,6 +131,8 @@ static int mpoll(uint64_t pa, uint32_t mask, int set, unsigned ms)
 }
 
 /* --- SLG51000 --- */
+static int srd_quiet;	/* cam41: the SLG wait's repeats */
+
 static int srd(unsigned reg, uint8_t *v)
 {
 	uint8_t a[2] = { reg >> 8, reg };
@@ -137,7 +141,7 @@ static int srd(unsigned reg, uint8_t *v)
 	if (!e)
 		e = gi2c_msg(SLG, NULL, 0, v, 1, 0);
 	gi2c_unlock();
-	if (e)
+	if (e && !srd_quiet)
 		printf("camid: slg rd %#06x err %d\n", reg, e);
 	return e;
 }
@@ -1033,9 +1037,26 @@ int main(int argc, char **argv)
 	signal(SIGINT, on_sig);
 	signal(SIGTERM, on_sig);
 
-	/* A. SLG51000 */
+	/* A. SLG51000. cam41: a NACK (ENXIO) on the first byte = the kernel has not enabled it yet (campmic_late, ~30 s
+	 * after boot): retried every 100 ms for up to 15 s (CLOCK_MONOTONIC). Other errors fail at once. Off:
+	 * CAMID_NO_SLG_WAIT=1 (camd's environment reaches camid). */
 	uint8_t id[3], m, misc, trim;
-	for (int i = 0; i < 3; i++)
+	const char *nw = getenv("CAMID_NO_SLG_WAIT");
+	int slg_wait = !(nw && !strcmp(nw, "1")), slg_e, slg_said = 0;
+	double slg_t0 = mono_ms();
+	while ((slg_e = srd(0x1105, &id[0])) == ENXIO && slg_wait && mono_ms() - slg_t0 < 15000) {
+		if (!slg_said++)
+			printf("camid: slg not enabled yet, waiting\n");
+		fflush(stdout);
+		srd_quiet = 1;
+		usleep(100000);
+	}
+	srd_quiet = 0;
+	if (slg_e)
+		die("slg read");
+	if (slg_said)
+		printf("camid: slg up after %u ms\n", (unsigned)(mono_ms() - slg_t0 + 0.5));
+	for (int i = 1; i < 3; i++)
 		if (srd(0x1105 + i, &id[i]))
 			die("slg read");
 	printf("camid: slg PATN_ID %02x %02x %02x\n", id[0], id[1], id[2]);
@@ -1165,7 +1186,10 @@ int main(int argc, char **argv)
 	/* E. reset */
 	delay_ms(1);
 	mwr(RESET_IO, 2);
+	double rst_t0 = mono_ms();
 	delay_ms(10);
+	while (slg_wait && mono_ms() - rst_t0 < 10)	/* cam41: at least 10 ms (monotonic) */
+		usleep(1000);
 	printf("camid: reset high\n");
 
 	/* F. CCI0 */

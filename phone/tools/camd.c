@@ -23,6 +23,8 @@
  * camd's environment.
  * af2: rear sessions run camid --lens-init; FOCUS a (0..1023) -> camid "F 400 + a*325/1023"; the frames' focus says a
  * once the lens is up (front or a failed init: NO_FOCUS). Off: CAMD_NO_AF=1 in camd's environment.
+ * cam41: a failed camclk/camid bring-up step (before camd's own precheck/clocks/phy) is no FAULT: the next START
+ * retries (camid also waits up to 15 s for the camera PMIC). Off: CAM41_OFF=1 in camd's environment.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -448,10 +450,19 @@ static void *session(void *arg)
 	powered = 1;
 	for (unsigned i = 0; i < sizeof steps / sizeof steps[0] && !rc && !want_stop && !term; i++)
 		rc = run(front ? steps_f[i] : steps[i]) != 0;
+	/* cam41: a camclk/camid step failing (e.g. the camera PMIC not enabled yet at boot) left nothing of camd's own
+	 * on (camid powers its rails down on an abort, power_down() below runs camclk off): the next START retries. Off:
+	 * CAM41_OFF=1 in camd's environment (latched as before). */
+	const char *c41 = getenv("CAM41_OFF");
+	int step_retry = rc && !(c41 && !strcmp(c41, "1")) && !cam36_off();
+	if (rc)
+		printf("%scamd: bring-up step failed: %s\n", since(t), step_retry ? "retry on the next START" : "latched");
 	if (!rc && !want_stop && !term)
 		rc = precheck() || clocks_on() || phy_on(-1);
 	printf("%scamd: clocks + phy %s\n", since(t), rc ? "failed" : "on");
-	latch = rc;
+	latch = rc && !step_retry;
+	if (step_retry)
+		why = "camclk/camid step failed";
 	if (!rc && !want_stop && !term) {
 		stop = 0;
 		stream_hooks = &hooks;
