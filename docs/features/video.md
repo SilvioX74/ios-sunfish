@@ -33,7 +33,11 @@ Stages, each a go/no-go: 0 Safari baseline on the software path; 1 read-only res
 - Output: reference frames are UBWC; linear NV12 comes only on OUTPUT2 with the multi-stream property.
 - iOS: _VTLoadVideoDecoders dlopens a fixed list; AVD.videodecoder refuses without AppleAVD. Names on the list missing
   from our cache (e.g. /System/Library/VideoDecoders/ExampleIPB.videodecoder, _ExampleIPBDecoderRegister) would load:
-  our plugin goes there and registers 'avc1'/'hvc1' as hardware. Code signing of a new dylib: unchecked.
+  our plugin goes there and registers 'avc1'/'hvc1' as hardware. The path is the flat Mach-O itself (dlopen RTLD_LOCAL,
+  then the register symbol is called). Library validation is in effect off (sweet_amfi.c has no LV hook), root FS is
+  writable, so an ldid-signed dylib should load (not yet tested). Safari <video> decodes in mediaserverd (AVPlayer remote;
+  medium-high confidence), WebCodecs/WebRTC maybe in the GPU process: the plugin must be cheap to load anywhere.
+- Firmware source: restore/factory/vendor.img /firmware/venus.{mdt,b00-b04} (1.1 MB), extracted locally to research/fw/venus.
 
 ## Stage 2 spec: `venusctl` (userland, /dev/pmem like adspboot; failed tries need no reboot)
 1. `probe` (read-only): GCC video clocks, TBU vote/status, SMR scan; videocc only with AHB on.
@@ -55,6 +59,11 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-02 22:00 Plugin loading checked (read-only)
+- Free slot /System/Library/VideoDecoders/ExampleIPB.videodecoder, symbol _ExampleIPBDecoderRegister (0x194fe0c5f/c95).
+  No library validation hook in sweet_amfi.c; SunfishAudio.driver already runs inside mediaserverd. Phone test next: a
+  stub that only logs which processes load it.
 
 ### 2026-11-02 21:50 venusctl written (stage 2 steps 1-3), not run yet
 - phone/wifi/venusctl.c (3851cad): `probe` (read-only), `power on/off [--cvp]`, `pas-check [--fw DIR] [--no-shutdown]`.
