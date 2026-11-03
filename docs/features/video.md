@@ -1,5 +1,5 @@
 # Video playback and hardware decode
-**State:** ⬜ not tested; hardware decode not started. **Updated:** 2026-11-02.
+**State:** 🟡 software H.264 decodes (1080p 112 fps in vtdecode); hardware decode: research done, decoder slot loads, engine not powered yet. **Updated:** 2026-11-02.
 
 ## Facts
 - The iPhone X decodes video in hardware (AppleAVD); the port has no AVD, so iOS falls back to software decoders.
@@ -59,6 +59,22 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-02 22:45 vd1: decoder slot loads in mediaserverd; venusctl probe; software baseline (night, read-only)
+- Run vd1, kernel158 everyday boot of soak n8 (20261102-213020), markers `=== vd1 *`.
+- vtstub at /System/Library/VideoDecoders/ExampleIPB.videodecoder: loaded by vtdecode (pids 1478, 1498, 1500) and by
+  mediaserverd right after `psx -k mediaserverd` (pid 1485). No crash lines; stub removed, mediaserverd back (pid 1512).
+  One of four vtdecode runs left no log line (unexplained). Stage 4 entry point works.
+- vtdecode, synthetic testsrc2 H.264 10 s / 300 frames, software path (`using hardware decoder: no`,
+  VTIsHardwareDecodeSupported 0, hardware-required session -12906): 720p 212.6 fps (1.41 s), 1080p 112.2 fps (2.67 s);
+  same with the stub (218.8, 213.8, 110.5). Every run prints `IOServiceMatchingfailed for: AppleM2ScalerCSCDriver`.
+  CPU share not measured (fps is decode-as-fast-as-possible; a CPU % at 30 fps playback is stage 0's job).
+- venusctl probe: gcc_video_ahb 0x10b004 = 0x80000003 (enable and HW_CTL set, CLK_OFF 1: hardware-gated, so the
+  probe's AHB-on check skipped videocc); gcc_video_axi 0x80000000, gcc_video_xo 0x10b028 0x80000000 (off); TBU vote
+  0x17d044 = 0x80000001; SMMU 79 SMRs, 15 valid, none for SIDs 0x1080-0x10e0 (boot step must add exact SMRs); cmd-db
+  has MM3 and MM2 (aux 00197b70 00040020).
+- For `power on`: with HW_CTL set the AHB branch reads off until something uses it; clear HW_CTL (bit1) before polling
+  CLK_OFF, or the gate check never passes (guess, check against downstream gcc-sdmmagpie).
 
 ### 2026-11-02 22:00 Plugin loading checked (read-only)
 - Free slot /System/Library/VideoDecoders/ExampleIPB.videodecoder, symbol _ExampleIPBDecoderRegister (0x194fe0c5f/c95).

@@ -48,8 +48,8 @@ Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfen
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. Tonight (night rules): n8 done (399 k submits, 0 hangs, gpu-bugs.md). Read-only phone steps: firmware to
-   /var/local/fw/venus, vtstub load test (tools/sunfish-vtstub.sh), `venusctl probe`.
+1. Done tonight: n8 clean; vd1: stub decoder loads in mediaserverd, firmware on phone, probe read (video.md). Fix in
+   venusctl before power on: gcc_video_ahb has HW_CTL set (reads off), clear bit1 first (implementer, no phone).
 2. Morning (night flag off): stage 0 Safari video baseline + the WebGL test (about 30 min together; video muted
    before 5 am).
 3. Then stage 2 on the phone: venusctl probe, power, pas-check (read-only first; risky steps in daylight).
