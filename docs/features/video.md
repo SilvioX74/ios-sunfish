@@ -89,6 +89,26 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 10:10 Stage 4c (vd4c): Safari plays H.264 through Venus; display drops ~2/3 of frames on both paths
+Plugin + venusd (by hand) as in vt4b; bundle 4da54f0 with SWEET_YCBCR_GPU on (G7 GPU path); kernel160 maps512 boot;
+per-boot log ../logs/boots/20261103-082158.log. CPU as s0 (psx, 30 s window, % of one core).
+| clip | path | frames | dropped | CPU total | mediaserverd | venusd | WebContent | backboardd | max temp |
+|---|---|---|---|---|---|---|---|---|---|
+| H.264 720p (vd1) | hw | void: GPU wedge at 2084 s, 1 s after the venusd session opened; backboardd killed, SpringBoard restarted | | | | | | | |
+| H.264 720p (vd2) | hw | 1800 | 769 | 274 % | 42 | 24 | 128 | 19 | 68.7 C |
+| H.264 1080p (vd3) | hw | 1800 | 1207 | 297 % | 60 | 38 | 124 | 16 | 71.6 C |
+| HEVC 1080p (vd4) | sw | 1800 | 1140 | 209 % | 101 | 0 | 52 | 14 | 68.7 C |
+| H.264 1080p venus-off (vd5) | sw | 1800 | 1228 | 503 % | 240 | 0 | 122 | 22 | 76.7 C |
+- Observed: picture and colours right on the hardware path (webcam vd2/vd3 at 40 s: bars + moving line). venusd decoded
+  every frame on time (1799/1799, 29.9 and 29.8 fps, error 0); vtvenus 1800 in / 1800 out / 0 dropped; the decoder is
+  created in mediaserverd (pid 944). mediaserverd 60 % vs 240 % for the same 1080p clip in software; total 297 vs 503 %.
+- The dropped counts are high on both paths (software 1228 vs 100 in s0): the loss is after decode (display path), not
+  the decoder. Since s0: G7 GPU YCbCr path on, bundles 4ca1221..4da54f0, kernel160, sweetgpucap=512, hotter phone, old
+  Safari tabs. Beacons arrived late in a burst, so the per-clip drop pairing may be off. A/B next (SWEET_YCBCR_GPU 1/0).
+- Each clip opens two venusd sessions (a 1-frame probe, then the real one): ~0.6 s start-up each (optimize later).
+- GPU wedge in vd1: `SWEET GPU: wedge (hang): ... after 5 ms rptr 840 -> 840`, `killed backboardd pid 732 after
+  recovery` (G4-like; 1 in 5 runs; link to Venus unknown).
+
 ### 2026-11-03 09:55 Stage 4b (vt4b): VideoToolbox decodes H.264 on Venus through our plugin, in mediaserverd
 vtvenus.dylib + vtdecode 3405244 (sha256 446abe4b..., 77401726...), plugin in /System/Library/VideoDecoders/
 ExampleIPB.videodecoder (tools/sunfish-install-vtvenus.sh), venusd a2752c1 started by hand; kernel160 (per-boot log
