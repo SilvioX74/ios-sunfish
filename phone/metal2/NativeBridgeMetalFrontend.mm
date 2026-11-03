@@ -2407,15 +2407,37 @@ static const vImage_YpCbCrToARGB *vimageInfo(bool video) {
  static const vImage_YpCbCrToARGB *const videoInfo=make({16,128,235,240,255,0,255,0}),*const fullInfo=make({0,128,255,255,255,0,255,0});
  return video?videoInfo:fullInfo;
 }
-static bool planarVimage(const uint8_t *p0,size_t r0,const uint8_t *p1,size_t r1,size_t w1,size_t h1,NSUInteger w,NSUInteger h,bool video,NSUInteger format,uint8_t *out) {
+static bool planarVimage(const uint8_t *p0,size_t r0,const uint8_t *p1,size_t r1,size_t w1,size_t h1,NSUInteger w,NSUInteger h,bool video,NSUInteger format,uint8_t *out,size_t pitch) {
  if(!vimageOn() || (w&1) || (h&1) || w1*2<w || h1*2<h)return false;
  const vImage_YpCbCrToARGB *info=vimageInfo(video);if(!info)return false;
- const vImage_Buffer y={(void *)p0,h,w,r0},c={(void *)p1,h/2,w/2,r1},d={out,h,w,w*4};
+ const vImage_Buffer y={(void *)p0,h,w,r0},c={(void *)p1,h/2,w/2,r1},d={out,h,w,pitch};
  static const uint8_t rgba[4]={1,2,3,0}; // ARGB -> RGBA
  if(vImageConvert_420Yp8_CbCr8ToARGB8888(&y,&c,&d,info,rgba,255,kvImageNoFlags)!=kvImageNoError)return false;
  static std::atomic<unsigned> logged{0};const unsigned bit=video?1:2;
  if(!(logged.fetch_or(bit)&bit))NBLOG(@"SWEET YCBCR: cpu conversion via vImage (fmt %lu, matrix BT.601, range %s)",(unsigned long)format,video?"video":"full");
  return true;
+}
+// 0130 (G7, video CPU): the converted copy is a texture over a Shared buffer of its own (linear rows of the device's pitch; the runtime
+// aliases a linear image over them for a texture that only reads, linear_plan.rs ReadsPastRows), and the conversion writes straight into
+// the buffer's bytes at that pitch: no 8 MB temporary per 1080p frame, no replaceRegion (its packed copy and Turnip's host image copy).
+// Same ordering as replaceRegion's host copy (host_copy.rs: waits for no GPU work, "a race is the program's"): the CPU writes at the bind
+// of a new command buffer, and the commit makes them visible to it. Off: SWEET_PLANAR_DIRECT=0 (an image filled by replaceRegion, as 0112).
+static bool planarDirectOn() {static const bool on=[]{const char *p=getenv("SWEET_PLANAR_DIRECT");return !p||strcmp(p,"0");}();return on;}
+static void planarDirectNote(NSString *how) {
+ static std::atomic<bool> logged{false};
+ if(!logged.exchange(true))NBLOG(@"SWEET YCBCR: cpu conversion %@",how);
+}
+// 0130: a texture of `own` over a new Shared buffer, rows at the device's linear pitch and 4 spare rows (Turnip's linear image reaches up to
+// 3 rows past the last, linear_plan.rs Holds::ReadsPastRows); nil (and why) where it cannot be made.
+static NBTexture *planarDirectTexture(id<MTLDevice> device,MTLTextureDescriptor *own,NSString **why) {
+ const uint64_t row=nmb_device_linear_bytes_per_row(gDevice,own.pixelFormat,own.width);
+ if(!row){*why=[NSString stringWithFormat:@"no linear pitch: %@",lastError()];return nil;}
+ const size_t page=(size_t)getpagesize(),length=((size_t)row*(own.height+4)+page-1)&~(page-1);
+ NBBuffer *buffer=(NBBuffer *)[device newBufferWithLength:length options:MTLResourceStorageModeShared];
+ if(!buffer || !buffer.contents){*why=@"no buffer";return nil;}
+ NBTexture *texture=textureOnBuffer(buffer,own,0,row,false);
+ if(!texture){*why=@"no texture over the buffer";return nil;}
+ return texture;
 }
 static void planarFill(NBTexture *t) {
  IOSurfaceRef s=t.planarSurface;if(!s)return;
@@ -2426,15 +2448,17 @@ static void planarFill(NBTexture *t) {
  const size_t r0=IOSurfaceGetBytesPerRowOfPlane(s,0),r1=IOSurfaceGetBytesPerRowOfPlane(s,1);
  const size_t w0=IOSurfaceGetWidthOfPlane(s,0),h0=IOSurfaceGetHeightOfPlane(s,0),w1=IOSurfaceGetWidthOfPlane(s,1),h1=IOSurfaceGetHeightOfPlane(s,1);
  if(!p0 || !p1 || w>w0 || h>h0 || !w1 || !h1){IOSurfaceUnlock(s,kIOSurfaceLockReadOnly,nullptr);t.planarSeed=seed;return;}
- std::unique_ptr<uint8_t[]> out(new uint8_t[w*h*4]); // 0129: not zeroed, every byte is written
+ // 0130: over its own buffer, the texels themselves (t.rowBytes apart); else a temporary for replaceRegion.
+ std::unique_ptr<uint8_t[]> out;uint8_t *dst=t.buffer?(uint8_t *)t.buffer.contents+t.offset:nullptr;size_t pitch=t.rowBytes;
+ if(!dst){out.reset(new uint8_t[w*h*4]);dst=out.get();pitch=w*4;} // 0129: not zeroed, every byte is written
  const NSUInteger format=t.pixelFormat;
  if(format==MTLPixelFormatRGBA8Unorm || format==MTLPixelFormatRGBA8Unorm_sRGB){
   // BT.601, 16.16 fixed point. 420v: Y 16-235, C 16-240; 420f: full range.
   const bool video=IOSurfaceGetPixelFormat(s)=='420v';
-  if(!planarVimage(p0,r0,p1,r1,w1,h1,w,h,video,format,out.get())){
+  if(!planarVimage(p0,r0,p1,r1,w1,h1,w,h,video,format,dst,pitch)){
   const int ky=video?76309:65536,krv=video?104597:91881,kgu=video?25675:22554,kgv=video?53279:46802,kbu=video?132201:116130,yo=video?16:0;
   for(NSUInteger y=0;y<h;y++){
-   const uint8_t *ly=p0+y*r0,*lc=p1+std::min((size_t)(y/2),h1-1)*r1;uint8_t *o=&out[y*w*4];
+   const uint8_t *ly=p0+y*r0,*lc=p1+std::min((size_t)(y/2),h1-1)*r1;uint8_t *o=dst+y*pitch;
    for(NSUInteger x=0;x<w;x++,o+=4){
     const size_t cx=std::min((size_t)(x/2),w1-1)*2;
     const int Y=(ly[x]-yo)*ky,U=lc[cx]-128,V=lc[cx+1]-128;
@@ -2445,7 +2469,7 @@ static void planarFill(NBTexture *t) {
  } else {
   // XR10: 10-bit channels in a 32-bit word (B low), 384 = 0.0, 894 = 1.0; alpha 8-bit from plane 1.
   for(NSUInteger y=0;y<h;y++){
-   const uint32_t *l=(const uint32_t *)(p0+y*r0);const uint8_t *la=p1+std::min((size_t)y,h1-1)*r1;uint8_t *o=&out[y*w*4];
+   const uint32_t *l=(const uint32_t *)(p0+y*r0);const uint8_t *la=p1+std::min((size_t)y,h1-1)*r1;uint8_t *o=dst+y*pitch;
    for(NSUInteger x=0;x<w;x++,o+=4){
     const uint32_t v=l[x];
     o[0]=clamp8(((int)(v&1023)-384)*255/510);o[1]=clamp8(((int)((v>>10)&1023)-384)*255/510);o[2]=clamp8(((int)((v>>20)&1023)-384)*255/510);
@@ -2454,7 +2478,7 @@ static void planarFill(NBTexture *t) {
   }
  }
  IOSurfaceUnlock(s,kIOSurfaceLockReadOnly,nullptr);
- [t replaceRegion:MTLRegionMake2D(0,0,w,h) mipmapLevel:0 withBytes:out.get() bytesPerRow:w*4];
+ if(out)[t replaceRegion:MTLRegionMake2D(0,0,w,h) mipmapLevel:0 withBytes:out.get() bytesPerRow:w*4];
  t.planarSeed=seed;
 }
 // 0127 (G7): textures over planar IOSurfaces on the runtime's own GPU path (ycbcr.rs, texture/surface_two_planes.rs). The whole surface is
@@ -2523,7 +2547,13 @@ static NBTexture *planeTexture(MTLTextureDescriptor *d,IOSurfaceRef surface,NSUI
   MTLTextureDescriptor *own=[d copy];
   own.pixelFormat=yuv?(f==501?MTLPixelFormatRGBA8Unorm_sRGB:MTLPixelFormatRGBA8Unorm):(f==551?MTLPixelFormatBGRA8Unorm_sRGB:MTLPixelFormatBGRA8Unorm);
   own.storageMode=MTLStorageModeShared;own.usage=MTLTextureUsageShaderRead;own.mipmapLevelCount=1;
-  NBTexture *texture=(NBTexture *)[(id<MTLDevice>)self newTextureWithDescriptor:own];
+  NBTexture *texture=nil;
+  if(planarDirectOn()){   // 0130
+   NSString *why=nil;texture=planarDirectTexture((id<MTLDevice>)self,own,&why);
+   planarDirectNote(texture?[NSString stringWithFormat:@"direct into the texture (rowBytes %lu)",(unsigned long)texture.rowBytes]:
+    [NSString stringWithFormat:@"through replaceRegion (direct: %@)",why]);
+  } else planarDirectNote(@"through replaceRegion (SWEET_PLANAR_DIRECT=0)");
+  if(!texture)texture=(NBTexture *)[(id<MTLDevice>)self newTextureWithDescriptor:own];
   if(!texture){ycbcrNote(surface,d,plane,2,gpuWhy);return nil;}
   texture.planarSurface=(IOSurfaceRef)CFRetain(surface);texture.planarSeed=IOSurfaceGetSeed(surface)-1;planarFill(texture);
   ycbcrNote(surface,d,plane,1,gpuWhy);return (id<MTLTexture>)texture;
