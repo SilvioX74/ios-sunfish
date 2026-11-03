@@ -13,6 +13,14 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 18:14 xnu 0280 SPMI write retry + keys poll under sp_lock (kernel162, B59): 3 clean boots spA/spB/spC
+Arbiter status bits DONE 1 / FAILURE 2 / DENIED 4 / DROPPED 8 (as Linux spmi-pmic-arb): B59's 0x9 = DONE+DROPPED, a bus
+collision, safe to resend. sweet_spmi_write retries FAILURE/DROPPED up to 3x, 150 us apart, same register/value; the keys
+poll (its own MMIO reads every 20 ms, no lock before) now takes sp_lock; sweetspmiretry=0 turns both off. Boots: 0 retry,
+0 gave up, 0 KEYS errors, 0 CAMPMIC failed, 0xc000 after-dump "44 80 ... 46 80" each boot; camera 30.2-30.6 fps; Wi-Fi;
+HLS 1080p plays. The retry path itself wasn't exercised (no collision happened); the init line isn't in the per-boot log
+(starts ~24 s). Kernel162 is now everyday; tonight's soak n9 runs on it.
+
 ### 2026-10-30 16:15 the user: about -9% in ~10 min of use, unplugged (kernel127)
 - Screen on, AirPods playing music, Camera/Compass used; observation from the status bar, not measured. Suspects (not measured): screen brightness, Bluetooth A2DP, the DeviceMotion fusion streaming accel/gyro/mag >= 100 Hz while the screen is on (O13 gating not installed yet), adspboot logging every QRTR DATA packet to /var/local/sensors.log (19.7 MB in ~40 min; quiet by default since this commit, ADSP_QRTR_LOG=1 restores it), camd. Battery % itself is not validated (U3).
 

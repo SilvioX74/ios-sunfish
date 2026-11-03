@@ -45,9 +45,9 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 stops phone work, or doubles in rate after a change (then turn that change off first).
 
 ## Phone
-Claude's. On kernel161 (= kernel158 + xnu 0277 WC/0278 cached Venus window + 0279 RPMh fix) since 15:32 (tag rpmh1),
+Claude's. On kernel162 (= kernel158 + xnu 0277/0278 Venus window, 0279 RPMh fix, 0280 SPMI retry) since 18:12 (tag spC),
 bundle d3316ff (0129 hardware MSAA resolve + 0130 center varyings), venusd 06f9715 (Interactive, 512 MB limit) + vtvenus 331e616 (avc1/hvc1, credit path), wland 206585d
-(HT20, Interactive, bounds checks), camd + hapticd Interactive, cam41. Everyday boot: `tools/sunfish-test.sh -k 161 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6
+(HT20, Interactive, bounds checks), camd + hapticd Interactive, cam41. Everyday boot: `tools/sunfish-test.sh -k 162 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6
 sweetampreset=1 sweetpmemwc=2 sweetgpucap=512`. /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20,
 SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1.
 
@@ -59,7 +59,7 @@ SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh); backboardd en
 3. Done: launchd Interactive A/B: camd (open 5.7 -> 0.7 s, 30 fps) and hapticd kept; sensors, btbridge cost CPU, reverted.
 4. GPU: suspect link Venus session start → GPU fault (2 of ~5 hangs today); B53 render-server snapshots intermittently
    empty; B50 Maps; WebGL speed (Optimize).
-5. Tonight: night soak n9 on kernel161 with the everyday args above (`tools/sunfish-nightsoak.sh n9`; it sets
+5. Tonight: night soak n9 on kernel162 with the everyday args above (now the script's default) (`tools/sunfish-nightsoak.sh n9`; it sets
    work/night at 21:30): watch for RPMh timeouts (0279's new lines) and GPU hangs.
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
