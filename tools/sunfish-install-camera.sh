@@ -14,8 +14,8 @@
 # doubling to 5 s). WARNING (redfin r15a/r15b): camera ADT + rebuilt MobileGestalt cache without a capture device
 # left SpringBoard at the boot logo: install SunfishAudio.driver (tools/sunfish-install-audio.sh) first.
 #   tools/sunfish-install-camera.sh [--undo | --check | --job]
-#   --job: only rewrite the launchd job (reboot to apply). CAMD_INTERACTIVE=1 adds ProcessType/POSIXSpawnType
-#     Interactive (backlog O-launchd: timer coalescing stretched venusd's and wland's 1 ms naps ~10x); default off
+#   --job: only rewrite the launchd job (reboot to apply). ProcessType/POSIXSpawnType Interactive by default
+#     (cam41a-c: START 6-12 s -> 0.4 s, 14 -> 30 fps; timer coalescing stretched 1 ms naps ~10x); CAMD_INTERACTIVE=0 off
 #   --undo: job removed, camdev.on removed, plists and MobileGestalt cache restored (tools left); boot without CAMERA=1
 #   --check: prints the state of all of the above, no writes
 set -euo pipefail
@@ -49,7 +49,7 @@ else:
         'ProgramArguments': ['/var/local/bin/camd', '--log', '/var/local/camd.log'],
         'RunAtLoad': True, 'KeepAlive': {'SuccessfulExit': False}, 'ThrottleInterval': 10, 'UserName': 'root',
     }
-    if os.environ.get('CAMD_INTERACTIVE') == '1':
+    if os.environ.get('CAMD_INTERACTIVE', '1') != '0':
         jobs[sys.argv[3]].update({'ProcessType': 'Interactive', 'POSIXSpawnType': 'Interactive'})
 plistlib.dump(p, open(sys.argv[2], 'wb'), fmt=plistlib.FMT_BINARY)
 print('launchd jobs:', len(jobs))
@@ -104,7 +104,7 @@ fi
 if [ "$MODE" = --job ]; then
 	job install
 	F put $U/camera/launchd.plist.new $LP 644 >/dev/null
-	echo "org.iosonpixel.camd rewritten (CAMD_INTERACTIVE=${CAMD_INTERACTIVE:-0}); reboot to apply"
+	echo "org.iosonpixel.camd rewritten (CAMD_INTERACTIVE=${CAMD_INTERACTIVE:-1}); reboot to apply"
 	exit 0
 fi
 [ -z "$MODE" ] || { echo "usage: $0 [--undo | --check | --job]"; exit 1; }

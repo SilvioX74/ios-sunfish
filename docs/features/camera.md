@@ -1,5 +1,5 @@
 # Camera
-**State:** 🟡 CAMERA.APP WORKS: live colour preview on BOTH cameras and saved HEIC photos (2026-10-30 cam35-cam37); auto-exposure (cam40), autofocus on open and on tap, sharp photos (af5-af7) work; Live Photo off by default (it filled mediaserverd until a kill); open: slow camera switch, front colour cast, preview CPU. iOS lists the Back Camera (16 formats) and the Front Camera (18 formats) (camera ADT + camd + SunfishAudio.driver camera code, cam26/cam32); Camera.app not tried yet (U12). The FRONT camera streams too (IMX355 1640x924 @30, cam31). The rear camera streams continuously into RAM at 60.1 fps (2-slot ring, `tools/sunfish-cam-rx.sh --stream N`) and takes complete raw photos (`--capture`), no resets; exposure/gain settable (camid); no phone-side ISP / iOS camera yet; **Updated:** 2026-10-31.
+**State:** 🟡 CAMERA.APP WORKS: live colour preview on BOTH cameras and saved HEIC photos (2026-10-30 cam35-cam37); auto-exposure (cam40), autofocus on open and on tap, sharp photos (af5-af7) work; Live Photo off by default (it filled mediaserverd until a kill); open: slow camera switch, front colour cast, preview CPU. iOS lists the Back Camera (16 formats) and the Front Camera (18 formats) (camera ADT + camd + SunfishAudio.driver camera code, cam26/cam32); Camera.app not tried yet (U12). The FRONT camera streams too (IMX355 1640x924 @30, cam31). The rear camera streams continuously into RAM at 60.1 fps (2-slot ring, `tools/sunfish-cam-rx.sh --stream N`) and takes complete raw photos (`--capture`), no resets; exposure/gain settable (camid); no phone-side ISP / iOS camera yet; **Updated:** 2026-11-03.
 
 ## Facts
 Hardware (recon/live.dts):
@@ -34,6 +34,17 @@ Path: raw Bayer through RDI (CSIPHY -> CSID -> IFE RDI write master -> memory), 
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 16:34 cam41 + Interactive camd: camera start 6-12 s -> 0.4 s, 14 -> 30 fps (cam41a-c, kernel161)
+camid/camd 1439e68 (PMIC wait CAMID_NO_SLG_WAIT=1 off; step retry CAM41_OFF=1 off), wland 206585d, camd job Interactive
+(now the install default, CAMD_INTERACTIVE=0 off). 3 boots, everyday args, no hangs:
+| boot | boot-time START | slg wait | first camclient START / fps (120 frames) | faults |
+| cam41a | 3242 ms | 1593 ms | 0.40 s / 30.10 | none |
+| cam41b | 3757 + 3182 ms | 2626 ms | 0.40 s / 30.16 | none |
+| cam41c | 3970 + 3085 ms | 2700 ms | 0.40 s / 30.10 | none |
+camclient 0 gaps, 0 torn, 0 dropped each run (was 13-14 fps with gaps). Camera.app START 708 ms (was 5692), live preview
+(green tint as before). cam41a: two -5 STARTs early in camdev.log (832 ms, 4 ms), possibly from the earlier boot (logs are
+cumulative); no "bring-up step failed", no FAULT. Backups on the phone: camid.pre-cam41, camd.pre-cam41.
 
 ### 2026-11-03 16:23 Cause of camiB's first-start fault: the camera PMIC was still off (correction of the guess below)
 Boot log 20261103-161317: camd exec 22.885 s; a boot-time START (no camclient running) ran camclk 27.712 s, camid 28.303 s;

@@ -54,6 +54,7 @@ output in /var/local.
 ## Log
 (Newest first. One line per on-device change: date, what, where, how, what reproduces it.)
 
+- 2026-11-03 camd launchd job ProcessType/POSIXSpawnType Interactive (tools/sunfish-install-camera.sh --job, now the default); camid+camd 1439e68 (cam41) in /var/local/bin (backups .pre-cam41); wland 206585d via tools/sunfish-install-wifi.sh --wland; adspboot hapticd aprtest apr_tone i2cprobe drvbuzz from d7f8d59 via flame-files put (backups .pre-d7f8d59).
 - 2026-11-03 Metal bundle a71ea11 (LC_UUID 4C4C44C8: 691c87d + bridge 0129 hardware MSAA resolve) installed from work/metal2-next-hwres.
 - 2026-11-03 venusd/venusctl/venusc and vtvenus f461433 (leak fix, BCM retry, timestamps) via tools/sunfish-install-venusd.sh --tools + tools/sunfish-install-vtvenus.sh install, then a reboot.
 - 2026-11-03 /var/local/bin/wland 356c09a (batch 1 default; old 933ec47e at /var/local/bin/wland.pre-batch) via `tools/sunfish-install-wifi.sh --wland`; /var/local/wland.conf absent.

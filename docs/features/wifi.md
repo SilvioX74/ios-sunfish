@@ -19,6 +19,12 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:34 Bounds-checked wland installed (206585d) after a QMP fix
+d7f8d59's QMP check read the mailbox size from 0x3c (bnd1: "qmp: bad mailbox 0x128 size 0", no scan, old wland restored
+for bnd2). Linux qcom_aoss.c has it at 0x34 (QMP_DESC_MCORE_MBOX_SIZE). 206585d on cam41a/b/c: associated HT20, WPA2 keys
+at ~22.8 s, icon shown, 0 "bad mailbox" (IP not checked: no tool). adspboot, hapticd, aprtest, apr_tone, i2cprobe, camid,
+drvbuzz from d7f8d59 passed on bnd1 (sensors log growing, drvbuzz buzz done, apr_tone/aprtest ran). Backups NAME.pre-d7f8d59.
+
 ### 2026-11-03 16:13 Bounds checks on shared-memory data (d7f8d59; hakios driver review W1-W4/F1-F8)
 Review (research/notes/upstream-2026-11-01.md item 12) checked line by line against ours: SMEM part_get padding
 underflow (size ~4 GB -> glink rx_len), uint32 walk-step wrap (endless loop), unchecked partition headers/TOC, GLINK
