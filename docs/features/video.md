@@ -89,6 +89,19 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 18:10 Direct planar conversion (691c87d): backboardd 92 -> 45 % during 1080p video
+Bundle work/metal2-next-direct (LC_UUID 4C4C44C2): vImage converts each frame straight into a buffer-backed texture
+(rows at the linear pitch, read via a linear alias) instead of temp -> replaceRegion -> Turnip host-image-copy retile
+(3 x 8.3 MB copies per 1080p frame before). Safari HLS H.264 1080p via Venus, % of one core over 30 s:
+| run | backboardd | mediaserverd | venusd | WebKit (3 pids) | total | dropped |
+|---|---|---|---|---|---|---|
+| direct on (default) | 45.5 | 57.5 | 33.6 | 95.7 | 280.8 | 0 |
+| SWEET_PLANAR_DIRECT=0 | 92.4 | 68.9 | 37.1 | 122.6 | 376.3 | 0 |
+`cpu conversion direct into the texture (rowBytes 6144)`; B29 for the 1920x1080 RGBA8 buffer textures: 18x `-> wider
+alias`, never `-> shadow`. Still frame at 10 s right, no tearing. UI: Settings, CC, Photos fine; Camera UI fine but the
+viewfinder looked black on the webcam (lens on the desk: unknown; `420f plane 0 360x479 -> cpu`, `direct (rowBytes
+1440)`) — check with a lit scene.
+
 ### 2026-11-03 17:45 The network process cost is general (B57), not video
 work/stage0/dl.html (random 46 MB file from the PC, no video): paced 0.75 MB/s -> Networking 32 % of a core; flat out only
 1.20 MB/s -> 39 % (kernel_task 5-6 %; the USB link is the xnu ECM/NCM driver, no userland bridge). ~3-4 % per 100 KB/s,
