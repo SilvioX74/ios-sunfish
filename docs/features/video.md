@@ -75,6 +75,15 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 07:30 Stage 3 v3c: buffers queued before CONTINUE, same firmware error
+venusctl f0c3847 (sha256 686bf9f5...), same boot. Output research/notes/venus-runs/2026-11-03-v3c-decode-320.txt.
+- Order now: FLUSH output (36 back, filled 0), FRAME_SIZE OUTPUT2 320x240, requirements (output/output2 min 5,
+  min_host 18, actual 18), dpb size min 0x26000, counts 18/18, 36 FTBs (no FBD comes back: the firmware holds them),
+  then CONTINUE (`cmd 0x21100d`). Firmware: `h264Dec_Continue(224): Not enough output2 buffers!` again; 0 of 10 frames
+  in 3.19 s; clean close and power off, no reboot.
+- So neither the count (v3b) nor the order (v3c) is it. Next: the decoder's switches (v3d: primary mode, DPB
+  SET_BUFFERS, 24 outputs) on the phone, and an investigator comparing our FTB/reconfig packets with msm_vidc.
+
 ### 2026-11-03 07:20 Stage 3 v3b: 18 output2 buffers set, still 0 frames: CONTINUE went before the buffers
 venusctl 1ace6d0 (sha256 0da2f602...), same boot. Output research/notes/venus-runs/2026-11-03-v3b-decode-320.txt.
 - Before the event: output/output2 min 18, min_host 0; 18 DPBs + 18 output2 set; START_DONE 0. After SEQUENCE_CHANGED
