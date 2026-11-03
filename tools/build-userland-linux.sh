@@ -72,6 +72,8 @@ bash phone/tools/build.sh || echo "WARNING: some phone tools failed"
 sh phone/camera/build.sh && cp phone/camera/out/camisp phone/camera/out/camera_avtest "$OUT/" || echo "WARNING: camisp failed"
 # SunfishAudio.driver (CoreAudio HAL plug-in, a bundle): stays in phone/audio/out, tools/sunfish-install-audio.sh takes it from there
 sh phone/audio/build.sh >/dev/null || echo "WARNING: SunfishAudio.driver failed"
+# vtstub (video stage 4 probe): ExampleIPB.videodecoder for VideoToolbox, tools/sunfish-vtstub.sh installs it
+sh phone/video/build.sh >/dev/null && cp phone/video/out/vtstub.dylib "$OUT/" || echo "WARNING: vtstub failed"
 # every Mach-O phone/tools/build.sh made (a fixed list missed new tools such as fcopy)
 for f in phone/tools/out/*; do
 	[ -f "$f" ] && [ -x "$f" ] && file -b "$f" | grep -q Mach-O && cp "$f" "$OUT/"
