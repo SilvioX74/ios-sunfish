@@ -1,0 +1,55 @@
+/*
+ * venusd protocol (video 4a, docs/features/video.md "Stage 4 spec"): /var/run/venusd.sock, AF_UNIX stream, mode 0666.
+ * Every message, both ways: struct venusd_msg (96 bytes, little endian, magic VENUSD_MAGIC, version 1), then len
+ * payload bytes. One decode session at a time, one per connection:
+ *   OPEN    c->d  codec (VD_CODEC_H264), width/height = a size hint (0 = from the stream's SPS, else 1920x1088).
+ *                 Powers Venus up and boots the firmware if it is down (~1.1 s), then replies OPEN, status 0.
+ *                 -EBUSY: another connection has the session; -ENODEV: /var/local/venus-off exists; -EIO: the bring-up
+ *                 failed (venusd log); -EINVAL: bad codec. The HFI session itself starts with the first FRAME.
+ *   FRAME   c->d  one access unit, Annex B (start codes), pts (echoed in DECODED), seq (the client's frame number,
+ *                 echoed in ERROR). No reply when queued. venusd reads the next message only once an input buffer is
+ *                 free, so a sender blocks: that is the backpressure.
+ *   DECODED d->c  one picture in display order: pts, flags (HFI FBD flags), width/height/crop_x/crop_y = the visible
+ *                 rect, stride/scanlines = the layout of the payload: the Venus OUTPUT2 buffer as read, NV12 with Y
+ *                 stride * scanlines bytes, then interleaved CbCr stride * scanlines / 2 (len = stride * scanlines *
+ *                 3 / 2). filled, pic_type, fbd_* = the FBD's words (as venusctl prints them); seq = picture number;
+ *                 copy_us = venusd's copy-out of that buffer.
+ *   EOS     c->d  no more input: an empty EOS buffer, then the remaining pictures, then EOS_DONE (frames = pictures
+ *                 sent in the session; status -ETIMEDOUT after 3 s without firmware progress). FRAME after EOS: -EINVAL.
+ *   CLOSE   c->d  ends the session (flush, stop, release, session end): reply CLOSE, frames. A disconnect does the same.
+ *   ERROR   d->c  status: < 0 a negative errno, > 0 the firmware's session error code (HFI EVENT_NOTIFY
+ *                 SESSION_ERROR data1, e.g. 0x1004), seq = the FRAME it is about (or 0). After any ERROR but -E2BIG
+ *                 (access unit longer than the input buffers: dropped) the session is closed: only CLOSE is left.
+ * Venus stays up for VENUSD_IDLE_S (60) seconds after the last session, then venusd shuts it down (PAS shutdown,
+ * SMRs, then power off; a failed shutdown leaves it powered: venusd refuses OPEN with -EIO from then on).
+ */
+#ifndef VENUS_PROTO_H
+#define VENUS_PROTO_H
+#include <stdint.h>
+
+#ifndef VENUSD_SOCK	/* -D for a host test build */
+#define VENUSD_SOCK	"/var/run/venusd.sock"
+#endif
+#define VENUSD_MAGIC	0x444e4556u	/* "VEND" */
+#define VENUSD_VERSION	1
+#define VENUSD_MAX_AU	(8u << 20)	/* longest FRAME payload venusd reads */
+
+enum { VD_OPEN = 1, VD_FRAME, VD_DECODED, VD_EOS, VD_EOS_DONE, VD_CLOSE, VD_ERROR };
+#define VD_CODEC_H264	1
+
+struct venusd_msg {
+	uint32_t magic;
+	uint16_t type, version;
+	uint32_t len;		/* payload bytes after this header */
+	int32_t status;		/* replies: 0 ok, < 0 -errno, > 0 firmware session error */
+	uint64_t pts;
+	uint32_t flags;
+	uint32_t codec, width, height;
+	uint32_t stride, scanlines, crop_x, crop_y;
+	uint32_t filled, pic_type, seq, frames;
+	uint32_t fbd_w, fbd_h, fbd_x, fbd_y;
+	uint32_t copy_us, rsvd;
+};
+_Static_assert(sizeof(struct venusd_msg) == 96, "venusd_msg");
+
+#endif

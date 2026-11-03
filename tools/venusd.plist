@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- org.iosonpixel.venusd (video 4a, docs/features/video.md): the launchd job tools/sunfish-install-venusd.sh puts into
+     the launchd.plist cache under /System/Library/LaunchDaemons/org.iosonpixel.venusd.plist, as camd's. Root, at boot,
+     restarted after a crash or kill (venusd exits 1 on SIGTERM, as camd), not after a clean exit 0 (already running).
+     Off: /var/local/venus-off (venusd refuses OPEN, Venus stays off). Not installed in 4a: venusd runs by hand. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.iosonpixel.venusd</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/var/local/bin/venusd</string>
+		<string>--log</string>
+		<string>/var/local/venusd.log</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>UserName</key>
+	<string>root</string>
+</dict>
+</plist>
