@@ -32,6 +32,11 @@
  * session carry "[frame N]" (VENUSD_FW_FRAME=0: not).
  * 4e: OPEN with codec VD_CODEC_HEVC opens an HEVC session (8-bit 4:2:0 Main; another SPS: ERROR -ENOTSUP at the first
  * FRAME); codec 0 or VD_CODEC_H264 is H.264 as before. VENUSD_HEVC=0: HEVC OPENs refused (-EINVAL).
+ * vdleak (the 15-min Safari soak, video.md 2026-11-03: 4 slots held by dead vtvenus instances, then "too many
+ * clients"): up to MAXCL (16, was 4) connections; one is dropped on EOF, a read/write error, POLLHUP/POLLERR/POLLNVAL,
+ * or after VENUSD_IDLE_CLIENT_S (30; 0: never) without a message while it has no session or one with nothing to do
+ * (opened without a FRAME, EOS done, failed: such a held session refused every other OPEN); each connect/drop logs
+ * "client fd N connected|gone (reason), K connected".
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -55,7 +60,7 @@
 #include "venus_proto.h"
 
 #define LOG_MAX		(1 << 20)
-#define MAXCL		4
+#define MAXCL		16	/* vdleak: was 4 */
 #ifndef LOCKF	/* -D for a host test build */
 #define LOCKF		"/var/run/venusd.pid"
 #define OFF_FILE	"/var/local/venus-off"
@@ -65,13 +70,14 @@
 enum { S_NONE, S_OPEN, S_RUN, S_EOS, S_DONE, S_FAILED };	/* the session (owner connection) */
 static const char *const sname[] = { "none", "open", "running", "eos sent", "eos done", "failed" };
 
-static struct client { int fd, gone; } cl[MAXCL];	/* gone: a write failed, dropped by the main loop */
+static struct client { int fd, gone; double t_msg; } cl[MAXCL];	/* gone: a write failed, dropped by the main loop;
+								 * t_msg: connect or last message (vdleak) */
 static int owner = -1, sess = S_NONE, hfi, up, fault, logfd = -1, confd = -1;
 static volatile sig_atomic_t term;
 static const char *fw;
 static uint64_t phys = 0xa5100000ull, buf_mb = 160;
 static uint32_t debug = 0x18, in_min = 1024u << 10;
-static unsigned idle_s = 60, nsess;
+static unsigned idle_s = 60, nsess, idle_cl_s = 30;	/* idle_cl_s: VENUSD_IDLE_CLIENT_S (vdleak) */
 static double idle_since, t_open, t_first, t_last_frame, t_eos, t_prog;
 static uint32_t sent, hint_w, hint_h;
 static unsigned last_acts;
@@ -166,8 +172,11 @@ static int rd_full(int fd, void *b, size_t n)
 			poll(&q, 1, 100);
 			continue;
 		}
-		if (k <= 0)
+		if (k <= 0) {
+			if (!k)
+				errno = 0;	/* vdleak: EOF, the peer closed */
 			return -1;
+		}
 		p += k, n -= (size_t)k;
 	}
 	return 0;
@@ -337,15 +346,31 @@ static void sess_end(const char *how)
 	idle_since = mono();
 }
 
-static void drop_client(int i)
+static int nclients(void)
+{
+	int n = 0;
+	for (int i = 0; i < MAXCL; i++)
+		n += cl[i].fd >= 0;
+	return n;
+}
+
+static void drop_client(int i, const char *why)
 {
 	if (cl[i].fd < 0)
 		return;
+	int fd = cl[i].fd;
 	close(cl[i].fd);
 	cl[i].fd = -1;
 	cl[i].gone = 0;
+	printf("venusd: client fd %d gone (%s), %d connected\n", fd, why, nclients());	/* vdleak */
 	if (i == owner)
 		sess_end("closed (client gone)");
+}
+
+/* vdleak: why a read failed (rd_full: errno 0 = EOF) */
+static const char *rd_why(void)
+{
+	return !errno ? "EOF" : errno == EAGAIN || errno == EWOULDBLOCK ? "read timeout" : strerror(errno);
 }
 
 static void do_open(int i, const struct venusd_msg *m)
@@ -420,19 +445,19 @@ static void command(int i)
 {
 	struct venusd_msg m;
 	if (rd_full(cl[i].fd, &m, sizeof m)) {
-		printf("venusd: client fd %d gone\n", cl[i].fd);
-		drop_client(i);
+		drop_client(i, rd_why());
 		return;
 	}
 	if (m.magic != VENUSD_MAGIC || m.len > VENUSD_MAX_AU) {
 		printf("venusd: client fd %d: bad message (magic %#x, len %u): dropped\n", cl[i].fd, m.magic, m.len);
-		drop_client(i);
+		drop_client(i, "bad message");
 		return;
 	}
 	if (m.len && rd_full(cl[i].fd, au, m.len)) {
-		drop_client(i);
+		drop_client(i, rd_why());
 		return;
 	}
+	cl[i].t_msg = mono();
 	if (m.type == VD_OPEN) {
 		do_open(i, &m);
 		return;
@@ -705,6 +730,8 @@ int main(int argc, char **argv)
 		in_min = (uint32_t)strtoul(getenv("VENUSD_IN_KB"), NULL, 0) << 10;
 	if (getenv("VENUSD_DEBUG"))
 		debug = (uint32_t)strtoul(getenv("VENUSD_DEBUG"), NULL, 0);
+	if (getenv("VENUSD_IDLE_CLIENT_S"))
+		idle_cl_s = (unsigned)atoi(getenv("VENUSD_IDLE_CLIENT_S"));
 	if (getenv("VENUSD_COLD_S"))
 		cold_s = (unsigned)atoi(getenv("VENUSD_COLD_S"));
 	int warm = !getenv("VENUSD_WARMUP") || atoi(getenv("VENUSD_WARMUP"));
@@ -718,9 +745,10 @@ int main(int argc, char **argv)
 	au = malloc(VENUSD_MAX_AU);
 	if (!au)
 		return 1;
-	note("venusd: start, pid %d, idle %u s, queues %#llx, window %llu MB, inputs >= %u KB, quiet %d, cold %u s, warm-up %d,"
-	     " recover %d, hevc %d", getpid(), idle_s, (unsigned long long)phys, (unsigned long long)buf_mb, in_min >> 10,
-	     vc_quiet, cold_s, warm, vc_stop_hook != NULL, hevc_ok);
+	note("venusd: start, pid %d, idle %u s, idle client %u s, max %d clients, queues %#llx, window %llu MB, inputs >= %u KB,"
+	     " quiet %d, cold %u s, warm-up %d, recover %d, hevc %d", getpid(), idle_s, idle_cl_s, MAXCL,
+	     (unsigned long long)phys, (unsigned long long)buf_mb, in_min >> 10, vc_quiet, cold_s, warm, vc_stop_hook != NULL,
+	     hevc_ok);
 	pm_init();
 	stale_drop(STATE);
 	stale_drop(AHB_STATE);
@@ -770,7 +798,7 @@ int main(int argc, char **argv)
 				for (k = 0; fd >= 0 && k < MAXCL && cl[k].fd >= 0; k++)
 					;
 				if (fd >= 0 && k == MAXCL) {
-					printf("venusd: too many clients\n");
+					printf("venusd: too many clients (%d connected): fd %d refused\n", MAXCL, fd);
 					close(fd);
 				} else if (fd >= 0) {
 					struct timeval tv = { 2, 0 };	/* a stuck client can't hold the daemon for long */
@@ -778,18 +806,29 @@ int main(int argc, char **argv)
 					setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
 					setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 					setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sz, sizeof sz);
-					cl[k].fd = fd, cl[k].gone = 0;
-					printf("venusd: client fd %d connected\n", fd);
+					cl[k].fd = fd, cl[k].gone = 0, cl[k].t_msg = mono();
+					printf("venusd: client fd %d connected, %d connected\n", fd, nclients());
 				}
 			}
 			for (int j = 1; j < n; j++)
-				if (p[j].revents & (POLLIN | POLLHUP | POLLERR) && cl[idx[j - 1]].fd >= 0)
+				if (p[j].revents & POLLNVAL && cl[idx[j - 1]].fd >= 0)
+					drop_client(idx[j - 1], "POLLNVAL");	/* vdleak; HUP/ERR: the read in command() */
+				else if (p[j].revents & (POLLIN | POLLHUP | POLLERR) && cl[idx[j - 1]].fd >= 0)
 					command(idx[j - 1]);
 		}
 		sess_poll();
 		for (int i = 0; i < MAXCL; i++)
 			if (cl[i].fd >= 0 && cl[i].gone)
-				drop_client(i);
+				drop_client(i, "write failed");
+		/* vdleak: a connection that says nothing without a session, or with one that has nothing to do (opened, EOS
+		 * done, failed): a vtvenus instance its host never released (a held session refused every other OPEN) */
+		for (int i = 0; i < MAXCL && idle_cl_s; i++)
+			if (cl[i].fd >= 0 && opening != i && (i != owner || sess == S_OPEN || sess == S_DONE || sess == S_FAILED) &&
+			    mono() - cl[i].t_msg > idle_cl_s) {
+				char why[64];
+				snprintf(why, sizeof why, "idle %u s, %s", idle_cl_s, i == owner ? sname[sess] : "no session");
+				drop_client(i, why);
+			}
 		if (up && owner < 0 && mono() - idle_since > idle_s)
 			down("idle");
 		if (!fstat(logfd, &sb) && sb.st_size > LOG_MAX && !ftruncate(logfd, 0))
