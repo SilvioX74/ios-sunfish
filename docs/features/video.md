@@ -99,8 +99,9 @@ Bundle work/metal2-next-direct (LC_UUID 4C4C44C2): vImage converts each frame st
 | SWEET_PLANAR_DIRECT=0 | 92.4 | 68.9 | 37.1 | 122.6 | 376.3 | 0 |
 `cpu conversion direct into the texture (rowBytes 6144)`; B29 for the 1920x1080 RGBA8 buffer textures: 18x `-> wider
 alias`, never `-> shadow`. Still frame at 10 s right, no tearing. UI: Settings, CC, Photos fine; Camera UI fine but the
-viewfinder looked black on the webcam (lens on the desk: unknown; `420f plane 0 360x479 -> cpu`, `direct (rowBytes
-1440)`) — check with a lit scene.
+viewfinder looked black on the webcam (lens on the desk). Checked with flame-shots (work/shots/cam-direct.png vs cam-off.png):
+both show the same live dark green-tinted desk image (ON mean RGB 7/12/6, OFF 12/17/9, both textured): the direct path
+works for the camera (`420f fmt 500 1128x1504`, rowBytes 4512); the dimmer ON shot is likely auto-exposure timing.
 
 ### 2026-11-03 17:45 The network process cost is general (B57), not video
 work/stage0/dl.html (random 46 MB file from the PC, no video): paced 0.75 MB/s -> Networking 32 % of a core; flat out only
