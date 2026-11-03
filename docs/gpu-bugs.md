@@ -304,3 +304,13 @@ converts once per IOSurface seed. Fix being written: seed-gated conversion + che
 Also: a GPU wedge "surface remap" (smmu fsr 40000002) at t=3923.034 in ../logs/boots/20261103-082158.log, 4 s after a
 backboardd restart with the GPU path off (vd4d test; G4-like).
 
+### 2026-11-03 12:25 G7 seed gating + baked kernel (27b96cb): better, still GPU-bound
+Safari H.264 1080p30, software decode, bundle work/metal2-next-g7seed (LC_UUID 4C4C4415). Dropped of 1800 / backboardd
+CPU / GPU busy / backboardd submit mean / SHADOW ycbcr converted (seed-skipped) per 5 s:
+a GPU+seed+bake 883 / 19.6 % / 99-100 % / ~61 ms / 81-85 (0-3); b GPU+seed, BAKE=0 1192 / 14.9 % / 99-101 % / ~93.5 ms /
+51-61 (1); c CPU path 89 / 94.9 % / 23-26 % / ~8.4 ms. Pictures right in all three (flame-shots work/shots/g7s-*.png).
+Reading: baking cuts the conversion ~35 %, but most conversions are of new frames (few seed skips), and ~60 ms per
+1080p conversion is far too slow (the plane copy from imported host memory and RGBA16F output are suspects). The CPU
+path stays the default; next: the CPU path via Accelerate vImage (backboardd 95 % today); later a native
+VkSamplerYcbcrConversion (Turnip samples G8_B8R8_2PLANE_420 directly).
+
