@@ -89,6 +89,17 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:50 videoprof: where Safari hardware-video CPU goes (H.264 1080p, ~392 % total)
+pstack x60 per process (research/notes/videoprof-2026-11-03/). % of one core over 30 s:
+- WebKit Networking ~142 %: `FragmentedSharedBuffer::append` -> `Vector<DataSegmentVectorEntry>::reserveCapacity` on every
+  received chunk of the mp4: the PC's python http.server ignores Range, so Safari streams the whole file. Test artefact;
+  fixed with tools/sunfish-httpd.py (Range support, 99f8a9d), now on :8077.
+- backboardd ~101 %: vImage `vConvert_420Yp8_CbCr8ToARGB8888_vec` on dispatch_apply workers + memmove (the CPU YCbCr
+  path) and CA commit. Real fix: native GPU YCbCr sampling (VkSamplerYcbcrConversion), later.
+- mediaserverd ~70 %: spread thin (mach messages, CF hashing, malloc), no hot function.
+- venusd ~42 %: poll(..., 1 ms) 1 kHz loop + writing each 3 MB frame to the socket. Fix 007f8b1: 4 ms tick (VENUSD_TICK_MS).
+- WebContent ~13-22 %. Remeasure running.
+
 ### 2026-11-03 15:20 Still frames: the hardware-decoded picture is right for H.264 and HEVC
 index.html `?pause=10` (pauses the video, beacons k=paused) → flame-shot 3 s later, no tearing:
 work/shots/still-h264.png and still-hevc.png show the full testsrc2 frame (bars, rainbow diagonal, grey +, checker
