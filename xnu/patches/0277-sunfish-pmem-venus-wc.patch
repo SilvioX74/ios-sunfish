@@ -1,0 +1,115 @@
+From 05ccbcdb66596497df3ce9ac0858e2eec4aa7b43 Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Tue, 3 Nov 2026 07:38:01 -0500
+Subject: [PATCH] sunfish: pmem reads/writes of the Venus buffer window
+ (0xa5500000 + 160 MB) through one write-combined mapping, sweetpmemwc=0 turns
+ it off (0277)
+
+---
+ bsd/dev/sweet_pmem.c | 38 +++++++++++++++++++++++++++++++++-----
+ 1 file changed, 33 insertions(+), 5 deletions(-)
+
+diff --git a/bsd/dev/sweet_pmem.c b/bsd/dev/sweet_pmem.c
+index bfca9cc..a6be8ff 100644
+--- a/bsd/dev/sweet_pmem.c
++++ b/bsd/dev/sweet_pmem.c
+@@ -11,6 +11,8 @@
+  *     framebuffer) is mapped as device memory and accessed with 32-bit
+  *     loads/stores only: offset and length must be multiples of 4.
+  *     Reading an unclocked block hangs the SoC, as with poke scripts.
++ *     Exceptions, one write-combined mapping each, any offset and length:
++ *     the camera ring (0233) and the Venus buffer window (0277, sweetpmemwc).
+  *   ioctl PMEM_ALLOC   {size, align} -> {pa}: zeroed, physically contiguous
+  *                      kernel memory (stays until PMEM_FREE, survives exit)
+  *   ioctl PMEM_FREE    {pa}
+@@ -82,6 +84,8 @@ extern int sweet_rpmh_write(const char *res, unsigned n, const uint32_t *offsets
+ #define PMEM_MAPS       16              /* 2 MB device windows, round robin */
+ #define PM_CAM_PA       0x9cb00000ULL   /* 0233: camera ring, see pm_rw */
+ #define PM_CAM_LEN      0xb00000ULL
++#define PM_VEN_PA       0xa5500000ULL   /* 0277: Venus buffer window (after the queue block), see pm_ven_va */
++#define PM_VEN_LEN      0xa000000ULL    /* 160 MB, to 0xaf500000 */
+ #define PMEM_WIN        0x200000ULL
+ 
+ static struct {
+@@ -93,6 +97,7 @@ static struct {
+ 	uint64_t win;
+ } pm_map[PMEM_MAPS];
+ static unsigned pm_map_next;
++static uint32_t pm_venus_wc = 1;        /* 0277: sweetpmemwc, see pm_ven_va */
+ static uint32_t pm_bounce[PAGE_SIZE / 4];
+ 
+ static LCK_GRP_DECLARE(sweet_pmem_grp, "sweet_pmem");
+@@ -116,6 +121,9 @@ pm_io(uint64_t pa)
+ 	if (pa >= PM_CAM_PA && pa < PM_CAM_PA + PM_CAM_LEN) {
+ 		return NULL;    /* 0233: the camera ring is mapped write-combined (pm_rw); both mappings are uncached */
+ 	}
++	if (pm_venus_wc && pa >= PM_VEN_PA && pa < PM_VEN_PA + PM_VEN_LEN) {
++		return NULL;    /* 0277: likewise the Venus buffer window */
++	}
+ 	unsigned i = pm_map_next++ % PMEM_MAPS;
+ 	if (pm_map[i].va) {
+ 		ml_io_unmap(pm_map[i].va, PMEM_WIN);
+@@ -135,6 +143,18 @@ pm_io(uint64_t pa)
+  */
+ static vm_offset_t pm_cam_va;
+ 
++/*
++ * 0277 (video stage 4a0: venusd copies each decoded 1080p NV12 frame, 3.1 MB,
++ * out of the Venus buffer window; device windows give ~14 MB/s): the window
++ * 0xa5500000-0xaf500000 gets the same single write-combined mapping (mapped on
++ * first use, 160 MB of kernel VA). The queue block 0xa5100000-0xa5401000 below
++ * it stays on pm_io's device windows (firmware and host share those queues with
++ * no cache maintenance and poll their indices). Not cached either, so Venus DMA
++ * needs no cache maintenance. Boot-arg sweetpmemwc=0 (default 1) puts the Venus
++ * window back on the device path.
++ */
++static vm_offset_t pm_ven_va;
++
+ static int
+ pm_rw(struct uio *uio, bool write)
+ {
+@@ -151,15 +171,22 @@ pm_rw(struct uio *uio, bool write)
+ 			flush_dcache64((addr64_t)pa, n, TRUE);
+ 			continue;
+ 		}
++		vm_offset_t *wva = NULL;
++		uint64_t wpa = 0, wlen = 0;
+ 		if (pa >= PM_CAM_PA && pa + n <= PM_CAM_PA + PM_CAM_LEN) {
+-			if (!pm_cam_va) {
+-				pm_cam_va = ml_io_map_unmappable((vm_offset_t)PM_CAM_PA, PM_CAM_LEN, VM_WIMG_WCOMB);
+-				if (!pm_cam_va) {
++			wva = &pm_cam_va, wpa = PM_CAM_PA, wlen = PM_CAM_LEN;
++		} else if (pm_venus_wc && pa >= PM_VEN_PA && pa + n <= PM_VEN_PA + PM_VEN_LEN) {
++			wva = &pm_ven_va, wpa = PM_VEN_PA, wlen = PM_VEN_LEN;    /* 0277 */
++		}
++		if (wva) {
++			if (!*wva) {
++				*wva = ml_io_map_unmappable((vm_offset_t)wpa, wlen, VM_WIMG_WCOMB);
++				if (!*wva) {
+ 					err = ENOMEM;
+ 					break;
+ 				}
+ 			}
+-			caddr_t va = (caddr_t)(pm_cam_va + (pa - PM_CAM_PA));
++			caddr_t va = (caddr_t)(*wva + (pa - wpa));
+ 			if (write) {
+ 				err = uiomove(va, (int)n, uio);
+ 				__asm__ volatile ("dsb osh" ::: "memory");
+@@ -405,12 +432,13 @@ sweet_pmem_init(void)
+ 	if (!on) {
+ 		return;
+ 	}
++	PE_parse_boot_argn("sweetpmemwc", &pm_venus_wc, sizeof(pm_venus_wc));     /* 0277 */
+ 	int major = cdevsw_add(-1, &sweet_pmem_cdevsw);
+ 	if (major < 0) {
+ 		printf("SWEET PMEM: cdevsw_add failed (%d)\n", major);
+ 		return;
+ 	}
+ 	devfs_make_node(makedev(major, 0), DEVFS_CHAR, UID_ROOT, GID_WHEEL, 0600, "pmem");
+-	printf("SWEET PMEM: /dev/pmem ready (major %d)\n", major);
++	printf("SWEET PMEM: /dev/pmem ready (major %d), Venus window %s\n", major, pm_venus_wc ? "write-combined" : "device");
+ }
+ #endif /* ARM64_BOARD_CONFIG_SWEET */
+-- 
+2.56.0
+
