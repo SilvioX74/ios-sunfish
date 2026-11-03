@@ -2191,10 +2191,13 @@ static int reconfig(void)
 		return -1;
 	if (get_bufreq() || alloc_outputs(dc.rcount > 8 ? dc.rcount : 8))
 		return -1;
-	if (sess_cmd(S_CONTINUE))
-		return -1;
+	/* v3b: the firmware counts the output2 buffers it holds when CONTINUE arrives (after the flush it holds none:
+	 * "h264Dec_Continue(224): Not enough output2 buffers!" with 18 set): queue them first, as the client's
+	 * streamon/qbuf comes before its SESSION_CONTINUE decoder command (msm_vidc_common.c:4150) */
 	dc.hold = 0;
 	ftb_all();
+	if (sess_cmd(S_CONTINUE))
+		return -1;
 	return 0;
 }
 
