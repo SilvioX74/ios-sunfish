@@ -70,10 +70,19 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VENUSCTL_ROUTE, VENUSCTL_NOUT, VENUSCTL_YSTRIDE/YSCAN.
 
 ## Open
-- Stages 3-5; stage 2 step 7 (repeat + soak). Stage 2 go 2026-11-03 (v2c). Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
+- Stages 3-5; stage 2 step 7 part 2 (15 min under GPU load); 10 rounds pass (s7b). Stage 2 go 2026-11-03 (v2c). Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 07:50 Stage 2 step 7 (s7b): 10 of 10 bring-up rounds in one boot
+venusctl dcf8abc (sha256 72a7e3a9...), boot venusR (kernel158). research/notes/venus-runs/2026-11-03-s7b-session-x10.txt,
+07:01:46-07:02:00. Each round: power on, PAS boot, init, SYS_INIT, session init/end, shutdown, power off.
+- 10/10 exit 0; init 7 ms (8 in round 1); SESSION_INIT_DONE and SESSION_END_DONE error 0 every round; ~1.1 s per
+  round (max ~1.4). No new panic/watchdog/GPU hang lines, SSH fine, no reboot.
+- Banks now repeat: SMR15-18 -> CB4, CB14, CB15, CB16 every round (leak fixed). Observation: CB4 is low; it passes
+  the free test (no SMR points at it, translation off, CBAR 0 or ours) but may be a bootloader leftover. Watch it.
+- Left of step 7: 15 min under GPU load.
 
 ### 2026-11-03 07:45 Stage 2 step 7 (s7): round 2 out of SMMU banks; leak fixed
 venusctl f0c3847, same boot. research/notes/venus-runs/2026-11-03-s7-session-x10.txt. Round 1 ok (init 7 ms,
