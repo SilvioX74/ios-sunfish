@@ -31,5 +31,13 @@
 	<string>Interactive</string>
 	<key>POSIXSpawnType</key>
 	<string>Interactive</string>
+	<!-- Credit path (VTVENUS_SURF, 331e616): each IOSurface venusd looks up maps ~3 MB into it, and up to 16 are
+	     cached; with the default daemon limit jetsam killed venusd at the first credited frame (crA: "CRASH venusd
+	     sig 9", reason ns 1 code 7 = per-process memory limit). 128 MB covers fbuf + 16 1080p surfaces + 4K headroom. -->
+	<key>JetsamProperties</key>
+	<dict>
+		<key>JetsamMemoryLimit</key>
+		<integer>128</integer>
+	</dict>
 </dict>
 </plist>
