@@ -1,5 +1,5 @@
 # Video playback and hardware decode
-**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus engine decodes H.264 bit-exact from a phone tool, 1080p at 217 fps without the copy-out (stage 3 go, 4a0). **Updated:** 2026-11-03.
+**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus engine decodes H.264 bit-exact from a phone tool, 1080p at 217 fps raw, 52 fps end-to-end with a 1.5 ms cached copy-out (kernel160 sweetpmemwc=2). **Updated:** 2026-11-03.
 
 ## Facts
 - The iPhone X decodes video in hardware (AppleAVD); the port has no AVD, so iOS falls back to software decoders.
@@ -88,6 +88,20 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 08:45 v4a1: kernel160 sweetpmemwc=2 (cached + DC CIVAC): copy-out 1.54 ms, 1080p 52.6 fps, bit-exact
+Kernel160 = kernel159 + xnu 0278, boot v4a1 (4455 mV) with `... sweetpmemwc=2`. venusctl 94e5e5c. Outputs
+research/notes/venus-runs/2026-11-03-v4a1-*.
+- 1080p 10 frames: bit-exact (all 10 luma 2073600/2073600, PSNR inf, crc 2a544a75). This first run after boot took
+  13.08 s for 10 frames (copy-out itself 2.86 ms mean): a one-time cost on first use, cause not known yet (mapping the
+  160 MB window cacheable? first touch?). Must be understood before =2 becomes the default.
+- 1080p 300 frames to /dev/null, twice: `copy-out 300 frames: mean 1.54 ms, max 3.86 ms ... frame 0 -> 299: 5.68 s =
+  52.6 fps` and `mean 1.54 ms, max 3.39 ms ... 52.4 fps`. Per CPU: A55 1.56-1.72 ms, A76 0.97-1.06 ms (was 29.3 / 3.5 ms
+  on the WC mapping, v4a0d).
+- 720p 10 frames: bit-exact (921600/921600, crc bff84fb8), copy-out 0.83 ms mean.
+- Observed: cached + clean/invalidate by range is correct for Venus's non-coherent writes (bit-exact twice) and ~18x
+  faster than WC on the A55s. The overall 52 fps is now bound by venusctl's serial loop (poll, copy, CRC, re-queue),
+  not by copy-out or the engine (217 fps). Phone left on kernel160 + sweetpmemwc=2.
 
 ### 2026-11-03 08:30 v4a0d: copy-out speed is the CPU type: A55 29.3 ms, A76 3.5 ms per 1080p frame
 venusctl 94e5e5c (copy time per CPU via TPIDR_EL0), kernel159 (0277 WC). 1080p 300 frames to /dev/null:

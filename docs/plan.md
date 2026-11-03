@@ -45,13 +45,14 @@ Claude's. Up since the everyday boot venusR (2026-11-03 06:25, kernel158), slide
 Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76
 1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 5a76e18
 (SweetMetal2 4C4C4448); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
-TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel159 (= 158 + xnu 0277) since 07:44. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
+TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 since 08:35 (tag v4a1). Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
 1. WebGL 1 works (wg4, 5a76e18). AdrenoMetal ports (swizzle views, selector fallback, presentDrawable, LOD clamps)
    being written; then a real WebGL game for 15 min (the 3D target) and WebGL 2.
-2. Video 4a0 done on kernel159: 1080p bit-exact; engine 217 fps; copy-out 25 ms/frame (124 MB/s) is the limit. Next:
-   fast copy (user mmap of the WC window / cached + invalidate; target < 4 ms/frame), then 4a venusd + test client.
+2. Video 4a0 done: kernel160 sweetpmemwc=2 copy-out 1.54 ms/1080p frame, 52 fps end-to-end, bit-exact. Open: the
+   13 s first-use cost after boot (then make =2 default). Next: 4a `venusd` + test client (video.md Stage 4 spec).
+   Maps crash with G7 GPU path: MISSING NBFunction -libraryData/-bitCodeOffset/-bitCodeFileSize (investigator; B50?).
 3. Metal→Vulkan survey done (research/notes/upstream-2026-11-03-metal2vulkan-survey.md, upstream-2026-11-03-metal.md):
    STAY on metal2vulkan 720ef1ce + cherry-pick (upstream e35bf78b deleted the zero-copy host-page images our B29 work
    needs; rebase 4-6 days). Next, in order: G7 YCbCr planes via the pin's ycbcr.rs (port AdrenoMetal bridge 1125-1136,
