@@ -89,6 +89,21 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 15:00 hevc1 (stage 4e): HEVC 8-bit Main decodes on Venus, bit-exact; Safari plays HEVC via Venus
+venusctl/venusd/venusc/vtvenus 438e168 + 391985b (wall-clock waits; HEVC), installed then a reboot (no mediaserverd
+restart). Boot hevc1 (kernel160, 4455 mV). venusd `hevc 1`, warm-up first frame 430 ms (890 ms in all).
+- venusctl HEVC 1080p 10 frames (x265 main): `decoded 10 of 10 frames, EOS in 0.25 s`, `CTRL_STATUS ... after 8 ms`
+  (real ms now), yuvcmp all 10 luma exact, frame 0 crc 2aa7df4e = ffmpeg's.
+- HEVC 1080p 300 frames to null: `EOS in 5.36 s`, copy-out mean 1.48 ms, 56.2 fps end-to-end.
+- H.264 1080p regression: bit-exact (crc 38f51ff4 last frame).
+- Safari hevc-1080p: venusd `session 2 opened (fd 8, HEVC, hint 1920x1080)`, `HEVC decoder session (codec 0x2000)`,
+  `1800 AUs in, 1800 frames, first frame 518 ms after it, 29.8 fps, copy-out mean 2.26 ms, error 0`; page 1800 frames, 8
+  dropped. CPU (% of one core): backboardd ~99, WebKit ~81, mediaserverd ~68 (software HEVC this morning: 101-115),
+  venusd ~39. Flame-shot: bars in the right colours and order in strips with white gaps (tearing, as with H.264);
+  the webcam frame at 27 s looked blank (exposure, as before?): picture not fully confirmed.
+- H.264 1080p after it: 1647 frames at t=57, 6 dropped, bars on the webcam.
+- vtdecode --raw reads H.264 only (HEVC not tested through vtdecode).
+
 ### 2026-11-03 13:50 lat1: venusd as an Interactive launchd job: first frame 0.6 s after OPEN (was 7.5-9 s)
 Cause (research/notes/venus-latency-2026-11-03.md): launchd started venusd in its default (throttled) class, so XNU's
 timer coalescing stretched every 1 ms wait ~14x (`CTRL_STATUS ... after 1-2 ms` loop counts instead of 7); the HFI

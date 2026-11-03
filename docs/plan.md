@@ -49,8 +49,8 @@ Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfen
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Phone on kernel160 (= 158 + xnu 0277 + 0278) with sweetpmemwc=2 sweetgpucap=512 (tag lat1, 11:12), bundle fcdf6de (vImage), venusd + vtvenus (cfbebf1) installed, venusd from launchd. Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. Video: start latency fixed (lat1: Interactive launchd job, 0.6 s). Next: wall-clock deadlines in venus_core/pmem
-   waits, HEVC (4e: vtvenus 'hvc1' + venusd HEVC sessions).
+1. Video: latency fixed (0.6 s), wall-clock waits and HEVC 8-bit done (hevc1, 15:00). Next: confirm the Safari picture
+   with a cleaner capture (tearing in flame-shot), then 5: heat/4K/two streams; vtdecode HEVC mode.
 2. Video 4d leftovers: backboardd ~66 % for the CPU conversion (vImage, fcdf6de); the copy into the texture likely
    dominates. G7 GPU path stays off (GPU-bound); later a native VkSamplerYcbcrConversion.
 3. mediaserverd restarts can wedge it (Safari stops loading video; camclk/camid exec loop on restart): install the
