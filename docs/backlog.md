@@ -45,6 +45,13 @@ Upstream survey 2026-11-01 (research/notes/upstream-2026-11-01.md; their numbers
 - LATER. hakios-xnu 502aee8 privilege table: ours has 3 Skywalk privileges plus work interval (sweet_amfi.c:885); 19 denials in boot 20261101-132008. Not speed, and more grants may wake daemons we quieted for heat (guess). 2 h. [phone]
 - SKIP. ios-fajita 0ecd69c b3a8: deep framebuffer off (SweetMetal2.mm:202), present BGRA only (SweetFramebuffer.cpp:1095); 0104 is about row size, theirs colour decode, no conflict. Tips banner format still unread (B44, parked).
 
+- AdrenoMetal survey 2026-11-03 (research/notes/upstream-2026-11-03-metal.md; MIT, same 720ef1ce base): porting now
+  swizzle texture views, missing-selector fallback, presentDrawable:, sampler LOD clamps. Next after the metal2vulkan
+  rebase decision: G7 zero-copy planar textures (`nmb_texture_new_on_surface` + their m2v 0011; our runtime already has
+  ycbcr.rs/surface_two_planes.rs, only the bridge fn + frontend path are missing; 2-3 h; video stage 4d), m2v 0008
+  llvm.bitreverse (applies cleanly), 0017 heap size alignment. Later: shader-reply cache for newLibraryWithSource.
+  ios-sweet: no Metal code; dipa-studio/ios-extra: private.
+
 ## Later (needs repeated 1 h+ tests)
 - Touch hold (2026-11-02 lat, smoothness.md): during drags touches stamped tick+1..8 start their frame no earlier than tick+9.6 (backboardd or HID queue busy during the render, guess). About 0 ms gain estimated. Confirm: catrace window with MACH_SCHED (0x0140xxxx) and UIKit 0x2b87010c/0110/0190/0194; needs a catrace filter option for those classes.
 - IOMFB frame info (2026-11-02, smoothness.md vpa/vpb): send frame-info Presentation_time so CA anchors its display links to our ticks itself (frame_info_callback 0x1882bc6d4 -> add_timing 0x18853d33c); would replace the fixed sweetvsyncphase=5000 grid lock. Only if the grid lock shows a problem.
