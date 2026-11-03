@@ -55,7 +55,7 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
    dominates. G7 GPU path stays off (GPU-bound); later a native VkSamplerYcbcrConversion.
 3. mediaserverd restarts can wedge it (Safari stops loading video; camclk/camid exec loop on restart): install the
    plugin with a reboot, and find out why mediaserverd runs camclk/camid.
-4. WebGL: HexGL on the phone (page loads no scripts after the .m4a change; works on desktop) and a 15 min game run;
+4. WebGL: 15 min with a simpler WebGL game (HexGL parked: its launch.js stalls before the menu on iOS Safari);
    WebGL 2 (argument encoders). Maps B50 is not the GPU cap.
 5. Tonight: night soak n9 (`tools/sunfish-nightsoak.sh n9`; it sets work/night at 21:30).
 

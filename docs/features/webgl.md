@@ -22,6 +22,12 @@ renders white; WebGL 2 untested. **Updated:** 2026-11-03.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 14:15 HexGL parked
+?v=10 with the fixed hook: index.html loaded (subresources from Safari's cache, so no GETs), the hook's ticks report
+`0 canvases` for 2.5 min, no error beacons: the game never creates its canvases (launch.js stalls before the menu). Not a
+GPU/bridge problem (no WebGL context is made). The same page runs in a desktop browser. Parked (half-day rule): for the
+3D target take a simpler WebGL game next time; antialiased WebGL itself works (wgaa2).
+
 ### 2026-11-03 14:05 HexGL: stale Safari cache, then my own error hook broke the menu
 Safari caches moved to /var/local/safari-cache-bak/20261103/ (test only): the scripts load again (38 GETs). The page
 stayed white because the error hook's 5 s tick called getContext('webgl') on the first canvas, which locks HexGL's 2D
