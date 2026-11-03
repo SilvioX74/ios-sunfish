@@ -1,6 +1,6 @@
 # WebGL (Safari)
-**State:** 🟡 WebGL 1 draws in Safari without antialiasing (400 cubes, 24 fps, 15 min, 0 hangs); antialiased contexts
-(the default, real games) are lost on the first frame (fix under way); WebGL 2 untested. **Updated:** 2026-11-03.
+**State:** 🟡 WebGL 1 draws in Safari, antialiased too (400 cubes: 24 fps, 18 fps with MSAA; 0 hangs); HexGL loads but
+renders white; WebGL 2 untested. **Updated:** 2026-11-03.
 
 ## Facts
 - WebKit's GPU process runs ANGLE on Metal (iOS 16: WebKit 615.8.1.10.3, Metal 306.6.6). ANGLE first asks
@@ -21,6 +21,18 @@
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 09:40 wgaa2: resolve textures passed through (4da54f0): antialiased WebGL works; HexGL white
+Bundle 4da54f0 (LC_UUID 4C4C44B9): the frontend used to drop every resolveTexture (NmbPassAttachment had no resolve
+fields), so all colour MSAA resolves did nothing and depth resolves were refused. ANGLE always sends a resolve texture
+(finalizeLoadStoreAction; no late store-action setters). Ported from AdrenoMetal 243d63c; SWEET_RESOLVE_FIX=0 off.
+- webgl.html?n=400&aa=1, 5 min: no context loss, getError 0, 0 ResolveWithoutTexture/CRASH/MISSING; 5535 frames in 301 s,
+  median 18.4 fps (16.1-18.7; 24.4 without MSAA); webcam: cubes with sharp edges.
+- HexGL: menu and controls screen draw; after the continue tap all textures and the skybox load, then the canvas is
+  solid white; WebKit GPU submits 2-3 per 5 s; no refusal, hang, crash or MISSING line. Cause unknown (JS stall? a
+  blown-out render?). Next: get the page's console/errors (beacon a window.onerror into HexGL's index.html).
+- UI (Settings, CC, Photos, Notes, Safari) unchanged; Maps still black (B50), plus overlapping "192.168.7" text in the
+  Favorites cells (new, once).
 
 ### 2026-11-03 09:15 hexgl / wgaa: antialiased WebGL is lost on the first frame (depth resolve without texture)
 Bundle a1f3952, kernel160 boot maps512. HexGL (MIT three.js racing game, work/webgl-games/hexgl served on
