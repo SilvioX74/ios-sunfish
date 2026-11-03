@@ -12,6 +12,7 @@
  * msm_vidc_clocks.c:1393-1405 the same work mode rule, DPB NV12_UBWC for 8-bit msm_vdec.c:1147-1150, input size from
  * the firmware's requirement for both). Main10 / 4:2:2 are refused before the session.
  */
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -413,11 +414,28 @@ static int cmddb_aux(const char *id, uint64_t *aux, uint32_t *len)
 #define BCM_OFF		(1u << 30)	/* commit, not valid: x = y = 0 (Linux tcs_cmd_gen) */
 static const char *const bcms[] = { "MM3", "MM2" };	/* vote order (notes table "RPMh BCMs") */
 
+/* vdbcm (the 15-min Safari soak, video.md 2026-11-03: "bcm MM3 vote failed" -> 16, venusd power on failed): the
+ * kernel's PMEM_RPMH answers EBUSY while another /dev/pmem user's vote holds its lock or an ACTIVE TCS (up to its
+ * 100 ms timeout; bsd/dev/sweet_rpmh.c): retried, 5 ms doubling, VENUS_BCM_TRIES (6, ~155 ms in all; 1: one try as
+ * before). EIO is retried once only: it is what a quarantined driver answers (an earlier vote of this boot timed
+ * out, kernel log "SWEET RPMH: timeout": no vote works until a reboot). ETIMEDOUT: never (the vote may be half done,
+ * the kernel quarantines its TCS). Only the MM2/MM3 BCMs pass here (no MX/CX). */
 static int bcm(const char *res, uint32_t v)
 {
+	static int tries = -1;
+	if (tries < 0)
+		tries = getenv("VENUS_BCM_TRIES") && atoi(getenv("VENUS_BCM_TRIES")) > 0 ? atoi(getenv("VENUS_BCM_TRIES")) : 6;
 	uint32_t off[1] = { 0 }, val[1] = { v };
 	int rc = pm_rpmh(res, 1, off, val);
 	printf("venus: bcm %s = %#010x -> %d\n", res, v, rc);
+	for (int i = 1, wait = 5, eio = 0; rc && i < tries && (rc == EBUSY || (rc == EIO && !eio++)); i++, wait *= 2) {
+		delay_ms((unsigned)wait);
+		rc = pm_rpmh(res, 1, off, val);
+		printf("venus: bcm %s = %#010x -> %d (try %d of %d, after %d ms)\n", res, v, rc, i + 1, tries, wait);
+	}
+	if (rc == EIO)
+		printf("venus: bcm %s: EIO: the kernel's RPMh driver refuses votes (quarantined after a timeout this boot?"
+		       " kernel log \"SWEET RPMH: timeout\"): a reboot clears it\n", res);
 	return rc;
 }
 
