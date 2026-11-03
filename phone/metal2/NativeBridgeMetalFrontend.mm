@@ -737,6 +737,7 @@ static void waitForResource(id resource) {
  for(NSUInteger k=0;k<r.length;k++)[self texture:t[k] index:r.location+k stage:0];
 }
 - (void)setSamplerState:(id<MTLSamplerState>)s atIndex:(NSUInteger)i {[self sampler:s index:i stage:0];}
+- (void)setSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)lo lodMaxClamp:(float)hi atIndex:(NSUInteger)i {(void)lo;(void)hi;[self sampler:s index:i stage:0];}   // clamps dropped, as on the render encoder
 - (void)setThreadgroupMemoryLength:(NSUInteger)n atIndex:(NSUInteger)i {
  [self check:nmb_compute_set_threadgroup_memory(self.handle,(uint32_t)n,(uint32_t)i) what:"setThreadgroupMemoryLength"];
 }
@@ -1370,6 +1371,15 @@ struct CullEntry {bool fill=false,clearOK=false,full=false,rok=false;float col[4
 }
 - (void)setVertexSamplerState:(id<MTLSamplerState>)s atIndex:(NSUInteger)i {[self sampler:s index:i stage:1];}
 - (void)setFragmentSamplerState:(id<MTLSamplerState>)s atIndex:(NSUInteger)i {if(_dl && i<16)_dl->fts[i].sampler=s!=nil;[self sampler:s index:i stage:2];}
+// ANGLE (WebGL) binds every sampler with LOD clamps (webgl wg3: MISSING -setFragmentSamplerState:lodMinClamp:lodMaxClamp:atIndex:,
+// then SIGABRT in the GPU process). The clamps are dropped: the sampler's own lodMinClamp/lodMaxClamp apply, which is what GL's
+// default TEXTURE_MIN_LOD/MAX_LOD (-1000/1000) asks for anyway; a texture with narrowed LODs would sample more levels than asked.
+- (void)setVertexSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)lo lodMaxClamp:(float)hi atIndex:(NSUInteger)i {(void)lo;(void)hi;[self setVertexSamplerState:s atIndex:i];}
+- (void)setFragmentSamplerState:(id<MTLSamplerState>)s lodMinClamp:(float)lo lodMaxClamp:(float)hi atIndex:(NSUInteger)i {(void)lo;(void)hi;[self setFragmentSamplerState:s atIndex:i];}
+- (void)setVertexSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s withRange:(NSRange)r {for(NSUInteger k=0;k<r.length;k++)[self setVertexSamplerState:s[k] atIndex:r.location+k];}
+- (void)setFragmentSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s withRange:(NSRange)r {for(NSUInteger k=0;k<r.length;k++)[self setFragmentSamplerState:s[k] atIndex:r.location+k];}
+- (void)setVertexSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s lodMinClamps:(const float [])lo lodMaxClamps:(const float [])hi withRange:(NSRange)r {(void)lo;(void)hi;[self setVertexSamplerStates:s withRange:r];}
+- (void)setFragmentSamplerStates:(const id<MTLSamplerState> __unsafe_unretained [])s lodMinClamps:(const float [])lo lodMaxClamps:(const float [])hi withRange:(NSRange)r {(void)lo;(void)hi;[self setFragmentSamplerStates:s withRange:r];}
 - (void)setDepthStencilState:(id<MTLDepthStencilState>)state {
  if(state && ![(id)state isKindOfClass:[NBDepthStencil class]]){[self.commandBuffer refuse:@"foreign depth/stencil state"];return;}
  if(state)_dfDss=YES;   // sweet deadfill
