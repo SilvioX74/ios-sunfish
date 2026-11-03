@@ -22,6 +22,13 @@ hangs but only 7.4 fps (GPU-bound); HexGL parked (its loader stalls on iOS Safar
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:01 Hardware MSAA resolve (bridge 0129, a71ea11): games_fps 7.9 -> 8.45 fps
+Bundle work/metal2-next-hwres (LC_UUID 4C4C44C8): RGBA8/BGRA8 unorm MSAA attachments resolved by Turnip (no exact shader
+resolve pass); SWEET_M2V_HW_RESOLVE=0 old path, 2 adds sRGB (off: Turnip averages encoded codes, up to ~60 LSB off at
+edges). kernel161 boot rpmh1, 60 s each: mode 1 8.45 fps median (8.2-9.0), mode 0 7.9 (7.8-8.0). Cube page aa=1 ~20 fps,
+no artefacts. UI (home, CC, Settings) normal. Resolve mode logged by SpringBoard and WebKit.GPU only (backboardd has no
+MSAA). Bundle left installed.
+
 ### 2026-11-03 15:35 Correction: today's Log heading times run ahead of the clock
 Claude's session clock drifted: the `### 2026-11-03 HH:MM` headings written today after about 12:00 EST carry times up
 to ~6.5 h ahead of the real time (e.g. "21:40" was ~15:15 EST). The order of the entries is right; the real times are
