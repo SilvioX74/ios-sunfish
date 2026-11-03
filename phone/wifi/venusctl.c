@@ -52,12 +52,51 @@
  * clk-branch.c skips the halt check in that mode). power on clears HW_CTL first so CLK_OFF can be polled;
  * VENUSCTL_KEEP_HWCTL=1 skips that (old behaviour).
  */
+#include <stdint.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include "pmem.h"
 #include "venus_core.h"
+
+/* VENUSCTL_TS=1: every output line gets "[seconds since start] " (a pipe + reader thread), to place stalls in time; the
+ * host can't, since ssh delivers the output in bursts (the 13 s first-use stall, video.md v4a1/vdboot) */
+static int ts_out = -1;
+static struct timeval ts_t0;
+static void *ts_reader(void *arg)
+{
+	FILE *in = fdopen((int)(intptr_t)arg, "r");
+	char line[4096];
+	while (in && fgets(line, sizeof line, in)) {
+		struct timeval t;
+		gettimeofday(&t, NULL);
+		dprintf(ts_out, "[%8.3f] %s", (t.tv_sec - ts_t0.tv_sec) + (t.tv_usec - ts_t0.tv_usec) / 1e6, line);
+	}
+	return NULL;
+}
+static pthread_t ts_thread;
+static void ts_flush(void)
+{
+	fflush(stdout);
+	close(1);
+	pthread_join(ts_thread, NULL);
+}
+static void ts_start(void)
+{
+	int p[2];
+	if (!getenv("VENUSCTL_TS") || !atoi(getenv("VENUSCTL_TS")) || pipe(p))
+		return;
+	gettimeofday(&ts_t0, NULL);
+	ts_out = dup(1);
+	dup2(p[1], 1);
+	close(p[1]);
+	pthread_create(&ts_thread, NULL, ts_reader, (void *)(intptr_t)p[0]);
+	atexit(ts_flush);
+}
 
 int main(int argc, char **argv)
 {
@@ -66,6 +105,7 @@ int main(int argc, char **argv)
 	uint64_t phys = 0, bufphys = 0;
 	uint32_t debug = 0x18;	/* HFI_DEBUG_MSG_ERROR | FATAL (guess: msm_vidc_debug.c's default is not in our source copy) */
 	setvbuf(stdout, NULL, _IOLBF, 0);	/* a hang shows the last line */
+	ts_start();
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-v"))
 			verbose = 1;
