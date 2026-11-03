@@ -8,6 +8,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 F() { python3 -I tools/flame-files.py "$@"; }
 U=work/userland R=../restore/fw
+JOB_ONLY=0; [ "${1:-}" = --job ] && JOB_ONLY=1	# --job: only (re)write the launchd job, no binaries or firmware
+if [ $JOB_ONLY = 0 ]; then
 for d in /var/local/fw /var/local/fw/modem /var/local/fw/rw; do F mkdir $d 755 >/dev/null 2>&1 || true; done
 F mkdir /var/local/fw/rmtfs 700 >/dev/null 2>&1 || true
 F put $U/stage/wland /var/local/bin/wland 755
@@ -19,6 +21,7 @@ if [ -d $R/modempart/image ]; then
 	done
 	for p in modemst1 modemst2 fsg fsc; do F put ../backup/$p.img /var/local/fw/rmtfs/$p.img 600 >/dev/null; done
 fi
+fi
 F get /System/Library/xpc/launchd.plist $U/launchd.plist.cur
 python3 -I - "$U/launchd.plist.cur" "$U/launchd.plist.new" <<'PY'
 import plistlib, sys
@@ -27,6 +30,9 @@ p['LaunchDaemons']['/System/Library/LaunchDaemons/org.iosonpixel.wland.plist'] =
     'Label': 'org.iosonpixel.wland',
     'ProgramArguments': ['/var/local/bin/wland', 'auto'],
     'RunAtLoad': True, 'UserName': 'root',
+    # Interactive like venusd/dropbear: launchd's default class let timer coalescing stretch wland's 1 ms naps ~10x
+    # (venusd lat1, 2026-11-03); Wi-Fi downloads ran at 0.5 MB/s (B57)
+    'ProcessType': 'Interactive', 'POSIXSpawnType': 'Interactive',
     'EnvironmentVariables': {'PATH': '/var/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'},
 }
 plistlib.dump(p, open(sys.argv[2], 'wb'), fmt=plistlib.FMT_BINARY)
