@@ -37,6 +37,9 @@
  * or after VENUSD_IDLE_CLIENT_S (30; 0: never) without a message while it has no session or one with nothing to do
  * (opened without a FRAME, EOS done, failed: such a held session refused every other OPEN); each connect/drop logs
  * "client fd N connected|gone (reason), K connected".
+ * vdstamp: every line of the log (venus_core's too) and of the console starts "[ssss.mmm] ": seconds since boot from
+ * mach_absolute_time, the clock (and format) of the kernel's per-boot log lines, so they line up; the first line after
+ * a minute without one, the start and each session open add "[wall YYYY-MM-DD HH:MM:SS] ". VENUSD_STAMP=0: no stamps.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -54,6 +57,7 @@
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
+#include <mach/mach_time.h>
 #include "pmem.h"
 #include "venus_core.h"
 #include "venus_hevc.h"
@@ -115,19 +119,65 @@ static double mono(void)
 	return ts.tv_sec + ts.tv_nsec / 1e9;
 }
 
-/* one line to the log (stdout) and the live log (/dev/console, as the bridge's sm2 lines) */
+/* vdstamp: "[ssss.mmm] " (the kernel log's mach_absolute_time stamp), "[wall ...] " too when due; its length */
+static int stamp_on = 1;
+static double wall_due;	/* uptime of the next wall-clock stamp (0: the next line) */
+
+static size_t stamp(char *b, size_t n)
+{
+	static mach_timebase_info_data_t tb;
+	if (!stamp_on)
+		return b[0] = 0, 0;
+	if (!tb.denom)
+		mach_timebase_info(&tb);
+	uint64_t ms = mach_absolute_time() * tb.numer / tb.denom / 1000000u;
+	int k = snprintf(b, n, "[%4llu.%03llu] ", (unsigned long long)(ms / 1000), (unsigned long long)(ms % 1000));
+	if (ms / 1e3 >= wall_due && k > 0 && (size_t)k < n) {
+		time_t t = time(NULL);
+		struct tm tm;
+		localtime_r(&t, &tm);
+		k += (int)strftime(b + k, n - (size_t)k, "[wall %Y-%m-%d %H:%M:%S] ", &tm);
+		wall_due = ms / 1e3 + 60;
+	}
+	return k > 0 ? (size_t)k : 0;
+}
+
+/* vdstamp: stdout/stderr's writer (funopen): the stamp at each line start, to the log fd */
+static int log_write(void *c, const char *p, int n)
+{
+	static int bol = 1;
+	for (int i = 0; i < n;) {
+		if (bol) {
+			char pre[64];
+			size_t k = stamp(pre, sizeof pre);
+			if (k)
+				(void)!write(logfd, pre, k);
+			bol = 0;
+		}
+		const char *nl = memchr(p + i, '\n', (size_t)(n - i));
+		int len = nl ? (int)(nl - (p + i)) + 1 : n - i;
+		(void)!write(logfd, p + i, (size_t)len);
+		i += len;
+		bol = nl != NULL;
+	}
+	return n;
+}
+
+/* one line to the log (stdout) and the live log (/dev/console, as the bridge's sm2 lines); the same stamp in both */
 static void note(const char *fmt, ...)
 {
-	char s[512];
+	char s[512], pre[64];
 	va_list ap;
 	va_start(ap, fmt);
 	vsnprintf(s, sizeof s, fmt, ap);
 	va_end(ap);
-	printf("%s\n", s);
+	fflush(stdout);	/* every line ends in a newline: the next starts a line */
+	stamp(pre, sizeof pre);
+	dprintf(logfd, "%s%s\n", pre, s);
 	if (confd < 0)
 		confd = open("/dev/console", O_WRONLY | O_NOCTTY | O_NONBLOCK);
 	if (confd >= 0)
-		dprintf(confd, "%s\n", s);
+		dprintf(confd, "%s%s\n", pre, s);
 }
 
 /* vdcold: how long a socket read/write may wait in all: the cold-start allowance until the session's first picture
@@ -400,6 +450,7 @@ static void do_open(int i, const struct venusd_msg *m)
 		sess_hevc = m->codec == VD_CODEC_HEVC;
 		t_open = mono();
 		t_first = t_last_frame = 0;
+		wall_due = 0;	/* vdstamp: the wall clock on this line */
 		note("venusd: session %u opened (fd %d, %s, hint %ux%u)", nsess, cl[i].fd, sess_hevc ? "HEVC" : "H.264", hint_w,
 		     hint_h);
 		test_file();
@@ -718,6 +769,10 @@ int main(int argc, char **argv)
 	}
 	dup2(logfd, 1);
 	dup2(logfd, 2);
+	stamp_on = !getenv("VENUSD_STAMP") || atoi(getenv("VENUSD_STAMP"));
+	FILE *lf = stamp_on ? funopen(NULL, NULL, log_write, NULL, NULL) : NULL;	/* vdstamp */
+	if (lf)
+		stdout = stderr = lf;
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	vc_quiet = !(getenv("VENUSD_VERBOSE") && atoi(getenv("VENUSD_VERBOSE")));
 	if (getenv("VENUSD_IDLE_S"))
