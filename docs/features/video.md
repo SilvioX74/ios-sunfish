@@ -89,6 +89,20 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 18:40 Credit path on all stage-0 clips (spC, kernel162): all right; a seek stalls (-60)
+40 s each, % of one core over 30 s, links tapped (openapp URL never navigates: Code=4; links added to work/stage0/index.html):
+| clip | frames/dropped | credited/socket/handed back | mediaserverd | venusd |
+| hls-h264-1080p | 896/0 | 1073/1/0 | 25.1 | ~11 |
+| hls-hevc-1080p | 955/0 | 1165/0/0 | 19.1 | 9.7 |
+| h264-1080p.mp4 | 1168/0 | 1215/5/0 | 25.7 | 11.7 |
+| h264-720p.mp4 | 1256/12 (loop end) | 1256/3/0 | 23.7 | 7.6 |
+| hevc-720p.mp4 | 1240/11 (loop end) | 1241/1/0 | 19.2 | 6.9 |
+| hevc-1080p.mp4 | 1178/0 | 1365/1/0 | 21.6 | 10.3 |
+HEVC (hvc1) goes through credited surfaces too; 0 handed back, pictures right. Pause 5 s + resume fine (2 dropped). Seek
+to 30 s (HLS H.264 1080p): stalled at t=30.0 with a blank white video area; vtvenus "venusd session error -60 at frame 124
+... reopen", again at frame 167; "invalidated: 295 frames in, 129 out (289 through credited surfaces), 166 dropped, 4
+venusd session(s)"; session 40 credited 6 / socket 120. Not yet known whether the socket path stalls the same way.
+
 ### 2026-11-03 18:15 Why the GPU YCbCr path (G7, SWEET_YCBCR_GPU) is slow (read-only study)
 Per new frame: 22 shape words + copy_buffer of both planes (3.1 MB) to staging, full barrier, one 8x8 compute dispatch
 (one texel per invocation, SSBO word loads + Metal's exact fixed-point maths), writes RGBA16F (16.6 MB). Measured total
