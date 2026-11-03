@@ -25,5 +25,11 @@
 	<integer>10</integer>
 	<key>UserName</key>
 	<string>root</string>
+	<!-- Interactive like dropbear/timed (D2): with launchd's default class venusd's 1 ms waits stretched to ~13-15 ms
+	     by timer coalescing and the first frame came 7.5-9 s after OPEN (research/notes/venus-latency-2026-11-03.md). -->
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>POSIXSpawnType</key>
+	<string>Interactive</string>
 </dict>
 </plist>
