@@ -2098,9 +2098,14 @@ static char sweetMemoryOwnerKey;
 - (BOOL)isRemovable {return NO;}
 - (BOOL)isHeadless {return NO;}
 // supportsFamily: and the other queries the runtime answers are installed from it (installAnswers); supportsFamily: also answers the target
-// hardware's families (the bridge's TARGET_FAMILIES, journaled with their waived rows as F lines). No legacy feature set is claimed: the
-// base implementation reads Apple tables this device does not have.
-- (BOOL)supportsFeatureSet:(MTLFeatureSet)set {(void)set;return NO;}
+// hardware's families (the bridge's TARGET_FAMILIES, journaled with their waived rows as F lines). The base implementation reads Apple tables
+// this device does not have, so it never runs: the legacy iOS feature sets of the families supportsFamily: already claims (Apple1-3:
+// iOS_GPUFamily1-3, values 0-10 and 12-14; 11 and 15 up are Family4/5) answer YES. ANGLE's IsMetalRendererAvailable asks for 4
+// (iOS_GPUFamily3_v1) and without it WebGL contexts are lost at creation (B55, research/notes/webgl). SWEET_FEATURESET=0: all NO, as before.
+- (BOOL)supportsFeatureSet:(MTLFeatureSet)set {
+ static const bool on=[]{const char *p=getenv("SWEET_FEATURESET");return !(p&&*p&&atoi(p)==0);}();
+ return on&&(NSUInteger)set<=14&&set!=11;
+}
 // The original discovery (_MTLAddDevice) runs these four on every device it registers. The target's own versions fill the base class's limits
 // and feature tables from a hardware profile (`featureProfile`, `indirectArgumentBufferCapabilities`, a table of Apple GPUs) that this device
 // has not got: running them would claim an Apple GPU's capabilities. They are empty here, so a limit or feature the runtime measured is answered
