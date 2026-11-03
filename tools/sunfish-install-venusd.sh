@@ -62,9 +62,14 @@ fi
 
 # 1. tools
 for t in $TOOLS; do [ -s $O/$t ] || { echo "missing $O/$t: run tools/build-userland-linux.sh"; exit 1; }; done
-S "mkdir -p /var/local/bin"
-for t in $TOOLS; do F put $O/$t /var/local/bin/$t 755 >/dev/null; done
-echo "installed: $TOOLS"
+S "mkdir -p /var/local/bin /var/local/tmp"
+# Put to a temp file and rename: writing over a running venusd in place silently kept the old binary (vdstop, 2026-11-03).
+for t in $TOOLS; do
+	F put $O/$t /var/local/tmp/$t.new 755 >/dev/null && S "mv -f /var/local/tmp/$t.new /var/local/bin/$t" || { echo "install of $t failed"; exit 1; }
+done
+want=$(sha256sum $O/venusd | cut -c1-16); have=$(S "sha256sum /var/local/bin/venusd" | cut -c1-16)
+[ "$want" = "$have" ] || { echo "venusd on the phone is $have, not $want"; exit 1; }
+echo "installed: $TOOLS (a running venusd keeps the old binary until it restarts)"
 [ "$MODE" = --tools ] && exit 0
 
 # 2. launchd job
