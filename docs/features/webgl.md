@@ -22,6 +22,12 @@ renders white; WebGL 2 untested. **Updated:** 2026-11-03.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 14:05 HexGL: stale Safari cache, then my own error hook broke the menu
+Safari caches moved to /var/local/safari-cache-bak/20261103/ (test only): the scripts load again (38 GETs). The page
+stayed white because the error hook's 5 s tick called getContext('webgl') on the first canvas, which locks HexGL's 2D
+menu canvas to WebGL (the game's getContext('2d') then gets null). Earlier "white at the title page" was the same. Hook
+fixed (counts canvases only); retest running.
+
 ### 2026-11-03 11:55 HexGL retry: page stays white with no scripts loading on the phone
 After the .m4a change, Safari requested only index.html (+ the start beacon), no JS/CSS/audio, no ticks, twice (?v=2,
 ?v=3). The same page loads in the desktop browser here (only a favicon 404). Phone-side Safari state (cache?); parked.
