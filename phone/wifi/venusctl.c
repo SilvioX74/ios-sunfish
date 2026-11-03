@@ -1944,7 +1944,7 @@ static int dec_pkt(int n)
 		} else if (p[3] == EV_SEQ_CHANGED) {
 			printf("venus: SEQUENCE_CHANGED %s, %u properties\n", p[4] == EV_INSUFFICIENT ? "insufficient" :
 			       "sufficient", p[5]);
-			seq_changed(p, n < 32 ? n : 32);
+			seq_changed(p, n < 64 ? n : 64);
 			dc.reconfig = p[4] == EV_INSUFFICIENT ? 2 : 1;
 		} else if (p[3] == EV_RELEASE_REF && n >= 9) {
 			struct vbuf *b = find_buf(dc.opb, dc.nopb, p[6]);
