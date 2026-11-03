@@ -1,5 +1,5 @@
 # Video playback and hardware decode
-**State:** 🟡 software H.264 decodes (1080p 112 fps in vtdecode); hardware decode: research done, decoder slot loads, engine not powered yet. **Updated:** 2026-11-02.
+**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, engine bring-up under way. **Updated:** 2026-11-03.
 
 ## Facts
 - The iPhone X decodes video in hardware (AppleAVD); the port has no AVD, so iOS falls back to software decoders.
@@ -55,10 +55,33 @@ Open: free memory for queues (0xa5100000-0xbcc00000 looks free, unproven), PMEM_
 whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 
 ## Open
-- Stages 0, 2-5.
+- Stages 2-5. Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 06:25 Stage 0: Safari baseline on the software path (s0), WebGL lost at creation
+Kernel158 everyday boot (2026-11-02 21:31, no reboot), bundle 82f6b41, external power 4427 mV, iOS slider minimum.
+Per-boot log ../logs/boots/20261103-004005.log, 06:10-06:22. Page work/stage0/index.html (gitignored; clips 60 s,
+30 fps testsrc2, muted autoplay, beacons to the PC's http.server on 192.168.7.1:8077). CPU = psx CPU-seconds delta
+over 30 s (10-40 s into the clip), % of one core; temp = max SWEET THERM a55.
+| clip | plays | frames | dropped | CPU total | top processes | max temp |
+|---|---|---|---|---|---|---|
+| H.264 720p | yes, t=60 | 1800 | 3 (17 in a first run) | ~400 % (sum of top 3; total lost) | WebContent 127, mediaserverd 124, backboardd 53 | 59.9 C |
+| H.264 1080p | yes, t=60 | 1800 | 100 (5.6 %) | 590 % | mediaserverd 257, WebContent 138, backboardd 96 | 64.1 C |
+| HEVC 720p | yes, t=60 | 1800 | 5 | 247 % | mediaserverd 70, WebContent 64, backboardd 50 | 62.2 C |
+| HEVC 1080p | yes, t=60 | 1800 | 49 (2.7 %) | 346 % | mediaserverd 115, backboardd 93, WebContent 63 | 63.2 C |
+- Observed: all four play to the end with no error beacon, no GPU hang, no backboardd restart. The live log has no
+  decoder line at all (VideoToolbox, vtdecode, ExampleIPB, "planar iosurface", AppleAVD, H264/HEVC: 0 each), so it
+  doesn't show which path decodes. Webcam frames at 10 s showed the colour bars for H.264 and a blank area for HEVC
+  (first paint late; the beacons show full playback).
+- Guess: mediaserverd is the software decoder; HEVC costing less CPU than H.264 at the same size is unexpected (maybe a
+  different, better-threaded decoder, or the HEVC files' lower bitrate: 31 MB vs 46 MB). Target (under 15 % of one core)
+  is 20-40x away.
+- WebGL (webgl.html, 400 cubes): `getContext('webgl')` returns a context that is already lost: isContextLost true,
+  getError 37442 (CONTEXT_LOST_WEBGL), RENDERER null, createShader null. No frames. Nothing about GL in oslog
+  (research/notes/webgl/wgl-2026-11-03.oslog); the GPU process logs `lowMemoryHandler: critical=1` a second later.
+  New backlog B55; investigator on it.
 
 ### 2026-11-02 23:10 venusctl: pre-run review fixes
 (research/notes/venus-stage1-2026-11-02.md 8.5; built with phone/wifi/build.sh, not run on the phone yet)

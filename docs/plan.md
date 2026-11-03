@@ -21,13 +21,13 @@ the speed focus is over. Targets (Claude's numbers, the user can change them):
 ## Priority (a couple at a time, dev speed on top; ▶ = being worked; ~half a day max each, except stage work of item 1)
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
 1. ▶ **Hardware video decode** (Snapdragon 730G video engine, "Venus"), in stages, each a go/no-go (video.md):
-   0. Baseline: test videos in Safari (H.264, HEVC; 720p, 1080p) on today's software path: what plays, CPU, heat, sound, G7.
+   0. Done 2026-11-03: all 4 clips play in software, 250-590 % of one core, max 64 C (video.md s0).
    1. Done 2026-11-02: research, staged spec in video.md (PAS ID 9, HFI gen1, plugin slot ExampleIPB.videodecoder).
    2. Bring-up with a userland `venusctl` on /dev/pmem (video.md spec): probe, power, pas-check, boot, init, ping.
    3. First frame: a phone tool decodes a raw H.264 file to a YUV buffer, checked against a reference.
    4. VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
-2. **3D test**: a WebGL game in Safari (three.js demos or a simple browser game), 15 min, alongside stage 0.
+2. **3D test**: WebGL in Safari, 15 min. Blocked by B55 (context lost at creation, 2026-11-03): fix that first.
 3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
 4. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
 5. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
@@ -48,10 +48,8 @@ Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfen
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. Morning (night flag off 2026-11-03 06:06; slider still at minimum from the night): stage 0 Safari video baseline +
-   the WebGL test (~30 min): test page + 60 s H.264/HEVC 720p/1080p clips (testsrc2 + 440 Hz tone, muted by default)
-   in work/stage0/ (gitignored), serve with `python3 -m http.server -d work/stage0` on the USB link. Measure CPU % at
-   30 fps playback, dropped frames, heat. vtdecode software reference: 720p 213 fps, 1080p 112 fps.
+1. Done 2026-11-03 (s0, video.md): Safari plays all 4 clips in software, 250-590 % CPU, 1080p H.264 drops 5.6 %.
+   WebGL context is lost at creation (B55): investigator running; the 3D test waits on it.
 2. Stage 2 on the phone (venusctl d0f1da4 built in work/userland-linux/out, phone has the older 3851cad build: install
    first): `tools/sunfish-venus-test.sh` probe -> power -> pas -> boot -> memtest -> ping (VENUS_PHYS=0xa5100000),
    stop at the first failure or "LEFT POWERED". A reset is logged (video.md + journal), then a smaller step.
