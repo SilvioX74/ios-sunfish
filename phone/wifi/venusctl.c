@@ -7,13 +7,17 @@
  *                           Never reads the core (0x0aa00000).
  *   venusctl power on [--cvp]   BCM MM3 + MM2 minimal votes (no MX/CX), gcc_video_ahb/axi, PLL0 480 MHz, iris RCG /2
  *                           = 240 MHz, GDSC mvsc then mvs0 (--cvp: + mvs1), branches; then WRAPPER_HW_VERSION
- *   venusctl power off [--cvp]  the reverse; gcc_video_ahb stays on (critical in mainline gcc-sm7150), votes last
+ *   venusctl power off [--cvp]  the reverse; gcc_video_ahb stays on (critical in mainline gcc-sm7150), votes last;
+ *                           its HW_CTL bit goes back if power on cleared it (state in AHB_STATE)
  *   venusctl pas-check [--fw DIR] [--no-shutdown]  needs power on: PAS is_supported(9), init_image(9, venus.mdt
  *                           metadata), shutdown(9). No mem_setup, no auth_and_reset.
  *   -v                      print every register write (address, old, new, read-back)
  * Writes only: GCC video_ahb/video_axi CBCRs, the videocc PLL0/RCG/GDSC/CBCR registers below, RPMh BCMs MM3/MM2.
  * No SMMU writes. Every videocc access is gated on gcc_video_ahb CLK_OFF = 0, the core read on the GDSCs + clocks.
  * Polls time out after 100 ms and say where they stopped.
+ * gcc_video_ahb boots enabled but hardware-gated (0x80000003: HW_CTL set, CLK_OFF reads 1 while idle; Linux
+ * clk-branch.c skips the halt check in that mode). power on clears HW_CTL first so CLK_OFF can be polled;
+ * VENUSCTL_KEEP_HWCTL=1 skips that (old behaviour).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +29,9 @@
 #define GCC		0x00100000u
 #define GCC_VIDEO_AHB	(GCC + 0xb004)	/* gcc_video_ahb_clk, GDSC parent (notes table "GDSC parent clock") */
 #define GCC_VIDEO_AXI	(GCC + 0xb01c)
-#define GCC_VIDEO_XO	(GCC + 0xb028)	/* critical in mainline: read only */
+#define GCC_VIDEO_XO	(GCC + 0xb028)	/* critical in mainline: read only (no downstream video consumer) */
+#define GCC_HW_CTL	(1u << 1)	/* CBCR hwcg bit, as gcc-sm7150.c hwcg_bit = 1 */
+#define AHB_STATE	"/var/tmp/venusctl.ahb"	/* gcc_video_ahb CBCR before power on cleared HW_CTL */
 #define GCC_TBU_SF_VOTE	0x0017d044u	/* hlos1 vote mnoc_sf_0_tbu (SIDs 0x1000-0x13ff), camera-sid-cc0.md: read only */
 #define TBU_SF_STATUS	0x15182220u	/* 2 words (camera-sid-cc0.md section 4) */
 #define EFUSE_VIDEO	0x00786018u	/* bit 10 = multipipe disabled: PLL L 0x14, 200 MHz only (videocc-sdmmagpie.c:350) */
@@ -159,6 +165,12 @@ static const char *onoff(uint32_t cbcr)
 	return (cbcr & CLK_OFF) ? "off" : "on";
 }
 
+/* GCC CBCRs: CLK_OFF with HW_CTL set means hardware-gated (idle), not off */
+static const char *gcc_state(uint32_t cbcr)
+{
+	return (cbcr & CLK_OFF) && (cbcr & GCC_HW_CTL) ? "hw-gated (HW_CTL)" : onoff(cbcr);
+}
+
 /* ---- RPMh BCMs (cmd-db as adspboot.c cmddb_aux; command = commit | valid | x << 14 | y, sweet_gpu.c gpu_bus_vote) ---- */
 
 static int cmddb_aux(const char *id, uint64_t *aux, uint32_t *len)
@@ -289,7 +301,7 @@ static int probe(void)
 		{ "gcc_video_ahb", GCC_VIDEO_AHB }, { "gcc_video_axi", GCC_VIDEO_AXI }, { "gcc_video_xo", GCC_VIDEO_XO } };
 	for (unsigned i = 0; i < 3; i++) {
 		uint32_t v = rd32(g[i].pa);
-		printf("%-14s %#x = %#010x: %s, en %u\n", g[i].n, g[i].pa, v, onoff(v), v & 1);
+		printf("%-14s %#x = %#010x: %s, en %u\n", g[i].n, g[i].pa, v, gcc_state(v), v & 1);
 	}
 	uint32_t vote = rd32(GCC_TBU_SF_VOTE);
 	printf("tbu sf vote %#x = %#010x (bit0 sw_collapse %u, PWR_ON %u); status %#x = %#010x %#010x\n",
@@ -297,7 +309,7 @@ static int probe(void)
 	probe_smmu();
 	probe_bcm();
 	if (!ahb_on()) {
-		printf("videocc skipped: AHB off\n");
+		printf("videocc skipped: AHB %s\n", gcc_state(rd32(GCC_VIDEO_AHB)));
 		return 0;
 	}
 	probe_vcc();
@@ -456,6 +468,45 @@ static int gcc_on(uint32_t pa, const char *name, int must)
 	return -1;
 }
 
+/* gcc_video_ahb: clear HW_CTL (keep CLK_ENABLE) so CLK_OFF reflects the clock; the old value goes to AHB_STATE.
+ * gcc_video_xo (0x10b028, en 0) stays untouched: no video node in sdmmagpie(-vidc).dtsi uses GCC_VIDEO_XO_CLK
+ * (videocc runs from RPMh bi_tcxo, videocc-sdmmagpie.c:60,100; the venus PIL node takes VIDEO_CC_XO_CLK, dtsi:3408) */
+static void ahb_hwctl_clear(void)
+{
+	uint32_t v = rd32(GCC_VIDEO_AHB);
+	if (!(v & GCC_HW_CTL))
+		return;
+	if (getenv("VENUSCTL_KEEP_HWCTL")) {
+		printf("venus: gcc_video_ahb HW_CTL set (%#010x), kept (VENUSCTL_KEEP_HWCTL)\n", v);
+		return;
+	}
+	FILE *f = fopen(AHB_STATE, "w");
+	if (f) {
+		fprintf(f, "%#x\n", v);
+		fclose(f);
+	} else {
+		printf("venus: can't write %s, power off won't restore HW_CTL\n", AHB_STATE);
+	}
+	upd(GCC_VIDEO_AHB, GCC_HW_CTL | CBCR_EN, CBCR_EN, "gcc_video_ahb clear HW_CTL");
+	printf("venus: gcc_video_ahb HW_CTL cleared (%#010x -> %#010x)\n", v, rd32(GCC_VIDEO_AHB));
+}
+
+/* power off: put HW_CTL back if power on cleared it */
+static void ahb_hwctl_restore(void)
+{
+	unsigned v = 0;
+	FILE *f = fopen(AHB_STATE, "r");
+	if (!f)
+		return;
+	int n = fscanf(f, "%x", &v);
+	fclose(f);
+	unlink(AHB_STATE);
+	if (n == 1 && (v & GCC_HW_CTL)) {
+		upd(GCC_VIDEO_AHB, GCC_HW_CTL, GCC_HW_CTL, "gcc_video_ahb restore HW_CTL");
+		printf("venus: gcc_video_ahb HW_CTL restored (%#010x)\n", rd32(GCC_VIDEO_AHB));
+	}
+}
+
 static int power_on(void)
 {
 	for (unsigned i = 0; i < 2; i++)
@@ -463,7 +514,8 @@ static int power_on(void)
 			printf("venus: STOP: bcm %s vote failed\n", bcms[i]);
 			return power_off(), 1;
 		}
-	if (gcc_on(GCC_VIDEO_AHB, "gcc_video_ahb", 1))
+	ahb_hwctl_clear();
+	if (gcc_on(GCC_VIDEO_AHB, "gcc_video_ahb", 1))	/* BRANCH_HALT-style poll, as gcc_video_axi */
 		return power_off(), 1;
 	int axi_late = gcc_on(GCC_VIDEO_AXI, "gcc_video_axi", 0);	/* may need the video GDSCs to report on */
 
@@ -512,7 +564,8 @@ static int power_off(void)
 		upd(GCC_VIDEO_AXI, CBCR_EN, 0, "gcc_video_axi");
 		printf("venus: gcc_video_axi off (%#010x)\n", rd32(GCC_VIDEO_AXI));
 	}
-	/* gcc_video_ahb stays as it is: critical in mainline gcc-sm7150, and the GDSC parent */
+	/* gcc_video_ahb stays enabled: critical in mainline gcc-sm7150, and the GDSC parent; only HW_CTL goes back */
+	ahb_hwctl_restore();
 	int rc = 0;
 	for (unsigned i = 2; i-- > 0;)
 		rc |= bcm(bcms[i], BCM_OFF);

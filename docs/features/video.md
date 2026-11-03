@@ -60,6 +60,23 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-02 22:50 venusctl: AHB HW_CTL handling
+- Seen in vd1 `venusctl probe`: gcc_video_ahb 0x10b004 = 0x80000003 (CLK_ENABLE 1, HW_CTL 1, CLK_OFF 1), gcc_video_axi
+  0x10b01c = 0x80000000, gcc_video_xo 0x10b028 = 0x80000000. The "AHB on" gate (CLK_OFF = 0) never passed.
+- Source: no downstream gcc-sdmmagpie.c in research/ext/msm-vidc-sunfish/ (only the dt-bindings header). Mainline
+  research/re/gcc-sm7150.c: gcc_video_ahb and gcc_video_xo are not clk_branches at all, only
+  `qcom_branch_set_clk_en` (CLK_ENABLE bit 0) in probe, "keep some clocks always-on" (:3007 0x0b004, :3011 0x0b028);
+  no hwcg_reg, no halt_check. gcc_video_axi (:2618-2629): BRANCH_HALT on 0xb01c, no hwcg; its BCR at :2921.
+  Linux clk-branch.c:72 skips every halt check while a branch is in HW_CTL mode, so CLK_OFF = 1 under HW_CTL is
+  normal idle gating, not "off". Downstream DT: GCC_VIDEO_AHB_CLK is the ahb_clk of mvsc/mvs0/mvs1 GDSCs
+  (sdmmagpie.dtsi:4013,4019,4026); no video node uses GCC_VIDEO_XO_CLK (videocc parent is bi_tcxo,
+  videocc-sdmmagpie.c:60,100; venus PIL node takes VIDEO_CC_XO_CLK, dtsi:3408).
+- Change (phone/wifi/venusctl.c): power on clears HW_CTL on gcc_video_ahb (CLK_ENABLE kept), saves the old CBCR in
+  /var/tmp/venusctl.ahb, then polls CLK_OFF = 0 for 100 ms (BRANCH_HALT style, as gcc_video_axi: no source gives a
+  halt_check for this branch); power off restores HW_CTL from that file after the videocc teardown. probe prints
+  "hw-gated (HW_CTL)" for a GCC CBCR with CLK_OFF + HW_CTL and still skips videocc then (read-only kept).
+  gcc_video_xo is not added to the allow-list (no video consumer). Off switch: VENUSCTL_KEEP_HWCTL=1. Not run yet.
+
 ### 2026-11-02 22:45 vd1: decoder slot loads in mediaserverd; venusctl probe; software baseline (night, read-only)
 - Run vd1, kernel158 everyday boot of soak n8 (20261102-213020), markers `=== vd1 *`.
 - vtstub at /System/Library/VideoDecoders/ExampleIPB.videodecoder: loaded by vtdecode (pids 1478, 1498, 1500) and by
