@@ -45,7 +45,9 @@
  * the core registers in allowed() (boot/init/ping), the firmware carveout, the queue block; SMMU writes only through
  * smmu_identity/smmu_release (one exact SMR + S2CR + translation-off bank per SID, never masked: masked SMRs reset
  * the phone in camera tests). Every videocc access is gated on gcc_video_ahb CLK_OFF = 0, every core access on the
- * GDSCs + clocks (core_ok). Polls time out (100 ms; 1 s for the firmware) and say where they stopped.
+ * GDSCs + clocks (core_ok). Polls time out (100 ms; 1 s for the firmware) and say where they stopped. lat2: every
+ * timeout is CLOCK_MONOTONIC time and the lines print the real ms (a throttled 1 ms sleep lasted ~14 ms, video.md
+ * lat1); PMEM_PASS_WAITS=1: loop passes count as ms, as before.
  * Off switches: VENUSCTL_SID1=1 (only 0x1080), VENUSCTL_NO_CLKCFG=1 (no CPU_CGC_DIS/CLOCK_CONFIG writes),
  * VENUSCTL_NO_MEMPROT=1 (no memory protect call).
  * gcc_video_ahb boots enabled but hardware-gated (0x80000003: HW_CTL set, CLK_OFF reads 1 while idle; Linux

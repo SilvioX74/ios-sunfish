@@ -93,7 +93,8 @@ int smmu_identity(const char *name, uint32_t sid, uint32_t mask)
 	wr32(s + 0xc00 + 4 * slot, (uint32_t)cb);	/* S2CR: translate (type 0) through this bank */
 	wr32(s + 0x800 + 4 * slot, (1u << 31) | (mask << 16) | sid);	/* SMR valid last */
 	wr32(s + 0x70, 0);				/* sTLBGSYNC */
-	for (int i = 0; i < 1000 && (rd32(s + 0x74) & 1); i++)
+	double t0 = mono_ms();	/* lat2: 1 s on the clock (pmem.h wait_over) */
+	for (unsigned i = 0; (rd32(s + 0x74) & 1) && !wait_over(t0, i, 1000); i++)
 		delay_ms(1);
 	uint32_t smr = rd32(s + 0x800 + 4 * slot), s2cr = rd32(s + 0xc00 + 4 * slot);
 	int ok = (smr >> 31) && sid_match(smr, sid, mask) && ((s2cr >> 16) & 3) == 0 &&
@@ -120,7 +121,8 @@ int smmu_release(const char *name)
 	wr32(v->gr1 + 4 * v->cb, v->cbar);
 	wr32(v->gr1 + 0x800 + 4 * v->cb, v->cba2r);
 	wr32(s + 0x70, 0);
-	for (int i = 0; i < 1000 && (rd32(s + 0x74) & 1); i++)
+	double t0 = mono_ms();	/* lat2: 1 s on the clock (pmem.h wait_over) */
+	for (unsigned i = 0; (rd32(s + 0x74) & 1) && !wait_over(t0, i, 1000); i++)
 		delay_ms(1);
 	uint32_t smr = rd32(s + 0x800 + 4 * v->slot), s2cr = rd32(s + 0xc00 + 4 * v->slot), sctlr = rd32(v->cbp);
 	uint32_t cbar = rd32(v->gr1 + 4 * v->cb), cba2r = rd32(v->gr1 + 0x800 + 4 * v->cb);
@@ -272,7 +274,8 @@ int smmu_translate(const char *name, const uint16_t *sids, unsigned n, uint64_t 
 	wr32(cbp + 0x610, (uint32_t)cb);		/* TLBIASID (audio step 2) */
 	wr32(cbp + 0x618, 0);				/* TLBIALL */
 	wr32(cbp + 0x7f0, 0);				/* TLBSYNC */
-	for (int i = 0; i < 1000 && (rd32(cbp + 0x7f4) & 1); i++)
+	double t0 = mono_ms();	/* lat2: 1 s on the clock (pmem.h wait_over) */
+	for (unsigned i = 0; (rd32(cbp + 0x7f4) & 1) && !wait_over(t0, i, 1000); i++)
 		delay_ms(1);
 	wr32(cbp, sctlr);				/* SCTLR last */
 	uint64_t r1 = 0, r2 = 0, r3a = 0, r3b = 0;
@@ -303,7 +306,8 @@ int smmu_translate(const char *name, const uint16_t *sids, unsigned n, uint64_t 
 		wr32(s + 0x800 + 4 * slot[k], 0x80000000u | sids[k]);
 	}
 	wr32(s + 0x70, 0);				/* sTLBGSYNC */
-	for (int i = 0; i < 1000 && (rd32(s + 0x74) & 1); i++)
+	t0 = mono_ms();		/* lat2: 1 s on the clock (pmem.h wait_over) */
+	for (unsigned i = 0; (rd32(s + 0x74) & 1) && !wait_over(t0, i, 1000); i++)
 		delay_ms(1);
 	for (unsigned k = 0; k < n; k++)
 		printf("smmu: %s %#x -> CB%d via SMR%d: SMR %08x S2CR %08x\n", name, sids[k], cb, slot[k],

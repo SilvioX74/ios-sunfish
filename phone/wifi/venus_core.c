@@ -346,16 +346,21 @@ static void upd(uint32_t pa, uint32_t mask, uint32_t val, const char *why)
 	wr(pa, (vrd(pa) & ~mask) | (val & mask), why);
 }
 
-/* (reg & mask) == want within ms (1 ms steps); 0 = ok */
+static unsigned polled;	/* lat2: real ms the last poll()/gcc_on() waited (for the timeout lines) */
+
+/* (reg & mask) == want within ms (1 ms steps, lat2: a CLOCK_MONOTONIC deadline, pmem.h wait_over); 0 = ok */
 static int poll(uint32_t pa, uint32_t mask, uint32_t want, unsigned ms)
 {
-	for (unsigned i = 0; i <= ms; i++) {
+	double t0 = mono_ms();
+	for (unsigned i = 0;; i++) {
 		if ((vrd(pa) & mask) == want)
 			return 0;
-		if (i < ms)
-			delay_ms(1);
+		if (wait_over(t0, i, ms)) {
+			polled = wait_ms(t0, i);
+			return -1;
+		}
+		delay_ms(1);
 	}
-	return -1;
 }
 
 static const char *onoff(uint32_t cbcr)
@@ -521,7 +526,7 @@ static int branch_on(uint32_t pa, const char *name)
 	if (!(vrd(pa) & CBCR_EN))
 		upd(pa, CBCR_EN, CBCR_EN, name);
 	if (poll(pa, CLK_OFF, 0, 100)) {
-		printf("venus: STOP: %s %#x still CLK_OFF after 100 ms (%#010x)\n", name, pa, vrd(pa));
+		printf("venus: STOP: %s %#x still CLK_OFF after %u ms (%#010x)\n", name, pa, polled, vrd(pa));
 		return -1;
 	}
 	printf("venus: %s on (%#010x)\n", name, vrd(pa));
@@ -538,7 +543,7 @@ static void branch_off(uint32_t pa, const char *name, int voted)
 	if (voted)
 		usleep(10);	/* clk-branch.c: voted branches only delay on disable */
 	else if (poll(pa, CLK_OFF, CLK_OFF, 100))
-		printf("venus: %s %#x CLK_OFF not set after 100 ms (%#010x), going on\n", name, pa, vrd(pa));
+		printf("venus: %s %#x CLK_OFF not set after %u ms (%#010x), going on\n", name, pa, polled, vrd(pa));
 	printf("venus: %s off (%#010x)\n", name, vrd(pa));
 }
 
@@ -558,7 +563,7 @@ static int gdsc_on(uint32_t pa, const char *name)
 	if (!(v & PWR_ON) || (v & SW_COLLAPSE))
 		upd(pa, SW_COLLAPSE, 0, name);
 	if (poll(pa, PWR_ON, PWR_ON, 100)) {
-		printf("venus: STOP: gdsc %s %#x no PWR_ON after 100 ms (%#010x)\n", name, pa, vrd(pa));
+		printf("venus: STOP: gdsc %s %#x no PWR_ON after %u ms (%#010x)\n", name, pa, polled, vrd(pa));
 		return -1;
 	}
 	printf("venus: gdsc %s on (%#010x)\n", name, vrd(pa));
@@ -573,7 +578,7 @@ static void gdsc_off(uint32_t pa, const char *name)
 	}
 	upd(pa, SW_COLLAPSE, SW_COLLAPSE, name);
 	if (poll(pa, PWR_ON, 0, 100))
-		printf("venus: gdsc %s %#x still PWR_ON after 100 ms (%#010x), going on\n", name, pa, vrd(pa));
+		printf("venus: gdsc %s %#x still PWR_ON after %u ms (%#010x), going on\n", name, pa, polled, vrd(pa));
 	else
 		printf("venus: gdsc %s off (%#010x)\n", name, vrd(pa));
 }
@@ -613,7 +618,7 @@ static int pll_on(uint32_t l)
 	upd(PLL_MODE, RESET_N, RESET_N, "pll0 RESET_N");
 	wr(PLL_OPMODE, PLL_RUN, "pll0 OPMODE RUN");
 	if (poll(PLL_MODE, LOCK_DET, LOCK_DET, 100)) {
-		printf("venus: STOP: pll0 no lock after 100 ms (MODE %#x), back to STANDBY\n", vrd(PLL_MODE));
+		printf("venus: STOP: pll0 no lock after %u ms (MODE %#x), back to STANDBY\n", polled, vrd(PLL_MODE));
 		wr(PLL_OPMODE, 0, "pll0 OPMODE STANDBY");
 		return -1;
 	}
@@ -649,7 +654,7 @@ static int rcg_set(uint32_t src, uint32_t divf, const char *why)
 	wr(IRIS_CFG, cfg, why);
 	upd(IRIS_RCG, 1, 1, "iris rcg UPDATE");
 	if (poll(IRIS_RCG, 1, 0, 100)) {
-		printf("venus: STOP: iris rcg didn't update after 100 ms (CMD %#x, CFG %#x)\n", vrd(IRIS_RCG), vrd(IRIS_CFG));
+		printf("venus: STOP: iris rcg didn't update after %u ms (CMD %#x, CFG %#x)\n", polled, vrd(IRIS_RCG), vrd(IRIS_CFG));
 		return -1;
 	}
 	printf("venus: iris rcg src %u div field %u (CMD %#010x CFG %#010x)\n", src, divf, vrd(IRIS_RCG), vrd(IRIS_CFG));
@@ -660,14 +665,20 @@ static int gcc_on(uint32_t pa, const char *name, int must)
 {
 	if (!(rd32(pa) & CBCR_EN))
 		upd(pa, CBCR_EN, CBCR_EN, name);
-	for (int i = 0; i <= 100; i++) {
+	double t0 = mono_ms();	/* lat2: 100 ms on the clock, not 101 loop passes */
+	unsigned i;
+	for (i = 0;; i++) {
 		if (!(rd32(pa) & CLK_OFF)) {
 			printf("venus: %s on (%#010x)\n", name, rd32(pa));
 			return 0;
 		}
+		if (wait_over(t0, i, 100)) {
+			i = wait_ms(t0, i);
+			break;
+		}
 		delay_ms(1);
 	}
-	printf("venus: %s %#x still CLK_OFF after 100 ms (%#010x)%s\n", name, pa, rd32(pa),
+	printf("venus: %s %#x still CLK_OFF after %u ms (%#010x)%s\n", name, pa, i, rd32(pa),
 	       must ? "" : ", checked again after the GDSCs");
 	return -1;
 }
@@ -1382,7 +1393,9 @@ static int fw_dead;		/* stage 3: a sys error came: no more session commands */
 /* drain the debug queue, then the message queue until a packet of type want (0 = just drain); 0 = got it */
 static int wait_msg(uint32_t want, unsigned ms)
 {
-	for (unsigned t = 0; t <= ms; t++) {
+	double t0 = mono_ms();	/* lat2: ms on the clock (pmem.h wait_over), not loop passes */
+	unsigned t;
+	for (t = 0;; t++) {
 		int n;
 		while ((n = q_read(2)) > 0)
 			print_pkt(2, n);
@@ -1404,12 +1417,13 @@ static int wait_msg(uint32_t want, unsigned ms)
 		}
 		if (n < 0)
 			return -1;
-		if (t < ms)
-			delay_ms(1);
+		if (wait_over(t0, t, ms))
+			break;
+		delay_ms(1);
 	}
 	if (!want)
 		return 0;
-	printf("venus: %s no %#x after %u ms\n", wait_soft ? "note:" : "STOP:", want, ms);
+	printf("venus: %s no %#x after %u ms\n", wait_soft ? "note:" : "STOP:", want, wait_ms(t0, t));
 	core_status("timeout");
 	print_sfr(qb);
 	return -1;
@@ -1500,10 +1514,13 @@ int init(uint64_t phys)
 	wr(CTRL_INIT, 1, "CTRL_INIT");
 	uint32_t st = 0;
 	unsigned ms;
-	for (ms = 0; ms <= 1000; ms++) {
+	double t0 = mono_ms();	/* lat2: 1 s on the clock; the line prints the real time (lat1: passes, "after 1 ms") */
+	for (unsigned i = 0;; i++) {
 		st = crd(CTRL_STATUS);
-		if (st & (ST_INIT | ST_ERROR))
+		if (st & (ST_INIT | ST_ERROR) || wait_over(t0, i, 1000)) {
+			ms = wait_ms(t0, i);
 			break;
+		}
 		delay_ms(1);
 	}
 	v.init = (st & ST_INIT) && !(st & ST_ERROR);
@@ -2166,11 +2183,9 @@ static int reconfig(void)
 	return 0;
 }
 
-static double now_s(void)
+static double now_s(void)	/* lat2: monotonic (was gettimeofday: a clock step moved the 3 s/15 s decode limits) */
 {
-	struct timeval t;
-	gettimeofday(&t, NULL);
-	return t.tv_sec + t.tv_usec / 1e6;
+	return mono_ms() / 1e3;
 }
 
 /* the downstream close: flush all, stop, release resources, release internal buffers, session end

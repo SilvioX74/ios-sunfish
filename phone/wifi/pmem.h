@@ -53,5 +53,10 @@ int pm_list(struct pmem_list *l);
 int pm_rpmh(const char *res, unsigned n, const uint32_t *off, const uint32_t *val);	/* errno or 0 */
 void delay_ms(unsigned ms);
 int wait_bit(uint64_t pa, uint32_t mask, int set, unsigned ms);	/* 0 = ok */
+/* video lat2: waits end on a CLOCK_MONOTONIC deadline, not after ms passes of delay_ms(1) (a throttled process's
+ * 1 ms sleep lasted ~14 ms, lat1: a "1000 ms" wait ran ~14 s). PMEM_PASS_WAITS=1: count passes as ms, as before */
+double mono_ms(void);			/* CLOCK_MONOTONIC in ms */
+int wait_over(double t0, unsigned pass, unsigned ms);	/* 1: a wait begun at t0 (mono_ms) is over after pass (0..) */
+unsigned wait_ms(double t0, unsigned pass);	/* elapsed ms for messages (passes with PMEM_PASS_WAITS=1) */
 
 #endif

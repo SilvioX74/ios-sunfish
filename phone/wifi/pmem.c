@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include "pmem.h"
 
@@ -106,15 +107,42 @@ void delay_ms(unsigned ms)
 	usleep(ms * 1000);
 }
 
+double mono_ms(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
+}
+
+static int pass_waits(void)	/* lat2: PMEM_PASS_WAITS=1: loop passes count as ms (the old timeouts) */
+{
+	static int n = -1;
+	if (n < 0)
+		n = getenv("PMEM_PASS_WAITS") && atoi(getenv("PMEM_PASS_WAITS"));
+	return n;
+}
+
+int wait_over(double t0, unsigned pass, unsigned ms)
+{
+	return pass_waits() ? pass >= ms : mono_ms() - t0 >= ms;
+}
+
+unsigned wait_ms(double t0, unsigned pass)
+{
+	return pass_waits() ? pass : (unsigned)(mono_ms() - t0 + 0.5);
+}
+
+/* lat2: the bit is checked once more after the deadline (as after the last 1 ms step before) */
 int wait_bit(uint64_t pa, uint32_t mask, int set, unsigned ms)
 {
-	for (unsigned i = 0; i <= ms; i++) {
+	double t0 = mono_ms();
+	for (unsigned i = 0;; i++) {
 		if (!!(rd32(pa) & mask) == set)
 			return 0;
-		if (i < ms)
-			delay_ms(1);
+		if (wait_over(t0, i, ms))
+			return -1;
+		delay_ms(1);
 	}
-	return -1;
 }
 
 int pm_rpmh(const char *res, unsigned n, const uint32_t *off, const uint32_t *val)
