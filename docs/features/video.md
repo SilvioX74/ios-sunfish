@@ -89,6 +89,17 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 21:40 vfix1: client leak fixed: 12/12 clips decoded on Venus, 0 "too many clients"
+venusd 09b15004 + vtvenus 05645f58 (f87343c leak, 41a2e8e BCM retry, f461433 timestamps), boot vfix1
+(20261103-151222.log, kernel160; no RPMh timeout this boot). Start line `[25.200] [wall 2026-11-03 15:12:10] venusd: start,
+... idle client 30 s, max 16 clients` (stamp = kernel's 25.203). 13 HLS 1080p clips alternating H.264/HEVC: 12 ended, each
+with its own venusd session (1800 AUs / 1800 frames each); 149 client connects, max 1 at a time; 0 too many clients,
+0 power on failed, 0 BCM retries; page dropped 0. vtvenus: one `given up: venusd connection closed ... a fresh try` per
+clip end (the 30 s idle-client close) — harmless. Clip 104 never started: `DEVLOST first (turnip) VK_ERROR_DEVICE_LOST
+... submit failed: 0xe00002c2` in backboardd at 322.453 s, backboardd restarted, 4 GradientPosterEx CRASH right after;
+no venusd session was open (session 3 opened at 252.153, closed at 314.5): this GPU loss is not tied to a Venus start.
+Max 81.6 C.
+
 ### 2026-11-03 21:00 vsoak (15 min, 13 HLS 1080p clips): venusd client leak; MM3 vote failures; one GPU hang
 Boot bat1b (20261103-144012.log), 14:44-14:59. 12 of 13 clips reached k=ended (HLS beacons report frames=0: the page's
 counter doesn't work for HLS). /var/local/venusd.log (cut at 1 MB) shows only 4 session opens for 13 clips, then 21x

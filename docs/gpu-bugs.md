@@ -324,3 +324,9 @@ had no Venus session nearby. Rate per Venus session start unknown (dozens of sta
 offset from the last session open for every hang; if the link holds, look at what Venus start does to shared state
 (MMCX/RPMh votes, the CB4 SMMU bank venusctl picks (a possible bootloader leftover, s7b), memory bandwidth votes).
 
+### 2026-11-03 21:40 Venus-start suspect weakened
+With timestamped venusd logs (vfix1): a backboardd `VK_ERROR_DEVICE_LOST ... submit failed: 0xe00002c2` (no smmu fsr line)
+at 322.453 s came 70 s after the last venusd session opened and 8 s after it closed, 3 s after a new WebKit.GPU started:
+not tied to a Venus start. The two earlier fsr-40000002 hangs 1-2 s after a session open may be coincidence; keep logging
+offsets.
+
