@@ -89,6 +89,19 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 18:04 Credit path works (crG/crH/crI, kernel161, venusd 06f9715 + vtvenus 331e616): mediaserverd -35, venusd -22
+"venusd: memory limit 6/6 MB -> 512 MB: 0" (launchd gave a 6 MB limit). venusc --surf bit-exact (inf dB, every frame):
+720p 9 credited / 1 socket, 1080p-10 8 / 2, 0 handed back, 0 CRASH lines. Safari HLS H.264 1080p, % of one core, 30 s:
+| run | WebContent | Networking | GPU | backboardd | mediaserverd | venusd | kernel_task | total* | frames/dropped |
+| cg1 credit | 6.7 | 52.3 | 14.7 | 45.8 | 21.9 | 10.6 | 18.6 | 326.6 | 932/0 |
+| cg2 credit | 5.9 | 38.5 | 13.4 | 45.4 | 19.7 | 10.2 | 15.3 | 193.7 | 1199/0 |
+| ch1 SURF=0 | 8.0 | 69.8 | 16.2 | 44.4 | 59.1 | 34.2 | 24.4 | 432.9 | 716/8 |
+| ch2 SURF=0 | 6.8 | 46.0 | 14.4 | 46.8 | 54.8 | 31.9 | 18.7 | 377.4 | 1195/0 |
+*total = psx TOTAL incl. trustd (61-63 %) and accessoryupdater (38 %) in cg1/ch1/ch2 (post-boot noise); cg2 is clean.
+Run 2 vs run 2: mediaserverd -35.1, venusd -21.7 (= the -58 upper bound). vtvenus: 1420 of 1423 frames through credited
+surfaces, 0 dropped (first/last frame of a session over the socket). Picture right (colour bars, moving box). ch1's 8 drops
+= the known first-session "venusd session error -60 at frame 17" resync on the socket path. Credit path stays on (default).
+
 ### 2026-11-03 17:49 Credit path retest (crD): JetsamMemoryLimit 128 in the job did not help
 `--check` shows JetsamProperties {JetsamMemoryLimit: 128} in the launchd.plist cache; first `venusc --surf` (720p, 6
 credits): boot log 20261103-174030 "[64.183] CRASH venusd[37] sig 9", "reason ns 1 code 0x7" right after "SWEET SURF:

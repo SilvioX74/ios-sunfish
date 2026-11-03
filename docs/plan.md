@@ -46,7 +46,7 @@ stops phone work, or doubles in rate after a change (then turn that change off f
 
 ## Phone
 Claude's. On kernel161 (= kernel158 + xnu 0277 WC/0278 cached Venus window + 0279 RPMh fix) since 15:32 (tag rpmh1),
-bundle d3316ff (0129 hardware MSAA resolve + 0130 center varyings), venusd f461433 (Interactive launchd job) + vtvenus (avc1/hvc1), wland 206585d
+bundle d3316ff (0129 hardware MSAA resolve + 0130 center varyings), venusd 06f9715 (Interactive, 512 MB limit) + vtvenus 331e616 (avc1/hvc1, credit path), wland 206585d
 (HT20, Interactive, bounds checks), camd + hapticd Interactive, cam41. Everyday boot: `tools/sunfish-test.sh -k 161 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6
 sweetampreset=1 sweetpmemwc=2 sweetgpucap=512`. /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20,
 SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1.
@@ -54,8 +54,8 @@ SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh); backboardd en
 ## Next (in this order)
 1. Wi-Fi CPU: userland batching (356c09a) didn't help (bat, 20:40); the per-frame reads + one /dev/wlan write per frame
    dominate: a kernel batched input path is the next step (parked behind the items below).
-2. Video CPU (HLS 1080p ~241 %): no-pixel test says copies 2-4 cost ~58 % (mediaserverd -33, venusd -22): credit path
-   (venusd preads into vtvenus's pool IOSurfaces) being written. Then backboardd ~45, network ~40.
+2. Video CPU: credit path done (mediaserverd 55 -> 20, venusd 32 -> 10, 0 drops). Left: backboardd ~45 (vImage
+   conversion), network ~40, the first-session "error -60 at frame 17" resync.
 3. Done: launchd Interactive A/B: camd (open 5.7 -> 0.7 s, 30 fps) and hapticd kept; sensors, btbridge cost CPU, reverted.
 4. GPU: suspect link Venus session start → GPU fault (2 of ~5 hangs today); B53 render-server snapshots intermittently
    empty; B50 Maps; WebGL speed (Optimize).
