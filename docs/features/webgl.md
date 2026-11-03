@@ -1,6 +1,6 @@
 # WebGL (Safari)
-**State:** 🟡 context created and frames run (20 fps, 15 min, 0 hangs), but draws fail (GL_INVALID_OPERATION): only
-the clear colour shows. **Updated:** 2026-11-03.
+**State:** ✅ WebGL 1 draws in Safari (400 textured cubes, 24 fps, 15 min, 0 hangs); WebGL 2 untested (needs argument
+encoders). **Updated:** 2026-11-03.
 
 ## Facts
 - WebKit's GPU process runs ANGLE on Metal (iOS 16: WebKit 615.8.1.10.3, Metal 306.6.6). ANGLE first asks
@@ -14,10 +14,22 @@ the clear colour shows. **Updated:** 2026-11-03.
 - Test page: work/stage0/webgl.html (gitignored; beacons to the PC http.server on 192.168.7.1:8077, see video.md s0).
 
 ## Open
-- Draws: newLibraryWithSource: override (implementer, 2026-11-03); WebGL 2 will need argument encoders on NBFunction.
+- WebGL 2 (argument encoders); a real WebGL game; fps (24 at 400 cubes: profile); shader compile cost on page load.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 07:45 wg4: WebGL draws: 400 textured cubes, 15 min, 24 fps, 0 hangs
+Bundle work/metal2-next 5a76e18 (LC_UUID 4C4C4448-5555-3144-A1E8-B17B63C5AD50: 14ebff1 newLibraryWithSource override +
+sampler-LOD setters), kernel158 boot venusR; per-boot log ../logs/boots/20261103-062614.log, 07:28:04-07:43:15.
+- wg3 before it (14ebff1 alone, 07:21): `SWEET SRC: ... lib 5019 bytes source -> 7996 bytes metallib -> NBLibrary ok
+  (1 functions) compile 2708 us load 83 us` (and #2, 10562 -> 9988 bytes), then `MISSING NBRenderEncoder
+  -setFragmentSamplerState:lodMinClamp:lodMaxClamp:atIndex:` and `CRASH com.apple.WebKit[1614] sig 6` -> context lost.
+- wg4: both programs `NBLibrary ok` (compile 4518 / 3776 us, load 250 / 318 us); frame beacons getError 0; 180 fps
+  beacons: median 24.4, min 21.8 (first 5 s), max 25.4; worst frame 286 ms (first), 64-73 ms steady. 0 context loss,
+  0 MISSING/CRASH/foreign-function lines, 0 GPU hangs, 0 backboardd restarts after the install; max 76.1 C. Webcam
+  (scratchpad wg4-*.jpg, checked by Claude): coloured checker-textured cubes with correct depth, animating to the end.
+- Not measured: CPU/GPU load. The sampler LOD clamps are still dropped here (AdrenoMetal port of real clamps under way).
 
 ### 2026-11-03 07:45 Why draws fail (read-only, disassembly): Apple's library, our pipeline refuses it
 - Our device has no `newLibraryWithSource:`, so `_MTLDevice`'s runs: MTLLibraryBuilder -> MTLCompilerService (the

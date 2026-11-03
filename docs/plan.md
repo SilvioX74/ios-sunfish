@@ -27,7 +27,7 @@ Only items Claude can move now. User tasks are listed below and never gate work;
    3. Done 2026-11-03 (v3e): `venusctl decode` bit-exact vs ffmpeg at 320x240 and 1280x720. Left: speed on a long clip.
    4. ▶ VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
-2. **3D test**: WebGL in Safari, 15 min. Context works (wg2); draws fail: shader-source compile (webgl.md).
+2. **3D test**: WebGL 1 test page runs 15 min clean (wg4). Left: a real WebGL game 15 min; WebGL 2.
 3. **App Store access**: can it sign in and install a free app? Gate for Instagram and games (1-2 h).
 4. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).
 5. **Garbled and undrawn images** (B44, B53): Notes attachments, Safari tab thumbnails, Music icon, Maps glitch.
@@ -43,13 +43,13 @@ stops phone work, or doubles in rate after a change (then turn that change off f
 ## Phone
 Claude's. Up since the everyday boot venusR (2026-11-03 06:25, kernel158), slider at minimum.
 Everyday setup: kernel158 (sweetgpufreq=6, sweethwcg=1, sweetsmmutcr=3, sweetfencepoll=200, sweetvsyncphase=5000, A76
-1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 283012f
-(SweetMetal2 4C4C448E); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
+1939 MHz compiled in) sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1; bundle work/metal2-next 5a76e18
+(SweetMetal2 4C4C4448); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1; /var/local/mtl2-env = SWEET_U0011..14=1,
 TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh). Everyday boot: `tools/sunfish-test.sh -k 158 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1`.
 
 ## Next (in this order)
-1. WebGL (webgl.md): context fixed (283012f, wg2), frames run, draws fail (GL_INVALID_OPERATION; shader source
-   path). Investigator on the failing point and fix routes; then pick a route (likely days: hard item).
+1. WebGL 1 works (wg4, 5a76e18). AdrenoMetal ports (swizzle views, selector fallback, presentDrawable, LOD clamps)
+   being written; then a real WebGL game for 15 min (the 3D target) and WebGL 2.
 2. Stage 4 (video.md "Stage 4 spec"): 4a0 kernel patch giving the pmem Venus window 0233's write-combined mapping,
    measure MB/s; then 4a `venusd` + test client (fps on a 60 s 1080p clip).
 3. Metal→Vulkan prior-art survey (the user, 2026-11-03): we are 821 commits behind metal2vulkan (720ef1ce vs
