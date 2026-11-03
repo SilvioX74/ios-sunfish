@@ -75,6 +75,16 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 08:00 Stage 3: why "Not enough output2 buffers" (read-only, firmware disassembly)
+research/notes/venus-stage3-continue-2026-11-03.md. In venus.b02 (A32), h264Dec_Continue (0x8aa1c) calls a check
+(0xe0658) that fails on count (dec[0x130] < dec[0x11c]), on output2 size (required > dec[0x14c]) or an internal flag;
+all three print the same line 224. dec[0x14c] is written only by BUFFER_SIZE_MINIMUM for type 3 (0xdf2c4), reset to 0
+at 0xdb214. venusctl never sent it; downstream does in start_streaming (msm_vidc.c:1183-1196, file added to
+research/ext). That fits all of v3-v3d (count and order made no difference). 0x700000e in SEQUENCE_CHANGED is the
+input-crop extradata (vidc_hfi.h:86); our copy stopped at 32 of 44 words.
+Fix cb07f29 + dba0c44: `output2 size minimum` {OUTPUT2, size} in alloc_outputs (first pass and reconfig), whole event
+parsed. Guess (investigator ~80 %): no INSUFFICIENT event at all now, or CONTINUE gets past line 224. Run v3e next.
+
 ### 2026-11-03 07:50 Stage 2 step 7 (s7b): 10 of 10 bring-up rounds in one boot
 venusctl dcf8abc (sha256 72a7e3a9...), boot venusR (kernel158). research/notes/venus-runs/2026-11-03-s7b-session-x10.txt,
 07:01:46-07:02:00. Each round: power on, PAS boot, init, SYS_INIT, session init/end, shutdown, power off.
