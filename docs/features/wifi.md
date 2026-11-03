@@ -19,6 +19,15 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 19:45 wifi1: wland as an Interactive launchd job: 0.53 -> 3.0 MB/s
+Kernel160 (boots hevc1 -> wifi1). Safari dl.html (work/stage0) streaming from https://speed.cloudflare.com over Wi-Fi:
+before (wland job without ProcessType) 0.45-0.60 MB/s, wland 7.6 % of a core, htt msdus ~420/s; after
+`tools/sunfish-install-wifi.sh --job` (9730bab: ProcessType/POSIXSpawnType Interactive) and a reboot: 2.9-3.15 MB/s steady,
+wland ~35 %, ~1690 msdus/s, tx failed 1 per 30 s. LAN from the PC (itself on Wi-Fi, 192.168.2.25): 2.9-3.4 MB/s, wland
+~51 %. The PC gets 25-27 MB/s from Cloudflare. Cause: launchd's default class let timer coalescing stretch wland's 1 ms
+poll naps (as venusd's, lat1). Now at the legacy 11g ceiling: the association has no HT caps/WMM (radio.c:1514-1611,
+research/notes/wifi-throughput-2026-11-03.md); next an HT20 association with A-MPDU (2-4 h, moderate risk).
+
 ### 2026-10-29 05:06 state ✅: the boot join is enough (the user)
 - The user reports the phone auto-joins their Wi-Fi at every boot; U2 (join from Settings) dropped. com.apple.wifi.known-networks.plist still absent; a join to a new network from Settings stays untested.
 

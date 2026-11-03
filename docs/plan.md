@@ -29,8 +29,8 @@ Only items Claude can move now. User tasks are listed below and never gate work;
       latency, 4d conversion cost, 4e HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
 2. **3D**: done 2026-11-03: three.js games_fps (WebGL 2) 15 min, 0 hangs (7.4 fps). Left: speed.
-3. **Wi-Fi throughput** (B57, 2026-11-03): internet downloads 0.5 MB/s vs 25 MB/s on the PC: gates streaming apps;
-   investigating wland's data path.
+3. **Wi-Fi throughput** (B57): 0.53 -> 3.0 MB/s with wland Interactive (wifi1, 2026-11-03). Next: HT20 association
+   + A-MPDU past the 11g ceiling (2-4 h, moderate risk).
 4. **App Store access**: blocked on device attestation (B56: FairPlay/Anisette fail, media token 401); waiting for the
    user's decision (Questions). Meanwhile: WebGL speed (games_fps 7 fps, GPU-bound).
 5. **GPU stability**: G1 (no recovery) and G4 (backboardd restart); nightly soak; fix whichever rises (gpu.md).

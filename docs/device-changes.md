@@ -54,6 +54,7 @@ output in /var/local.
 ## Log
 (Newest first. One line per on-device change: date, what, where, how, what reproduces it.)
 
+- 2026-11-03 wland launchd job org.iosonpixel.wland now ProcessType/POSIXSpawnType Interactive (/System/Library/xpc/launchd.plist; backup /var/local/launchd.plist.pre-wland-interactive): `tools/sunfish-install-wifi.sh --job` (9730bab). Takes effect at boot.
 - 2026-11-03 Metal bundle 691c87d (LC_UUID 4C4C44C2, direct planar conversion; SWEET_PLANAR_DIRECT=0 off) installed from work/metal2-next-direct. venusd 007f8b1 (4 ms tick) via tools/sunfish-install-venusd.sh --tools. PC test server is now tools/sunfish-httpd.py (Range) on :8077.
 - 2026-11-03 App Store first-run answered by taps: Continue, "Turn Off Personalized Ads", location "Don't Allow" (stored in the App Store's preferences; user preference, change in Settings). Video binaries 438e168/391985b (venusctl, venusd, venusc, vtvenus with hvc1) installed via tools/sunfish-install-venusd.sh + tools/sunfish-install-vtvenus.sh install, then a reboot; HEVC test files in /var/local/venus/.
 - 2026-11-03 Test only: Safari/WebKit caches moved to /var/local/safari-cache-bak/20261103/ (move back with Safari killed to restore). venusd launchd job re-installed with ProcessType/POSIXSpawnType Interactive (`tools/sunfish-install-venusd.sh`, tools/venusd.plist 5a974c8). venusd/venusctl/venusc and vtvenus cfbebf1 installed (sunfish-install-venusd.sh, sunfish-install-vtvenus.sh install, then a reboot). Bundle fcdf6de (vImage) from work/metal2-next-vimage.

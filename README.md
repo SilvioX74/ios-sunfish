@@ -44,7 +44,7 @@ plan is [docs/plan.md](docs/plan.md).
 | [Buttons](docs/features/buttons.md) | ✅ | power, volume down, volume up |
 | [Flashlight](docs/features/flashlight.md) | ✅ | Control Center button turns the LED on and off |
 | [Clock](docs/features/clock.md) | ✅ | PM6150 RTC |
-| [Wi-Fi](docs/features/wifi.md) | ✅ | joins the home network at boot (from a config file on the phone); iOS shows the Wi-Fi icon and the network in Settings (`sweetwifiev=1`); joining a new network from Settings is untested |
+| [Wi-Fi](docs/features/wifi.md) | ✅ | joins the home network at boot (from a config file on the phone); iOS shows the Wi-Fi icon and the network in Settings (`sweetwifiev=1`); downloads ~3 MB/s (legacy 11g; 2026-11-03); joining a new network from Settings is untested |
 | [Battery](docs/features/battery.md) | 🟡 | real reading; % shows no jumps at idle, discharge unchecked |
 | [Charging](docs/features/charging.md) | 🟡 | charges (set up by the bootloader: 2 A charge, 1.5 A input); a weak USB port cannot keep up under load, a strong one gives ~+1 A |
 | [Apps](docs/features/apps.md) | ✅ | garbled icons fixed on lock screen, Control Center, Settings, Home (2026-10-31, kernel132), Tips banner and Photos thumbnails still wrong; 32 stock apps installed; survey 2026-10-29: 17 of 18 open fine; Files "On My iPhone" opens; app extensions work: widgets, share sheet, emoji keyboard (2026-10-30) |
