@@ -56,6 +56,19 @@ resets; masked SMRs reset (camera tests), use exact ones; no MX/CX votes (reset 
 Open: free memory for queues (0xa5100000-0xbcc00000 looks free, unproven), PMEM_ALLOC32 below 4 GB likely fails,
 whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
 
+## Stage 3 spec: `venusctl decode IN.h264 OUT.yuv [--frames N]` (`tools/sunfish-venus-test.sh decode`)
+1. After init: SYS_INIT, SESSION_INIT (decoder, H.264), then downstream's split mode: FRAME_SIZE input, OUTPUT format
+   NV12_UBWC (the DPB), MULTI_STREAM OUTPUT2 on / OUTPUT off, FRAME_SIZE + NV12 on OUTPUT2; buffer requirements printed.
+2. Counts (input 4, outputs 8 or the firmware's minimum), work mode 1 (up to 720p) / route 2, requirements again;
+   SET_BUFFERS scratch, scratch_1, scratch_2, persist, persist_1; LOAD_RESOURCES, START; FTB DPBs (stream 0) + OUTPUT2s (1).
+3. Size from the SPS; one access unit per ETB (ENDOFFRAME), then an empty EOS. SEQUENCE_CHANGED: sufficient = CONTINUE,
+   insufficient = flush output, new size and buffers, CONTINUE. Stops at N frames, EOS, a session error or 3 s idle.
+4. Each FBD: flags, filled length, timestamp, luma CRC32; OUT gets the visible rect as plain NV12. Close: flush all, STOP,
+   RELEASE_RESOURCES, RELEASE_BUFFERS, SESSION_END; then the script's shutdown + power off.
+5. Buffers: a bump window right after the queue block (0xa5500000, ≤ 64 MB, zeroed), physical = device address.
+   Check on the PC: `tools/sunfish-venus-yuvcmp.py REF.nv12 OUT.yuv W H` (ffmpeg reference, work/stage3/).
+Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VENUSCTL_ROUTE, VENUSCTL_NOUT, VENUSCTL_YSTRIDE/YSCAN.
+
 ## Open
 - Stages 3-5; stage 2 step 7 (repeat + soak). Stage 2 go 2026-11-03 (v2c). Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
 

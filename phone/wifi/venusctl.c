@@ -24,6 +24,14 @@
  *                           PING_ACK is a note, not a failure (v2c; VENUSCTL_PING_FATAL=1: failure)
  *   venusctl session [--debug MASK]  after init: as ping up to IMAGE_VERSION, then SYS_SESSION_INIT (H.264 decoder)
  *                           -> SESSION_INIT_DONE, SYS_SESSION_END -> SESSION_END_DONE (v2c)
+ *   venusctl decode IN.h264 OUT.yuv [--frames N] [--bufphys ADDR] [--debug MASK]  stage 3, after init: as session,
+ *                           then the downstream decoder sequence (split mode: UBWC DPB on OUTPUT, linear NV12 on
+ *                           OUTPUT2), one access unit per ETB, FTBs, stops after N frames (5); writes the frames
+ *                           cropped to the visible size as plain NV12 to OUT, prints per frame FBD flags, filled
+ *                           length, timestamp, luma CRC32; then flush, stop, release, session end. Buffers in a window
+ *                           after the --phys queue block (or --bufphys). Off switches/knobs: VENUSCTL_PRIMARY=1 (linear
+ *                           on OUTPUT, no multi-stream), VENUSCTL_DPB_SETBUF=1, VENUSCTL_ROUTE, VENUSCTL_NOUT,
+ *                           VENUSCTL_YSTRIDE/YSCAN, VENUSCTL_BUF_MB (64)
  *   venusctl shutdown       undoes boot --keep/init from STATE: PAS shutdown(9), queue memory, SMRs. Then power off.
  *   venusctl memtest ADDR SIZE write|check  the --phys region check (pre-run review 8.1): fill ADDR..ADDR+SIZE through
  *                           /dev/pmem (as init) with addr ^ 0x5a5a5a5a per word, or count the words that changed
@@ -1316,6 +1324,8 @@ static void print_pkt(unsigned q, int n)
 static int wait_soft;	/* v2c: a timeout is reported as a note, not a STOP (ping) */
 static uint32_t lastmsg[8];	/* v2c: first words of the last msgq packet, for a non-fatal ping */
 static int lastmsg_n;
+static int (*on_pkt)(int n);	/* stage 3 decode: sees every msgq packet before the want check */
+static int fw_dead;		/* stage 3: a sys error came: no more session commands */
 
 /* drain the debug queue, then the message queue until a packet of type want (0 = just drain); 0 = got it */
 static int wait_msg(uint32_t want, unsigned ms)
@@ -1330,9 +1340,12 @@ static int wait_msg(uint32_t want, unsigned ms)
 			memcpy(lastmsg, pkt, 4u * (unsigned)lastmsg_n);
 			if (pkt[1] == 0x21001 && n > 3 && pkt[3] == 1) {	/* EVENT_NOTIFY, HFI_EVENT_SYS_ERROR */
 				printf("venus: STOP: firmware sys error (data %#x %#x)\n", pkt[4], pkt[5]);
+				fw_dead = 1;
 				print_sfr(qb);
 				return -1;
 			}
+			if (on_pkt)
+				on_pkt(n);
 			if (want && pkt[1] == want)
 				return 0;
 		}
@@ -1584,6 +1597,836 @@ static int session(uint32_t debug)
 	return 0;
 }
 
+/*
+ * Stage 3 (docs/features/video.md "Stage 3 spec"): decode an Annex B H.264 file. The sequence is downstream's for a
+ * VPU5 decoder in split mode (v4l2 client order: s_fmt OUTPUT, STREAM_OUTPUT_MODE secondary, s_fmt CAPTURE NV12,
+ * start_streaming), all from research/ext/msm-vidc-sunfish/ (file names without the drivers_media_platform_msm_vidc_
+ * prefix). Linear NV12 only exists on OUTPUT2: OUTPUT is the UBWC DPB (msm_vdec.c:1145-1220; mainline vdec.c
+ * "For Venus v4/v6 UBWC format is mandatory"). VENUSCTL_PRIMARY=1: linear NV12 straight on OUTPUT, no multi-stream.
+ * Buffers: a bump allocator in a fixed window after the queue block (--bufphys, default the next 1 MB boundary after
+ * --phys + 3 MB + SFR page; VENUSCTL_BUF_MB caps it, 64), device address = physical (identity banks). Capture buffers
+ * are dynamic (msm_vdec.c:812): no SET_BUFFERS, FTB only (VENUSCTL_DPB_SETBUF=1: SET_BUFFERS the DPBs as the static
+ * path, msm_vidc_common.c:3745-3765). Only the doorbell register is written (q_write), everything else is queue and
+ * buffer memory.
+ */
+#define S_SET_PROP	0x11001u	/* HFI_CMD_SESSION_SET_PROPERTY (vidc_hfi_helper.h:873) */
+#define S_SET_BUFS	0x11002u	/* HFI_CMD_SESSION_SET_BUFFERS (vidc_hfi_helper.h:875) */
+#define S_LOAD_RES	0x211001u	/* HFI_CMD_SESSION_OX_START + 1 .. (vidc_hfi.h:318-333) */
+#define S_START		0x211002u
+#define S_STOP		0x211003u
+#define S_ETB		0x211004u
+#define S_FTB		0x211005u
+#define S_FLUSH		0x211008u
+#define S_GET_PROP	0x211009u
+#define S_REL_BUFS	0x21100bu
+#define S_REL_RES	0x21100cu
+#define S_CONTINUE	0x21100du
+#define M_EVENT		0x21001u	/* HFI_MSG_EVENT_NOTIFY (vidc_hfi_helper.h:896) */
+#define M_LOAD_DONE	0x221001u	/* HFI_MSG_SESSION_OX_START + 1 .. (vidc_hfi.h:351-362) */
+#define M_START_DONE	0x221002u
+#define M_STOP_DONE	0x221003u
+#define M_FLUSH_DONE	0x221006u
+#define M_EBD		0x221007u
+#define M_FBD		0x221008u
+#define M_PROP_INFO	0x221009u
+#define M_RELRES_DONE	0x22100au
+#define M_RELBUF_DONE	0x22100cu
+#define P_FRAME_SIZE	0x1001u		/* HFI_PROPERTY_PARAM_FRAME_SIZE {buffer_type, width, height} (helper.h:212, 636) */
+#define P_FMT_SEL	0x1003u		/* UNCOMPRESSED_FORMAT_SELECT {buffer_type, format} (helper.h:216, 723) */
+#define P_WORK_MODE	0x1015u		/* HFI_PROPERTY_PARAM_WORK_MODE {mode} (helper.h:242, 646) */
+#define P_WORK_ROUTE	0x1017u		/* HFI_PROPERTY_PARAM_WORK_ROUTE {route} (helper.h:246) */
+#define P_MULTI_STREAM	0x1003001u	/* HFI_PROPERTY_PARAM_VDEC_MULTI_STREAM {buffer_type, enable} (helper.h:260, 546) */
+#define P_BUF_COUNT	0x201001u	/* BUFFER_COUNT_ACTUAL {buffer_type, actual, min_host} (vidc_hfi.h:122, 239) */
+#define P_BUF_SIZE_MIN	0x20100cu	/* BUFFER_SIZE_MINIMUM {buffer_type, size} (vidc_hfi.h:130, 245) */
+#define P_BUF_REQ	0x202001u	/* CONFIG_BUFFER_REQUIREMENTS: 8 words per type (vidc_hfi.h:137, 250) */
+#define P_PROFILE	0x1005u		/* in SEQUENCE_CHANGED: PROFILE_LEVEL_CURRENT {profile, level} */
+#define P_BITDEPTH	0x1003007u	/* {buffer_type, bit_depth} */
+#define P_PICSTRUCT	0x1003009u	/* {progressive_only} */
+#define P_COLOUR	0x100300au	/* {colour_space} */
+#define P_DPB_COUNTS	0x100300bu	/* {max_dpb, max_ref, max_dec_buffering} */
+#define P_ENTROPY	0x1204004u	/* HFI_PROPERTY_CONFIG_VDEC_ENTROPY {mode} (vidc_hfi.h:204) */
+#define P_CROP		0x0700000eu	/* HFI_INDEX_EXTRADATA_INPUT_CROP {size, version, port, left, top, w, h} */
+#define EV_SESSION_ERR	2u		/* HFI_EVENT_SESSION_ERROR (helper.h:77) */
+#define EV_SEQ_CHANGED	0x1000003u	/* vidc_hfi.h:20-28: data1 0x1000001 sufficient, 0x1000002 insufficient */
+#define EV_RELEASE_REF	0x1000006u	/* {packet_buffer, extra_data_buffer, output_tag} (hfi_response_handler.c:359) */
+#define EV_INSUFFICIENT	0x1000002u
+#define B_INPUT		1u		/* HFI_BUFFER_* (helper.h:163-170) */
+#define B_OUTPUT	2u
+#define B_OUTPUT2	3u
+#define F_EOS		0x1u		/* HFI_BUFFERFLAG_* (vidc_hfi.h:30-47) */
+#define F_EOF		0x10u		/* ENDOFFRAME */
+#define F_READONLY	0x200u		/* still a reference: the firmware gives it back with EV_RELEASE_REF */
+#define F_DROP		0x20000000u
+#define FLUSH_OUTPUT	0x1000002u	/* vidc_hfi.h:62-64 */
+#define FLUSH_ALL	0x1000004u
+#define CF_NV12		2u		/* HFI_COLOR_FORMAT_NV12, _UBWC 0x8002 (helper.h:685, 705) */
+#define CF_NV12_UBWC	0x8002u
+#define ERR_SCALE	0x1012u		/* the two non-fatal session errors (hfi_response_handler.c:426-431) */
+#define ERR_UPSCALE	0x1013u
+
+struct vbuf { uint32_t pa, size; int fw; };	/* fw: queued to the firmware (ETB/FTB not yet done) */
+#define NAU	4096
+static struct {
+	uint64_t base, top, lim;	/* bump allocator window */
+	uint32_t req[16][8];		/* last BUFFER_REQUIREMENTS: type, size, region, min, min_host, actual, contig, align */
+	int nreq;
+	struct vbuf in[8], dpb[32], opb[32], intl[16];
+	uint32_t intl_type[16];
+	int nin, ndpb, nopb, nintl;
+	int split, w, h, cx, cy, cw, ch;	/* coded size; visible crop */
+	uint32_t ystride, yscan;
+	int frames, want, eos, err, hold, stopping, reconfig, rw, rh, rcount;
+	unsigned acts;		/* msgq packets handled: progress for the timeout */
+	FILE *out;
+	uint8_t *fbuf;
+	size_t fbuf_len;
+} dc;
+
+static uint32_t crc_tab[256];
+
+static uint32_t crc32_buf(const uint8_t *p, size_t n)	/* zlib crc32: what tools/sunfish-venus-yuvcmp.py prints */
+{
+	if (!crc_tab[1])
+		for (uint32_t i = 0; i < 256; i++) {
+			uint32_t c = i;
+			for (int k = 0; k < 8; k++)
+				c = c & 1 ? 0xedb88320u ^ (c >> 1) : c >> 1;
+			crc_tab[i] = c;
+		}
+	uint32_t c = 0xffffffffu;
+	while (n--)
+		c = crc_tab[(c ^ *p++) & 0xff] ^ (c >> 8);
+	return c ^ 0xffffffffu;
+}
+
+static uint32_t align_up(uint32_t v, uint32_t a)
+{
+	return (v + a - 1) / a * a;
+}
+
+/* /dev/pmem on the fixed region: 32-bit aligned, 64 KB per call as init's zeroing */
+static int big_io(uint64_t pa, void *buf, size_t len, int write)
+{
+	for (size_t o = 0; o < len; o += 0x10000) {
+		size_t n = len - o < 0x10000 ? len - o : 0x10000;
+		if (write ? pm_wr(pa + o, (uint8_t *)buf + o, n) : pm_rd(pa + o, (uint8_t *)buf + o, n))
+			return -1;
+	}
+	return 0;
+}
+
+/* a zeroed buffer from the window (downstream msm_comm_smem_alloc: zeroed, uncached); 0 = refused */
+static uint32_t balloc(uint32_t size, const char *what)
+{
+	static uint8_t zeros[0x10000];
+	uint64_t a = (dc.top + 0xfff) & ~0xfffull;
+	size = align_up(size, 0x1000);
+	if (!size || a + size > dc.lim) {
+		printf("venus: STOP: %s: %#x bytes don't fit the buffer window (%#llx used of %#llx-%#llx)\n", what, size,
+		       (unsigned long long)(dc.top - dc.base), (unsigned long long)dc.base, (unsigned long long)dc.lim);
+		return 0;
+	}
+	for (uint32_t o = 0; o < size; o += sizeof(zeros))
+		if (pm_wr(a + o, zeros, size - o < sizeof(zeros) ? size - o : sizeof(zeros)))
+			return 0;
+	dc.top = a + size;
+	return (uint32_t)a;
+}
+
+static int sess_cmd(uint32_t type)	/* create_pkt_cmd_session_cmd {size 12, type, session_id} (hfi_packetization.c:437) */
+{
+	uint32_t c[3] = { 12, type, SESSION_ID };
+	return q_write(c);
+}
+
+/* create_pkt_cmd_session_set_property (hfi_packetization.c:983): {size, type, sid, 1, prop, body...}; no reply on
+ * success, a bad one comes back as EVENT_NOTIFY SESSION_ERROR: drain 20 ms after each */
+static int set_prop(uint32_t prop, uint32_t a, uint32_t b, uint32_t c, unsigned nbody, const char *what)
+{
+	uint32_t p[8] = { 20 + 4 * nbody, S_SET_PROP, SESSION_ID, 1, prop, a, b, c };
+	printf("venus: set %s (%#x):", what, prop);
+	for (unsigned k = 0; k < nbody; k++)
+		printf(" %#x", p[5 + k]);
+	printf("\n");
+	if (q_write(p) || wait_msg(0, 20))
+		return -1;
+	return dc.err ? -1 : 0;
+}
+
+static const char *bname(uint32_t t)
+{
+	static const char *const n[] = { "?", "input", "output", "output2", "persist", "persist_1", "scratch",
+		"scratch_1", "scratch_2", "recon", "extra_out", "extra_out2", "extra_in" };
+	return t < 13 ? n[t] : "?";
+}
+
+/* create_pkt_cmd_session_get_buf_req (hfi_packetization.c:927) -> PROPERTY_INFO, N x hfi_buffer_requirements
+ * (hfi_process_sess_get_prop_buf_req, hfi_response_handler.c:1309-1340) */
+static int get_bufreq(void)
+{
+	uint32_t g[5] = { 20, S_GET_PROP, SESSION_ID, 1, P_BUF_REQ };
+	if (q_write(g) || wait_msg(M_PROP_INFO, 1000))
+		return -1;
+	if (pkt[0] < 20 + 32 || pkt[4] != P_BUF_REQ) {
+		printf("venus: STOP: property info without buffer requirements (size %u, property %#x)\n", pkt[0], pkt[4]);
+		return -1;
+	}
+	dc.nreq = (int)((pkt[0] - 20) / 32);
+	if (dc.nreq > 16)
+		dc.nreq = 16;
+	printf("venus: buffer requirements (%d):  type        size     region  min  min_host actual contig align\n",
+	       dc.nreq);
+	for (int i = 0; i < dc.nreq; i++) {
+		memcpy(dc.req[i], pkt + 5 + 8 * i, 32);
+		uint32_t *r = dc.req[i];
+		printf("venus:   %-10s %2u %9u %9u %4u %8u %6u %6u %5u\n", bname(r[0]), r[0], r[1], r[2], r[3], r[4], r[5],
+		       r[6], r[7]);
+	}
+	return 0;
+}
+
+static uint32_t *req_of(uint32_t type)
+{
+	for (int i = 0; i < dc.nreq; i++)
+		if (dc.req[i][0] == type)
+			return dc.req[i];
+	return NULL;
+}
+
+/* create_pkt_cmd_session_set_buffers / _release_buffers (hfi_packetization.c:658, 708), one buffer per packet as
+ * set_internal_buf_on_fw (msm_vidc_common.c:3810-3830): OUTPUT/OUTPUT2 carry {addr, extradata addr} pairs */
+static int buf_cmd(uint32_t type, uint32_t pa, uint32_t size, int release)
+{
+	int out = type == B_OUTPUT || type == B_OUTPUT2;
+	uint32_t p[10] = { out ? 40u : 36u, release ? S_REL_BUFS : S_SET_BUFS, SESSION_ID, type, size, 0,
+		release ? 1u : size, 1, pa, 0 };	/* word 6: min_buffer_size (set) / response_req (release) */
+	return q_write(p);
+}
+
+static int ftb(uint32_t stream, struct vbuf *b)	/* create_pkt_cmd_session_ftb (hfi_packetization.c:890) */
+{
+	if (dc.stopping || dc.hold)
+		return 0;
+	uint32_t p[11] = { 44, S_FTB, SESSION_ID, stream, 0, b->size, 0, b->pa, b->pa, 0, 0 };	/* output_tag = addr */
+	b->fw = 1;
+	return q_write(p);
+}
+
+static void ftb_all(void)	/* msm_comm_queue_output_buffers (msm_vidc_common.c:2015-2060) + the client's buffers */
+{
+	for (int i = 0; dc.split && i < dc.ndpb; i++)
+		if (!dc.dpb[i].fw)
+			ftb(0, &dc.dpb[i]);
+	for (int i = 0; i < dc.nopb; i++)
+		if (!dc.opb[i].fw)
+			ftb(dc.split ? 1 : 0, &dc.opb[i]);
+}
+
+static struct vbuf *find_buf(struct vbuf *v, int n, uint32_t pa)
+{
+	for (int i = 0; i < n; i++)
+		if (v[i].pa == pa)
+			return &v[i];
+	return NULL;
+}
+
+/* one decoded frame: crop to the visible rect, append NV12 (Y w*h, then CbCr w*h/2) to OUT, CRC32 of that luma */
+static void frame_out(uint32_t pa, const uint32_t *f)
+{
+	size_t ylen = (size_t)dc.ystride * dc.yscan, need = ylen + (size_t)dc.ystride * (dc.yscan / 2);
+	if (dc.fbuf_len < need) {
+		free(dc.fbuf);
+		dc.fbuf = malloc(need);
+		dc.fbuf_len = dc.fbuf ? need : 0;
+	}
+	if (!dc.fbuf || big_io(pa, dc.fbuf, need, 0)) {
+		printf("venus: frame %d: can't read %#x\n", dc.frames, pa);
+		return;
+	}
+	uint8_t *vis = malloc((size_t)dc.cw * dc.ch * 3 / 2);
+	if (!vis)
+		return;
+	for (int y = 0; y < dc.ch; y++)
+		memcpy(vis + (size_t)y * dc.cw, dc.fbuf + (size_t)(y + dc.cy) * dc.ystride + dc.cx, dc.cw);
+	for (int y = 0; y < dc.ch / 2; y++)
+		memcpy(vis + (size_t)dc.cw * dc.ch + (size_t)y * dc.cw,
+		       dc.fbuf + ylen + (size_t)(y + dc.cy / 2) * dc.ystride + (dc.cx & ~1), dc.cw);
+	uint32_t crc = crc32_buf(vis, (size_t)dc.cw * dc.ch);
+	if (dc.out)
+		fwrite(vis, 1, (size_t)dc.cw * dc.ch * 3 / 2, dc.out);
+	free(vis);
+	printf("venus: frame %d: FBD flags %#x filled %u ts %llu us, %ux%u at %u,%u, pic type %#x, luma crc32 %08x\n",
+	       dc.frames, f[8], f[13], ((unsigned long long)f[6] << 32) | f[7], f[15], f[16], f[17], f[18], f[22], crc);
+	dc.frames++;
+}
+
+/* SEQUENCE_CHANGED payload, as hfi_process_sess_evt_seq_changed (hfi_response_handler.c:117-356) */
+static void seq_changed(const uint32_t *p, int n)
+{
+	unsigned nprop = p[5];
+	int k = 6;
+	dc.rw = dc.w;
+	dc.rh = dc.h;
+	dc.rcount = 0;
+	while (nprop-- && k < n) {
+		uint32_t id = p[k++];
+		static const struct { uint32_t id, words; } sz[] = { { P_FRAME_SIZE, 3 }, { P_PROFILE, 2 },
+			{ P_BITDEPTH, 2 }, { P_PICSTRUCT, 1 }, { P_DPB_COUNTS, 3 }, { P_COLOUR, 1 }, { P_ENTROPY, 1 },
+			{ P_BUF_REQ, 8 }, { P_CROP, 7 } };
+		unsigned w = 0;
+		for (unsigned i = 0; i < sizeof sz / sizeof sz[0]; i++)
+			if (sz[i].id == id)
+				w = sz[i].words;
+		if (!w || k + (int)w > n) {
+			printf("venus: seq changed: property %#x unknown or short, rest skipped\n", id);
+			break;
+		}
+		if (id == P_FRAME_SIZE) {	/* hfi_frame_size {buffer_type, width, height} (vidc_hfi_helper.h:636) */
+			dc.rw = (int)p[k + 1];
+			dc.rh = (int)p[k + 2];
+			printf("venus: seq changed: frame %ux%u (buffer type %u)\n", p[k + 1], p[k + 2], p[k]);
+		} else if (id == P_BUF_REQ) {
+			dc.rcount = (int)p[k + 3];
+			printf("venus: seq changed: capture buffers min %u (type %u size %u)\n", p[k + 3], p[k], p[k + 1]);
+		} else if (id == P_CROP) {
+			printf("venus: seq changed: crop %u,%u %ux%u\n", p[k + 3], p[k + 4], p[k + 5], p[k + 6]);
+			if (p[k + 5] && p[k + 6]) {
+				dc.cx = (int)p[k + 3];
+				dc.cy = (int)p[k + 4];
+				dc.cw = (int)p[k + 5];
+				dc.ch = (int)p[k + 6];
+			}
+		} else {
+			printf("venus: seq changed: property %#x:", id);
+			for (unsigned i = 0; i < w; i++)
+				printf(" %u", p[k + i]);
+			printf("\n");
+		}
+		k += (int)w;
+	}
+}
+
+/* every msgq packet during decode (wait_msg on_pkt): EBD, FBD, EVENT_NOTIFY */
+static int dec_pkt(int n)
+{
+	uint32_t p[32];
+	memcpy(p, pkt, 4u * (unsigned)(n < 32 ? n : 32));
+	dc.acts++;
+	if (p[1] == M_EBD && n >= 10) {	/* hfi_msg_session_empty_buffer_done_packet (vidc_hfi.h:604) */
+		struct vbuf *b = find_buf(dc.in, dc.nin, p[7]);
+		if (b)
+			b->fw = 0;
+		printf("venus: EBD tag %u buf %#x error %#x filled %u flags %#x%s\n", p[6], p[7], p[3], p[5], p[9],
+		       b ? "" : " (not ours)");
+	} else if (p[1] == M_FBD && n >= 25) {	/* hfi_msg_session_fbd_uncompressed_plane0_packet (vidc_hfi.h:641) */
+		int frame = dc.split ? p[3] == 1 : p[3] == 0;
+		struct vbuf *b = frame ? find_buf(dc.opb, dc.nopb, p[23]) : find_buf(dc.dpb, dc.ndpb, p[23]);
+		if (b)
+			b->fw = 0;
+		if (p[5] || !b)
+			printf("venus: FBD stream %u buf %#x error %#x%s\n", p[3], p[23], p[5], b ? "" : " (not ours)");
+		if (frame && p[13] && !(p[8] & F_DROP) && dc.frames < dc.want && !dc.hold)
+			frame_out(p[23], p);
+		else
+			printf("venus: FBD stream %u buf %#x flags %#x filled %u (%s)\n", p[3], p[23], p[8], p[13],
+			       frame ? "no frame" : "dpb back");
+		if (p[8] & F_EOS)
+			dc.eos = 1;
+		/* back to the firmware unless it still references it (READONLY: EV_RELEASE_REF later) */
+		if (b && !(p[8] & F_READONLY) && !dc.eos && dc.frames < dc.want)
+			ftb(dc.split && frame ? 1 : 0, b);
+	} else if (p[1] == M_EVENT && n >= 6) {	/* hfi_msg_event_notify_packet (vidc_hfi_helper.h:1044) */
+		if (p[3] == EV_SESSION_ERR) {
+			printf("venus: session error %#x data2 %#x%s\n", p[4], p[5],
+			       p[4] == ERR_SCALE || p[4] == ERR_UPSCALE ? " (non-fatal)" : "");
+			if (p[4] != ERR_SCALE && p[4] != ERR_UPSCALE)
+				dc.err = (int)p[4];
+		} else if (p[3] == EV_SEQ_CHANGED) {
+			printf("venus: SEQUENCE_CHANGED %s, %u properties\n", p[4] == EV_INSUFFICIENT ? "insufficient" :
+			       "sufficient", p[5]);
+			seq_changed(p, n < 32 ? n : 32);
+			dc.reconfig = p[4] == EV_INSUFFICIENT ? 2 : 1;
+		} else if (p[3] == EV_RELEASE_REF && n >= 9) {
+			struct vbuf *b = find_buf(dc.opb, dc.nopb, p[6]);
+			printf("venus: release buffer reference %#x%s\n", p[6], b ? "" : " (not ours)");
+			if (b && !b->fw && !dc.eos && dc.frames < dc.want)
+				ftb(dc.split ? 1 : 0, b);
+		} else {
+			printf("venus: event %#x data %#x %#x\n", p[3], p[4], p[5]);
+		}
+	}
+	return 0;
+}
+
+/* RBSP bit reader for the SPS (H.264 7.3.2.1.1) */
+struct bits { const uint8_t *p; size_t n, i; };
+
+static uint32_t gb(struct bits *b, int k)
+{
+	uint32_t v = 0;
+	while (k-- > 0) {
+		v <<= 1;
+		if (b->i < 8 * b->n)
+			v |= (b->p[b->i >> 3] >> (7 - (b->i & 7))) & 1;
+		b->i++;
+	}
+	return v;
+}
+
+static uint32_t ue(struct bits *b)
+{
+	int z = 0;
+	while (!gb(b, 1) && z < 32)
+		z++;
+	return z >= 32 ? 0 : ((1u << z) - 1) + gb(b, z);
+}
+
+static int32_t se(struct bits *b)
+{
+	uint32_t k = ue(b);
+	return k & 1 ? (int32_t)((k + 1) / 2) : -(int32_t)(k / 2);
+}
+
+/* coded size and crop from the first SPS: the FRAME_SIZE the client knows before streaming (msm_vdec_s_fmt) */
+static int sps_parse(const uint8_t *nal, size_t len)
+{
+	uint8_t r[256];
+	size_t n = 0;
+	for (size_t i = 1; i < len && n < sizeof(r); i++) {	/* emulation prevention 00 00 03 */
+		if (i >= 3 && nal[i] == 3 && nal[i - 1] == 0 && nal[i - 2] == 0)
+			continue;
+		r[n++] = nal[i];
+	}
+	struct bits b = { r, n, 0 };
+	uint32_t profile = gb(&b, 8), cfi = 1;
+	gb(&b, 16);	/* constraint flags, level */
+	ue(&b);		/* sps id */
+	if (profile == 100 || profile == 110 || profile == 122 || profile == 244 || profile == 44 || profile == 83 ||
+	    profile == 86 || profile == 118 || profile == 128 || profile == 138 || profile == 139 || profile == 134 ||
+	    profile == 135) {
+		cfi = ue(&b);
+		if (cfi == 3)
+			gb(&b, 1);
+		ue(&b);
+		ue(&b);
+		gb(&b, 1);
+		if (gb(&b, 1))	/* seq_scaling_matrix_present: skip the lists */
+			for (int i = 0; i < (cfi == 3 ? 12 : 8); i++)
+				if (gb(&b, 1))
+					for (int j = 0, last = 8, next = 8; j < (i < 6 ? 16 : 64); j++) {
+						if (next)
+							next = (last + se(&b) + 256) % 256;
+						last = next ? next : last;
+					}
+	}
+	ue(&b);		/* log2_max_frame_num */
+	uint32_t poc = ue(&b);
+	if (poc == 0) {
+		ue(&b);
+	} else if (poc == 1) {
+		gb(&b, 1);
+		se(&b);
+		se(&b);
+		for (uint32_t i = 0, k = ue(&b); i < k && i < 256; i++)
+			se(&b);
+	}
+	ue(&b);		/* max_num_ref_frames */
+	gb(&b, 1);
+	uint32_t wmb = ue(&b) + 1, hmu = ue(&b) + 1, fmo = gb(&b, 1);
+	if (!fmo)
+		gb(&b, 1);
+	gb(&b, 1);
+	dc.w = (int)wmb * 16;
+	dc.h = (int)((2 - fmo) * hmu * 16);
+	dc.cx = dc.cy = 0;
+	dc.cw = dc.w;
+	dc.ch = dc.h;
+	if (gb(&b, 1)) {	/* frame_cropping: units 2 x 2(2 - frame_mbs_only) for 4:2:0 */
+		uint32_t ux = cfi ? 2 : 1, uy = (cfi ? 2 : 1) * (2 - fmo);
+		uint32_t l = ue(&b), rr = ue(&b), t = ue(&b), bt = ue(&b);
+		dc.cx = (int)(l * ux);
+		dc.cy = (int)(t * uy);
+		dc.cw = dc.w - (int)((l + rr) * ux);
+		dc.ch = dc.h - (int)((t + bt) * uy);
+	}
+	printf("venus: SPS profile %u: coded %dx%d, visible %dx%d at %d,%d\n", profile, dc.w, dc.h, dc.cw, dc.ch, dc.cx,
+	       dc.cy);
+	return dc.w > 0 && dc.h > 0 && dc.w <= 4096 && dc.h <= 2304 && dc.cw > 0 && dc.ch > 0 ? 0 : -1;
+}
+
+/* Annex B access units: a new AU starts at an AUD/SEI/SPS/PPS or at a slice with first_mb_in_slice 0, once the
+ * current one has a slice (H.264 7.4.1.2.3). One AU per ETB with ENDOFFRAME, as the v4l2 client's frame parser. */
+static int split_aus(const uint8_t *s, size_t len, uint32_t *off, uint32_t *alen)
+{
+	int nau = 0, vcl = 0, sps = 0;
+	size_t i = 0;
+	while (i + 3 <= len) {
+		if (!(s[i] == 0 && s[i + 1] == 0 && s[i + 2] == 1)) {
+			i++;
+			continue;
+		}
+		size_t sc = i > 0 && s[i - 1] == 0 ? i - 1 : i, h = i + 3;
+		if (h >= len)
+			break;
+		unsigned t = s[h] & 0x1f;
+		int first = (t == 1 || t == 5) && h + 1 < len && (s[h + 1] & 0x80);
+		if (nau == 0 || (vcl && (first || t == 6 || t == 7 || t == 8 || t == 9 || (t >= 14 && t <= 18)))) {
+			if (nau >= NAU)
+				break;
+			if (nau)
+				alen[nau - 1] = (uint32_t)(sc - off[nau - 1]);
+			off[nau] = nau ? (uint32_t)sc : 0;
+			nau++;
+			vcl = 0;
+		}
+		if (t == 1 || t == 5)
+			vcl = 1;
+		if (t == 7 && !sps) {
+			size_t e = h + 1;
+			while (e + 3 <= len && !(s[e] == 0 && s[e + 1] == 0 && (s[e + 2] == 1 || s[e + 2] == 0)))
+				e++;
+			sps = !sps_parse(s + h, (e + 3 <= len ? e : len) - h);
+		}
+		i = h;
+	}
+	if (nau)
+		alen[nau - 1] = (uint32_t)(len - off[nau - 1]);
+	return sps ? nau : -nau - 1;
+}
+
+/* the client's output buffers: OUTPUT2 (split) or OUTPUT (primary); DPBs only in split. count from the requirement,
+ * at least the H.264 output_min_count 8 (msm_vdec.c:515); DPB count = FW count (msm_vidc_common.c:3691) */
+static int alloc_outputs(int count)
+{
+	uint32_t *ro = req_of(B_OUTPUT), *r2 = req_of(B_OUTPUT2), *rq = dc.split ? r2 : ro;
+	if (!rq || !rq[1] || (dc.split && (!ro || !ro[1]))) {
+		printf("venus: STOP: no buffer requirement for %s\n", dc.split ? "output/output2" : "output");
+		return -1;
+	}
+	int n = count > (int)rq[3] ? count : (int)rq[3];
+	if (getenv("VENUSCTL_NOUT"))
+		n = atoi(getenv("VENUSCTL_NOUT"));
+	if (n < 1 || n > 32)
+		n = n < 1 ? 1 : 32;
+	size_t need = (size_t)dc.ystride * dc.yscan * 3 / 2;
+	if (rq[1] < need)
+		printf("venus: note: %s size %u is below our NV12 layout's %zu (stride %u, scanlines %u): check it\n",
+		       dc.split ? "output2" : "output", rq[1], need, dc.ystride, dc.yscan);
+	if (dc.split) {
+		int nd = count > (int)ro[3] ? count : (int)ro[3];
+		/* set_output_buffers (msm_vidc_common.c:3693-3703): BUFFER_SIZE_MINIMUM, then one buffer each */
+		if (set_prop(P_BUF_SIZE_MIN, B_OUTPUT, ro[1], 0, 2, "dpb size minimum"))
+			return -1;
+		if (set_prop(P_BUF_COUNT, B_OUTPUT, (uint32_t)nd, (uint32_t)nd, 3, "dpb count"))
+			return -1;
+		dc.ndpb = 0;
+		for (int i = 0; i < nd && i < 32; i++) {
+			uint32_t pa = balloc(ro[1], "dpb");
+			if (!pa)
+				return -1;
+			dc.dpb[dc.ndpb++] = (struct vbuf){ pa, ro[1], 0 };
+			if (getenv("VENUSCTL_DPB_SETBUF") && buf_cmd(B_OUTPUT, pa, ro[1], 0))
+				return -1;
+		}
+		printf("venus: %d DPBs of %u bytes (UBWC)\n", dc.ndpb, ro[1]);
+	}
+	if (set_prop(P_BUF_COUNT, dc.split ? B_OUTPUT2 : B_OUTPUT, (uint32_t)n, (uint32_t)n, 3, "output count"))
+		return -1;
+	dc.nopb = 0;
+	uint32_t sz = rq[1] > need ? rq[1] : (uint32_t)need;
+	for (int i = 0; i < n; i++) {
+		uint32_t pa = balloc(sz, "output");
+		if (!pa)
+			return -1;
+		dc.opb[dc.nopb++] = (struct vbuf){ pa, sz, 0 };
+	}
+	printf("venus: %d output buffers of %u bytes (linear NV12, %s)\n", dc.nopb, sz, dc.split ? "OUTPUT2" : "OUTPUT");
+	return 0;
+}
+
+static void nv12_layout(void)	/* Venus NV12: Y stride 128, scanlines 32 (msm_media_info.h COLOR_FMT_NV12) */
+{
+	dc.ystride = align_up((uint32_t)dc.w, 128);
+	dc.yscan = align_up((uint32_t)dc.h, 32);
+	if (getenv("VENUSCTL_YSTRIDE"))
+		dc.ystride = (uint32_t)strtoul(getenv("VENUSCTL_YSTRIDE"), NULL, 0);
+	if (getenv("VENUSCTL_YSCAN"))
+		dc.yscan = (uint32_t)strtoul(getenv("VENUSCTL_YSCAN"), NULL, 0);
+}
+
+/* reconfig after SEQUENCE_CHANGED insufficient: the client's streamoff/s_fmt/reqbufs/streamon on CAPTURE (flush
+ * output, new OUTPUT2 size, requirements, new buffers), then SESSION_CONTINUE (msm_vidc_common.c:6129-6170) */
+static int reconfig(void)
+{
+	int kind = dc.reconfig;
+	dc.reconfig = 0;
+	if (kind == 1) {	/* sufficient: continue, then the DPBs go back (msm_vidc_common.c:6149-6165) */
+		if (sess_cmd(S_CONTINUE))
+			return -1;
+		ftb_all();
+		return 0;
+	}
+	printf("venus: reconfig to %dx%d (capture min %d)\n", dc.rw, dc.rh, dc.rcount);
+	dc.hold = 1;
+	uint32_t fl[4] = { 16, S_FLUSH, SESSION_ID, FLUSH_OUTPUT };	/* create_pkt_cmd_session_flush (packetization.c:945) */
+	if (q_write(fl) || wait_msg(M_FLUSH_DONE, 1000))
+		return -1;
+	if (dc.rw != dc.w || dc.rh != dc.h) {
+		dc.w = dc.rw;
+		dc.h = dc.rh;
+		if (dc.cw > dc.w || dc.ch > dc.h) {
+			dc.cx = dc.cy = 0;
+			dc.cw = dc.w;
+			dc.ch = dc.h;
+		}
+		nv12_layout();
+	}
+	if (set_prop(P_FRAME_SIZE, dc.split ? B_OUTPUT2 : B_OUTPUT, (uint32_t)dc.w, (uint32_t)dc.h, 3, "output frame size"))
+		return -1;
+	if (get_bufreq() || alloc_outputs(dc.rcount > 8 ? dc.rcount : 8))
+		return -1;
+	if (sess_cmd(S_CONTINUE))
+		return -1;
+	dc.hold = 0;
+	ftb_all();
+	return 0;
+}
+
+static double now_s(void)
+{
+	struct timeval t;
+	gettimeofday(&t, NULL);
+	return t.tv_sec + t.tv_usec / 1e6;
+}
+
+/* the downstream close: flush all, stop, release resources, release internal buffers, session end
+ * (msm_comm_try_state STOP_DONE -> CLOSE_DONE, msm_vidc_common.c:3990-4060; release 4900-4960). Notes, not STOPs:
+ * every step is tried; 1 = something didn't answer. */
+static int dec_close(int started)
+{
+	int bad = 0;
+	dc.stopping = 1;
+	if (fw_dead) {
+		printf("venus: firmware sys error: no close sequence (shutdown stops it)\n");
+		on_pkt = NULL;
+		return 1;
+	}
+	wait_soft = 1;
+	if (started) {
+		uint32_t fl[4] = { 16, S_FLUSH, SESSION_ID, FLUSH_ALL };	/* msm_comm_flush (msm_vidc_common.c:5379) */
+		bad |= q_write(fl) || wait_msg(M_FLUSH_DONE, 1000);
+		bad |= sess_cmd(S_STOP) || wait_msg(M_STOP_DONE, 1000);	/* msm_vidc_stop (3485) */
+		bad |= sess_cmd(S_REL_RES) || wait_msg(M_RELRES_DONE, 1000);	/* msm_vidc_release_res (3518) */
+	}
+	for (int i = dc.nintl; i-- > 0;)	/* msm_comm_release_scratch/persist_buffers: response_req 1 */
+		bad |= buf_cmd(dc.intl_type[i], dc.intl[i].pa, dc.intl[i].size, 1) || wait_msg(M_RELBUF_DONE, 1000);
+	for (int i = 0; getenv("VENUSCTL_DPB_SETBUF") && i < dc.ndpb; i++)
+		bad |= buf_cmd(B_OUTPUT, dc.dpb[i].pa, dc.dpb[i].size, 1) || wait_msg(M_RELBUF_DONE, 1000);
+	dc.nintl = 0;
+	bad |= sess_cmd(0x10008) || wait_msg(0x20007, 1000);	/* SYS_SESSION_END (msm_comm_session_close, 3547) */
+	if (!bad)
+		printf("venus: SESSION_END_DONE error %#x\n", pkt[0] >= 16 ? pkt[3] : 0);
+	wait_soft = 0;
+	on_pkt = NULL;
+	wait_msg(0, 50);
+	return bad;
+}
+
+static int decode(uint32_t debug, const char *in, const char *outp, int want, uint64_t bufphys)
+{
+	size_t len = 0;
+	uint8_t *s = slurp(in, &len);
+	if (!s || !len) {
+		printf("venus: refused: can't read %s\n", in);
+		return 1;
+	}
+	static uint32_t off[NAU], alen[NAU];
+	memset(&dc, 0, sizeof(dc));
+	int nau = split_aus(s, len, off, alen);
+	if (nau < 0) {
+		nau = -nau - 1;
+		printf("venus: no SPS parsed: default 1920x1088 (msm_vidc_internal.h:43-44), the firmware's"
+		       " SEQUENCE_CHANGED decides\n");
+		dc.w = 1920;
+		dc.h = 1088;
+		dc.cw = 1920;
+		dc.ch = 1080;
+	}
+	printf("venus: %s: %zu bytes, %d access units\n", in, len, nau);
+	if (!nau)
+		return 1;
+	struct vstate v;
+	if (sys_up(&v, debug, "before decode"))
+		return 1;
+	/* the buffer window: right after the queue block, 1 MB aligned, inside the free gap (range_ok) */
+	uint64_t mb = getenv("VENUSCTL_BUF_MB") ? strtoull(getenv("VENUSCTL_BUF_MB"), NULL, 0) : 64;
+	uint64_t base = bufphys ? bufphys : (v.qkind == 2 ? (v.q + QSHARED + SFR_SIZE + 0xfffff) & ~0xfffffull : 0);
+	if (!base) {
+		printf("venus: refused: queues came from PMEM_ALLOC32: give --bufphys ADDR\n");
+		return 1;
+	}
+	if (range_ok(base, mb << 20, "buffer window"))
+		return 1;
+	if (base < v.q + QSHARED + SFR_SIZE && base + (mb << 20) > v.q) {
+		printf("venus: refused: buffer window %#llx+%lluM overlaps the queue block %#llx\n", (unsigned long long)base,
+		       (unsigned long long)mb, (unsigned long long)v.q);
+		return 1;
+	}
+	dc.base = dc.top = base;
+	dc.lim = base + (mb << 20);
+	dc.want = want;
+	dc.split = !getenv("VENUSCTL_PRIMARY");
+	nv12_layout();
+	dc.out = fopen(outp, "wb");
+	if (!dc.out) {
+		printf("venus: refused: can't write %s\n", outp);
+		return 1;
+	}
+	printf("venus: buffer window %#llx-%#llx, %s mode, NV12 stride %u scanlines %u\n", (unsigned long long)dc.base,
+	       (unsigned long long)dc.lim, dc.split ? "split (OUTPUT UBWC DPB + OUTPUT2 linear)" : "primary (OUTPUT linear)",
+	       dc.ystride, dc.yscan);
+
+	uint32_t si[5] = { 20, 0x10007, SESSION_ID, 2, 2 };	/* SYS_SESSION_INIT, decoder, H.264 (as session) */
+	if (q_write(si) || wait_msg(0x20006, 1000))
+		return 1;
+	printf("venus: SESSION_INIT_DONE error %#x\n", pkt[3]);
+	if (pkt[3])
+		return 1;
+	on_pkt = dec_pkt;
+	int started = 0, rc = 1;
+	uint32_t W = (uint32_t)dc.w, H = (uint32_t)dc.h, ob = dc.split ? B_OUTPUT2 : B_OUTPUT;
+	/* properties in the client's order (msm_vdec.c line of each) */
+	if (set_prop(P_FRAME_SIZE, B_INPUT, W, H, 3, "input frame size") ||	/* s_fmt OUTPUT, msm_vdec.c:735-742 */
+	    (dc.split && (set_prop(P_FMT_SEL, B_OUTPUT, CF_NV12_UBWC, 0, 2, "dpb format NV12_UBWC") ||	/* 1159 */
+			  set_prop(P_MULTI_STREAM, B_OUTPUT2, 1, 0, 2, "output2 on") ||		/* 1171-1180 */
+			  set_prop(P_MULTI_STREAM, B_OUTPUT, 0, 0, 2, "output off"))) ||		/* 1184-1193 */
+	    set_prop(P_FRAME_SIZE, ob, W, H, 3, "output frame size") ||		/* 1197-1210 (msm_vdec.c:657-667) */
+	    set_prop(P_FMT_SEL, ob, CF_NV12, 0, 2, "output format NV12") ||	/* s_fmt CAPTURE, msm_vdec.c:631 */
+	    get_bufreq())
+		goto close;
+	uint32_t *ri = req_of(B_INPUT);
+	int nin = ri && (int)ri[5] > 4 ? (int)ri[5] : 4;	/* input_min_count 4 (msm_vdec.c:514) */
+	if (nin > 8)
+		nin = 8;
+	/* msm_vidc_update_host_buff_counts (msm_vidc_common.c:3218, 3252); work mode/route for VPU5 H.264 progressive
+	 * (msm_vidc_clocks.c:1366-1420: mode 1 up to 1280x720, else 2; 1215-1290: route 2) */
+	if (set_prop(P_BUF_COUNT, B_INPUT, (uint32_t)nin, (uint32_t)nin, 3, "input count") ||
+	    set_prop(P_WORK_MODE, W * H <= 1280 * 720 ? 1 : 2, 0, 0, 1, "work mode") ||
+	    set_prop(P_WORK_ROUTE, getenv("VENUSCTL_ROUTE") ? (uint32_t)atoi(getenv("VENUSCTL_ROUTE")) : 2, 0, 0, 1,
+		     "work route") ||
+	    get_bufreq())	/* start_streaming: msm_comm_try_get_bufreqs again (scratch depends on the work mode) */
+		goto close;
+	/* internal buffers: scratch, scratch_1, scratch_2, persist, persist_1, count_actual each
+	 * (msm_comm_set_scratch_buffers 5150, msm_comm_set_persist_buffers 5230, allocate_and_set_internal_bufs 3883) */
+	static const uint32_t itypes[] = { 6, 7, 8, 4, 5 };
+	for (unsigned t = 0; t < 5; t++) {
+		uint32_t type = itypes[t], *r = req_of(type), cnt = r ? r[5] : 0;
+		if (r && r[1] && !cnt && r[3]) {	/* guess: downstream would set none; the minimum is safer */
+			printf("venus: note: %s count_actual 0, using count_min %u\n", bname(type), r[3]);
+			cnt = r[3];
+		}
+		for (uint32_t i = 0; r && r[1] && i < cnt && dc.nintl < 16; i++) {
+			uint32_t pa = balloc(r[1], bname(type));
+			if (!pa || buf_cmd(type, pa, r[1], 0))
+				goto close;
+			dc.intl[dc.nintl] = (struct vbuf){ pa, r[1], 1 };
+			dc.intl_type[dc.nintl++] = type;
+			printf("venus: %s buffer %#x (%u bytes) set\n", bname(type), pa, r[1]);
+		}
+	}
+	if (wait_msg(0, 20) || dc.err)
+		goto close;
+	ri = req_of(B_INPUT);
+	uint32_t isz = ri && ri[1] ? ri[1] : 0x100000;
+	for (int i = 0; i < nau; i++)
+		if (alen[i] > isz)
+			isz = alen[i];
+	for (dc.nin = 0; dc.nin < nin; dc.nin++) {
+		uint32_t pa = balloc(isz, "input");
+		if (!pa)
+			goto close;
+		dc.in[dc.nin] = (struct vbuf){ pa, align_up(isz, 0x1000), 0 };
+	}
+	if (alloc_outputs(8))
+		goto close;
+	printf("venus: buffers %#llx-%#llx (%llu KB of the window)\n", (unsigned long long)dc.base,
+	       (unsigned long long)dc.top, (unsigned long long)((dc.top - dc.base) >> 10));
+	/* msm_vidc_load_resources (msm_vidc_common.c:3419), msm_vidc_start (3452) -> START_DONE */
+	if (sess_cmd(S_LOAD_RES) || wait_msg(M_LOAD_DONE, 1000) || sess_cmd(S_START))
+		goto close;
+	started = 1;
+	if (wait_msg(M_START_DONE, 1000))
+		goto close;
+	printf("venus: START_DONE error %#x\n", pkt[0] >= 16 ? pkt[3] : 0);
+	ftb_all();
+
+	/* ETB one AU per free input buffer (create_pkt_cmd_session_etb_decoder, packetization.c:820), then an empty EOS
+	 * buffer (msm_vidc_send_pending_eos_buffers, msm_vidc_common.c:4083); stop at N frames, EOS, an error, 3 s
+	 * without a message or 15 s in all */
+	int next = 0, eos_sent = 0;
+	double t0 = now_s(), tact = t0;
+	unsigned acts = 0;
+	while (dc.frames < want && !dc.eos && !dc.err) {
+		if (dc.reconfig && reconfig())
+			goto close;
+		struct vbuf *b = NULL;
+		for (int i = 0; i < dc.nin && !b; i++)
+			if (!dc.in[i].fw)
+				b = &dc.in[i];
+		if (b && !dc.hold && (next < nau || !eos_sent)) {
+			uint32_t fl = F_EOF, fill = 0;
+			if (next < nau) {
+				static uint8_t tmp[0x10000];
+				for (uint32_t o = 0; o < alen[next]; o += sizeof(tmp)) {	/* 4-byte padded copy */
+					uint32_t k = alen[next] - o < sizeof(tmp) ? alen[next] - o : sizeof(tmp);
+					memset(tmp, 0, sizeof(tmp));
+					memcpy(tmp, s + off[next] + o, k);
+					if (pm_wr(b->pa + o, tmp, align_up(k, 4)))
+						goto close;
+				}
+				fill = alen[next];
+			} else {
+				fl = F_EOS;
+				eos_sent = 1;
+			}
+			uint64_t ts = (uint64_t)next * 33333;
+			uint32_t e[15] = { 60, S_ETB, SESSION_ID, (uint32_t)(ts >> 32), (uint32_t)ts, fl, 0, 0, 0, b->size, fill,
+				(uint32_t)next + 1, b->pa, 0, 0 };
+			b->fw = 1;
+			printf("venus: ETB %d: %u bytes at %#x flags %#x\n", next, fill, b->pa, fl);
+			if (q_write(e))
+				goto close;
+			next += next < nau;
+			continue;
+		}
+		if (wait_msg(0, 5))
+			goto close;
+		double t = now_s();
+		if (dc.acts != acts) {
+			acts = dc.acts;
+			tact = t;
+		}
+		if (t - tact > 3 || t - t0 > 15) {
+			printf("venus: note: decode stopped after %.1f s (%.1f s without a message), %d frames\n", t - t0,
+			       t - tact, dc.frames);
+			core_status("decode timeout");
+			break;
+		}
+	}
+	printf("venus: decoded %d of %d frames%s%s in %.2f s\n", dc.frames, want, dc.eos ? ", EOS" : "",
+	       dc.err ? ", session error" : "", now_s() - t0);
+	rc = dc.frames >= want || (dc.eos && dc.frames > 0) ? 0 : 1;
+close:
+	if (dec_close(started))
+		rc = 1;
+	if (dc.out)
+		fclose(dc.out);
+	printf("venus: wrote %d frames %dx%d NV12 (Y, then interleaved CbCr) to %s\n", dc.frames, dc.cw, dc.ch, outp);
+	core_status("after decode");
+	printf("venus: decode %s: venusctl shutdown, then power off\n", rc ? "FAILED" : "ok (stage 3 go)");
+	return rc;
+}
+
 /* review 8.1: is the --phys region really unused? write a pattern, let the load run, check it (/dev/pmem as init) */
 static int memtest(uint64_t a, uint64_t len, int write)
 {
@@ -1642,8 +2485,8 @@ static int shutdown_cmd(void)
 int main(int argc, char **argv)
 {
 	const char *fw = NULL, *cmd = NULL, *arg = NULL, *arg2 = NULL, *arg3 = NULL;
-	int no_shutdown = 0, keep = 0;
-	uint64_t phys = 0;
+	int no_shutdown = 0, keep = 0, frames = 5;
+	uint64_t phys = 0, bufphys = 0;
 	uint32_t debug = 0x18;	/* HFI_DEBUG_MSG_ERROR | FATAL (guess: msm_vidc_debug.c's default is not in our source copy) */
 	setvbuf(stdout, NULL, _IOLBF, 0);	/* a hang shows the last line */
 	for (int i = 1; i < argc; i++) {
@@ -1661,6 +2504,10 @@ int main(int argc, char **argv)
 			fw = argv[++i];
 		else if (!strcmp(argv[i], "--phys") && i + 1 < argc)
 			phys = strtoull(argv[++i], NULL, 0);
+		else if (!strcmp(argv[i], "--frames") && i + 1 < argc)
+			frames = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "--bufphys") && i + 1 < argc)
+			bufphys = strtoull(argv[++i], NULL, 0);
 		else if (!strcmp(argv[i], "--debug") && i + 1 < argc)
 			debug = (uint32_t)strtoul(argv[++i], NULL, 0);
 		else if (!cmd)
@@ -1683,8 +2530,10 @@ int main(int argc, char **argv)
 	pm_init();
 	stale_drop(STATE);
 	stale_drop(AHB_STATE);
-	if (arg2 && strcmp(cmd, "memtest"))
+	if (arg2 && strcmp(cmd, "memtest") && strcmp(cmd, "decode"))
 		goto usage;
+	if (!strcmp(cmd, "decode") && arg && arg2 && !arg3 && frames > 0)
+		return decode(debug, arg, arg2, frames, bufphys);
 	if (!strcmp(cmd, "memtest") && arg && arg2 && arg3 && (!strcmp(arg3, "write") || !strcmp(arg3, "check")))
 		return memtest(strtoull(arg, NULL, 0), strtoull(arg2, NULL, 0), !strcmp(arg3, "write"));
 	if (!strcmp(cmd, "probe") && !arg)
@@ -1708,7 +2557,8 @@ int main(int argc, char **argv)
 usage:
 	fprintf(stderr, "usage: venusctl [-v] probe | power on|off [--cvp] [--force] | pas-check [--fw DIR] [--no-shutdown]\n"
 		"       | boot [--fw DIR] [--keep] | init [--phys ADDR] | ping [--debug MASK]\n"
-		"       | session [--debug MASK] | shutdown\n"
+		"       | session [--debug MASK] | decode IN.h264 OUT.yuv [--frames N] [--bufphys ADDR] [--debug MASK]\n"
+		"       | shutdown\n"
 		"       | memtest ADDR SIZE write|check\n");
 	return 2;
 }
