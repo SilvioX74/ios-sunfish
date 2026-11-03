@@ -164,7 +164,7 @@ BU=$MO/SweetMetal2.bundle
 mkdir -p "$BU"
 "$W/bin/ios-c++" "${CPUFLAG[@]}" -x objective-c++ -std=c++17 -fobjc-arc -O2 -g -Wall -Wno-deprecated-declarations -Wno-unused-function -bundle \
 	-o "$BU/SweetMetal2" "$P/SweetMetal2.mm" "$P/NativeBridgeMetalFrontend.mm" -x none "$BRIDGE" -Wl,-dead_strip -lc++ \
-	-framework Foundation -framework Metal -framework IOSurface -framework IOKit -framework CoreFoundation 2>&1 |
+	-framework Foundation -framework Metal -framework IOSurface -framework IOKit -framework CoreFoundation -framework Accelerate 2>&1 |
 	grep -v "was built for newer 'iOS' version" || true
 [ -f "$BU/SweetMetal2" ] || exit 1
 # clang -g runs dsymutil itself when it links for a Darwin target

@@ -9,6 +9,7 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <IOSurface/IOSurfaceRef.h>
+#import <Accelerate/Accelerate.h>
 #import <objc/runtime.h>
 #include <algorithm>
 #include <atomic>
@@ -2393,6 +2394,29 @@ static void ycbcrNote(IOSurfaceRef surface,MTLTextureDescriptor *d,NSUInteger pl
   (unsigned long)plane,(unsigned long)d.width,(unsigned long)d.height,names[outcome<3?outcome:2],why.length?[NSString stringWithFormat:@" (%@)",why]:@"");
 }
 static inline uint8_t clamp8(int v) {return (uint8_t)(v<0?0:v>255?255:v);}
+// 0129 (G7, vd4d): 0112's 420v/420f -> RGBA8 conversion through Apple's Accelerate (vImageConvert_420Yp8_CbCr8ToARGB8888, NEON, tiled
+// across threads) instead of the per-pixel loop (backboardd ~95 % of a core at 1080p30). Same BT.601 as the loop (the surface's
+// kIOSurfaceYCbCrMatrix is still ignored); input not clipped (YpMin/Max 0/255), as the loop. 420f uses vImage's usual full range (Cb/Cr
+// over 127, the loop over 128: under 1 % saturation). Odd sizes, a short chroma plane and XR10 (550/551) keep the loop. Off: SWEET_VIMAGE=0.
+static bool vimageOn() {static const bool on=[]{const char *p=getenv("SWEET_VIMAGE");return !p||strcmp(p,"0");}();return on;}
+static const vImage_YpCbCrToARGB *vimageInfo(bool video) {
+ static const auto make=[](const vImage_YpCbCrPixelRange range)->vImage_YpCbCrToARGB *{
+  vImage_YpCbCrToARGB *info=new vImage_YpCbCrToARGB();
+  if(vImageConvert_YpCbCrToARGB_GenerateConversion(kvImage_YpCbCrToARGBMatrix_ITU_R_601_4,&range,info,kvImage420Yp8_CbCr8,kvImageARGB8888,kvImageNoFlags)!=kvImageNoError){delete info;return nullptr;}
+  return info;};
+ static const vImage_YpCbCrToARGB *const videoInfo=make({16,128,235,240,255,0,255,0}),*const fullInfo=make({0,128,255,255,255,0,255,0});
+ return video?videoInfo:fullInfo;
+}
+static bool planarVimage(const uint8_t *p0,size_t r0,const uint8_t *p1,size_t r1,size_t w1,size_t h1,NSUInteger w,NSUInteger h,bool video,NSUInteger format,uint8_t *out) {
+ if(!vimageOn() || (w&1) || (h&1) || w1*2<w || h1*2<h)return false;
+ const vImage_YpCbCrToARGB *info=vimageInfo(video);if(!info)return false;
+ const vImage_Buffer y={(void *)p0,h,w,r0},c={(void *)p1,h/2,w/2,r1},d={out,h,w,w*4};
+ static const uint8_t rgba[4]={1,2,3,0}; // ARGB -> RGBA
+ if(vImageConvert_420Yp8_CbCr8ToARGB8888(&y,&c,&d,info,rgba,255,kvImageNoFlags)!=kvImageNoError)return false;
+ static std::atomic<unsigned> logged{0};const unsigned bit=video?1:2;
+ if(!(logged.fetch_or(bit)&bit))NBLOG(@"SWEET YCBCR: cpu conversion via vImage (fmt %lu, matrix BT.601, range %s)",(unsigned long)format,video?"video":"full");
+ return true;
+}
 static void planarFill(NBTexture *t) {
  IOSurfaceRef s=t.planarSurface;if(!s)return;
  const uint32_t seed=IOSurfaceGetSeed(s);if(seed==t.planarSeed)return;
@@ -2402,11 +2426,12 @@ static void planarFill(NBTexture *t) {
  const size_t r0=IOSurfaceGetBytesPerRowOfPlane(s,0),r1=IOSurfaceGetBytesPerRowOfPlane(s,1);
  const size_t w0=IOSurfaceGetWidthOfPlane(s,0),h0=IOSurfaceGetHeightOfPlane(s,0),w1=IOSurfaceGetWidthOfPlane(s,1),h1=IOSurfaceGetHeightOfPlane(s,1);
  if(!p0 || !p1 || w>w0 || h>h0 || !w1 || !h1){IOSurfaceUnlock(s,kIOSurfaceLockReadOnly,nullptr);t.planarSeed=seed;return;}
- std::vector<uint8_t> out(w*h*4);
+ std::unique_ptr<uint8_t[]> out(new uint8_t[w*h*4]); // 0129: not zeroed, every byte is written
  const NSUInteger format=t.pixelFormat;
  if(format==MTLPixelFormatRGBA8Unorm || format==MTLPixelFormatRGBA8Unorm_sRGB){
   // BT.601, 16.16 fixed point. 420v: Y 16-235, C 16-240; 420f: full range.
   const bool video=IOSurfaceGetPixelFormat(s)=='420v';
+  if(!planarVimage(p0,r0,p1,r1,w1,h1,w,h,video,format,out.get())){
   const int ky=video?76309:65536,krv=video?104597:91881,kgu=video?25675:22554,kgv=video?53279:46802,kbu=video?132201:116130,yo=video?16:0;
   for(NSUInteger y=0;y<h;y++){
    const uint8_t *ly=p0+y*r0,*lc=p1+std::min((size_t)(y/2),h1-1)*r1;uint8_t *o=&out[y*w*4];
@@ -2415,6 +2440,7 @@ static void planarFill(NBTexture *t) {
     const int Y=(ly[x]-yo)*ky,U=lc[cx]-128,V=lc[cx+1]-128;
     o[0]=clamp8((Y+krv*V+32768)>>16);o[1]=clamp8((Y-kgu*U-kgv*V+32768)>>16);o[2]=clamp8((Y+kbu*U+32768)>>16);o[3]=255;
    }
+  }
   }
  } else {
   // XR10: 10-bit channels in a 32-bit word (B low), 384 = 0.0, 894 = 1.0; alpha 8-bit from plane 1.
@@ -2428,7 +2454,7 @@ static void planarFill(NBTexture *t) {
   }
  }
  IOSurfaceUnlock(s,kIOSurfaceLockReadOnly,nullptr);
- [t replaceRegion:MTLRegionMake2D(0,0,w,h) mipmapLevel:0 withBytes:out.data() bytesPerRow:w*4];
+ [t replaceRegion:MTLRegionMake2D(0,0,w,h) mipmapLevel:0 withBytes:out.get() bytesPerRow:w*4];
  t.planarSeed=seed;
 }
 // 0127 (G7): textures over planar IOSurfaces on the runtime's own GPU path (ycbcr.rs, texture/surface_two_planes.rs). The whole surface is
