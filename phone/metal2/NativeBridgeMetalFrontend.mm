@@ -2543,6 +2543,22 @@ static NBTexture *planeTexture(MTLTextureDescriptor *d,IOSurfaceRef surface,NSUI
 - (void)newLibraryWithSource:(NSString *)source options:(MTLCompileOptions *)options completionHandler:(void (^)(id<MTLLibrary>,NSError *))handler {
  NSError *error=nil;id<MTLLibrary> library=[(id<MTLDevice>)self newLibraryWithSource:source options:options error:&error];handler(library,error);
 }
+// Function stitching (CoreImage's Metal DAG: CI::VisibleFunctionStitchingDescriptor::compile -> newLibraryWithDescriptorSPI:) runs
+// _MTLDevice's newLibraryWithStitchedDescriptor:destinationBinaryArchive:error:, which asks each function for -libraryData, a C++
+// MTLLibraryData*, and calls through its vtable: with our NBFunction that is nil -> SIGSEGV in Maps (g7a, research/notes/maps-libdata-
+// 2026-11-03.md). Stitching is refused with an error instead; CoreImage then logs "Metal library creation failed" and uses its
+// non-stitched path. SWEET_STITCH=1 leaves the base class's methods in place (the crash comes back).
+static bool stitchBaseOn(void) {static const bool on=[]{const char *p=getenv("SWEET_STITCH");return p&&atoi(p)!=0;}();return on;}
+static NSError *stitchRefused(void) {
+ static std::atomic<bool> said{false};
+ if(!said.exchange(true))NBLOG(@"SWEET MTL: function stitching refused (CoreImage falls back to unstitched kernels)");
+ return [NSError errorWithDomain:@"MTLLibraryErrorDomain" code:1 userInfo:@{NSLocalizedDescriptionKey:@"SweetMetal2: function stitching is not supported"}];
+}
+- (id<MTLLibrary>)newLibraryWithStitchedDescriptor:(id)d error:(NSError **)error {(void)d;if(error)*error=stitchRefused();else stitchRefused();return nil;}
+- (void)newLibraryWithStitchedDescriptor:(id)d completionHandler:(void (^)(id<MTLLibrary>,NSError *))handler {(void)d;handler(nil,stitchRefused());}
+- (id<MTLLibrary>)newLibraryWithStitchedDescriptor:(id)d destinationBinaryArchive:(id)a error:(NSError **)error {(void)d;(void)a;if(error)*error=stitchRefused();else stitchRefused();return nil;}
+- (id<MTLLibrary>)newLibraryWithStitchedDescriptorSPI:(id)d error:(NSError **)error {(void)d;if(error)*error=stitchRefused();else stitchRefused();return nil;}
+- (id<MTLLibrary>)newLibraryWithDescriptorSPI:(id)d error:(NSError **)error {(void)d;if(error)*error=stitchRefused();else stitchRefused();return nil;}
 - (id<MTLComputePipelineState>)newComputePipelineStateWithFunction:(id<MTLFunction>)function error:(NSError **)error {
  return [(id<MTLDevice>)self newComputePipelineStateWithFunction:function options:MTLPipelineOptionNone reflection:nil error:error];
 }
@@ -2749,6 +2765,7 @@ extern "C" id native_bridge_metal_open(const char *loader,const char *cache,uint
  for(unsigned i=0;i<count;i++) {
   const SEL sel=method_getName(methods[i]);
   if(!gAppleSourceLibrary&&(sel==@selector(newLibraryWithSource:options:error:)||sel==@selector(newLibraryWithSource:options:completionHandler:)))continue;
+  if(stitchBaseOn()&&strncmp(sel_getName(sel),"newLibraryWith",14)==0&&(strstr(sel_getName(sel),"Stitched")||strstr(sel_getName(sel),"DescriptorSPI")))continue;
   class_addMethod(cls,sel,method_getImplementation(methods[i]),method_getTypeEncoding(methods[i]));
  }
  free(methods);installAnswers(cls);class_addProtocol(cls,@protocol(MTLDevice));
