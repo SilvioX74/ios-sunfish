@@ -19,6 +19,15 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 16:13 Bounds checks on shared-memory data (d7f8d59; hakios driver review W1-W4/F1-F8)
+Review (research/notes/upstream-2026-11-01.md item 12) checked line by line against ours: SMEM part_get padding
+underflow (size ~4 GB -> glink rx_len), uint32 walk-step wrap (endless loop), unchecked partition headers/TOC, GLINK
+head/tail unchecked (rx OOB read, tx stray write), QRTR >64 KB overflowed rxbuf (intent of any size granted), QMP
+mailbox offset unchecked. All fixed after Linux smem.c/qcom_glink_smem.c/qcom_aoss.c; host test phone/wifi/test_smem.c
+(ASan/UBSan) 18/18. Not applying: GLINK length wrap, QRTR at+size, APR underflow, SMP2P (already bounded). Not seen on
+the phone (needs corrupt remote data; the >64 KB QRTR case can happen with valid traffic). To install: wland, adspboot,
+hapticd (+ aprtest apr_tone i2cprobe camid drvbuzz), then a Wi-Fi/sound/haptics check.
+
 ### 2026-11-03 15:35 Correction: today's Log heading times run ahead of the clock
 Claude's session clock drifted: the `### 2026-11-03 HH:MM` headings written today after about 12:00 EST carry times up
 to ~6.5 h ahead of the real time (e.g. "21:40" was ~15:15 EST). The order of the entries is right; the real times are

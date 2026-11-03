@@ -75,7 +75,7 @@ Finished items: [completed.md](completed.md) (not auto-loaded).
 - xpcproxy identity version (hakios-xnu 78b518b): first count the errors in one Safari oslog.
 - Privilege table (hakios-xnu 502aee8, 2 h): may wake daemons quieted for heat, watch idle CPU.
 - Speaker guard for louder sound (315e973, 3-5 h), iOS microphone (2bb073e, 1-2 days, B23 risk): with B16.
-- Driver review reports (230762c, 5429d38, 1800069; 2-3 h read-only): SMEM padding underflow found in phone/wifi/smem.c.
+- Driver review reports: wifi/ADSP findings fixed (d7f8d59, to install + check); camera ring (1800069), battery, cpufreq not checked.
 
 ## Questions for you (Claude took the recommended path meanwhile)
 - App Store (B56): it fails on Apple's device attestation (FairPlay hardware info -42184, Anisette -45061, media token
