@@ -89,6 +89,16 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 18:15 Why the GPU YCbCr path (G7, SWEET_YCBCR_GPU) is slow (read-only study)
+Per new frame: 22 shape words + copy_buffer of both planes (3.1 MB) to staging, full barrier, one 8x8 compute dispatch
+(one texel per invocation, SSBO word loads + Metal's exact fixed-point maths), writes RGBA16F (16.6 MB). Measured total
+(27b96cb, kernel160): ~45-60 ms GPU per conversion, GPU 99-100 % busy, 883/1800 dropped; bake cut it 35 % => latency-bound
+kernel, not bandwidth (~23 MB should be 2-5 ms). Reuse: upstream metal2vulkan (693 commits ahead of our pin) reads planes
+in place on integrated GPUs (cdf59197), converts through VkSamplerYcbcrConversion (a1f16771, 2f033d30). Turnip's
+G8_B8R8_2PLANE_420_UNORM supports linear images with MIDPOINT chroma + linear filter (tu_formats.cc:198-207). Plan:
+fragment pass sampling linear R8/R8G8 aliases of the surface (or a 2-plane linear image + YCbCr sampler, from a1f16771)
+into RGBA8, no staging; expected ~1-2 ms GPU. Off switch SWEET_YCBCR_FAST=0.
+
 ### 2026-11-03 18:11 First-session "venusd session error -60 at frame 17" (read-only study)
 venusd's no-firmware-progress rule fires (venusd.c:790-800: 3 s quiet once the session has a first picture; the 20 s cold
 allowance ends at frame 0); vtvenus only relays it. crH: session 1 opened 71.321, frame 0 71.862, failed 76.968 "17 AUs
