@@ -22,10 +22,8 @@ the speed focus is over. Targets (Claude's numbers, the user can change them):
 Only items Claude can move now. User tasks are listed below and never gate work; parked ones in docs/backlog.md.
 1. ▶ **Hardware video decode** (Snapdragon 730G video engine, "Venus"), in stages, each a go/no-go (video.md):
    0. Baseline: test videos in Safari (H.264, HEVC; 720p, 1080p) on today's software path: what plays, CPU, heat, sound, G7.
-   1. Research, read-only: Venus registers, clocks, power domain, SMMU for SM7150 (Android kernel source, local partition
-      dumps); firmware file and TrustZone ID; HFI version; Linux `venus` driver as reference; how VideoToolbox finds and
-      calls decoder plugins (Apple's AVD.videodecoder). Output: a staged spec in video.md.
-   2. Kernel bring-up: power on, firmware boot through TrustZone, an HFI ping answered (resets only, small steps).
+   1. Done 2026-11-02: research, staged spec in video.md (PAS ID 9, HFI gen1, plugin slot ExampleIPB.videodecoder).
+   2. Bring-up with a userland `venusctl` on /dev/pmem (video.md spec): probe, power, pas-check, boot, init, ping.
    3. First frame: a phone tool decodes a raw H.264 file to a YUV buffer, checked against a reference.
    4. VideoToolbox decoder plugin: Safari/AVPlayer play through it; H.264, then HEVC.
    5. Tuning: heat, 4K, several streams at once (feeds).
@@ -51,11 +49,10 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
 
 ## Next (in this order)
 1. Tonight (night rules from 21:30: minimum brightness, no sound): set `work/night`, then night soak n8 (did not run
-   2026-11-02): `tools/sunfish-nightsoak.sh n8` (kernel158; watch G1 with SWEET_CULL=3). Meanwhile, no phone needed:
-   stage 1 research (investigator) -> the staged spec in video.md.
+   2026-11-02): running (started 21:30, ends ~22:35). Then `venusctl` (implementer, no phone) for stage 2 steps 1-3.
 2. Morning (night flag off): stage 0 Safari video baseline + the WebGL test (about 30 min together; video muted
    before 5 am).
-3. Then stage 2 per the spec.
+3. Then stage 2 on the phone: venusctl probe, power, pas-check (read-only first; risky steps in daylight).
 4. Bridge 0125 SWEET_M2V_PASS_CACHE (50adec5, VkRenderPass cache, ~0.25 ms): rebuild first (the 2026-11-02 build was
    stopped half way: don't install work/metal2-next before rebuilding), then a 5-boot A/B on settings, cc, home.
 
