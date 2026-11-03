@@ -69,6 +69,20 @@ whether CVP (mvs1) must be on, which of the four stream IDs carry traffic.
    Check on the PC: `tools/sunfish-venus-yuvcmp.py REF.nv12 OUT.yuv W H` (ffmpeg reference, work/stage3/).
 Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VENUSCTL_ROUTE, VENUSCTL_NOUT, VENUSCTL_YSTRIDE/YSCAN.
 
+## Stage 4 spec (design 2026-11-03, research/notes/venus-stage4-design-2026-11-03.md; read-only, untested)
+- Root daemon `venusd` owns Venus (mediaserverd runs as mobile; /dev/pmem is root 0600) + a thin VT plugin client
+  (camd/camera_client.c pattern) over a 0666 AF_UNIX socket. VT sessions decode in mediaserverd (remote session).
+- Plugin registers like AVD (VTRegisterVideoDecoder 'avc1'), refuses CreateInstance when venusd is down or
+  /var/local/venus-off exists, so VT falls back to software (fallback order: medium confidence).
+- Frames: the plugin takes CVPixelBuffers ('420v', row align 64, IOSurface) from VT's pool and sends their IOSurface
+  IDs; venusd copies each finished frame in. Venus reaches only < 4 GB (identity banks), so no direct write yet.
+- Copy speed: pmem pread of the window is ~14 MB/s (device mapping); needs 0233's write-combined mapping (~3.3 ms per
+  1080p frame, guess). Buffer window ~160 MB for 1080p (memtest first).
+- Steps: 4a0 kernel pmem mapping (2 h) -> 4a venusd + venusc test client, fps on a 60 s 1080p clip (1 day) -> 4b plugin
+  + vtdecode (1.5 days) -> 4c Safari (0.5 day) -> 4d GPU YUV->RGB in the bridge (1-2 days; display already works via a
+  CPU conversion in bridge 0112, so G7 is not a blocker) -> 4e HEVC 8-bit (0.5-1 day). Zero copy (translating SMMU
+  bank + IOSurface page list) is stage 5.
+
 ## Open
 - Stages 4-5; stage 3 speed numbers. Stage 3 go 2026-11-03 (v3e, bit-exact). Stage 2 complete 2026-11-03 (s7b 10/10 idle, s7c 29/29 under UI load). Stage 2 go 2026-11-03 (v2c). Stage 0 done 2026-11-03 (s0): plays H.264/HEVC 720p/1080p, 250-590 % CPU.
 

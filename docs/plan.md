@@ -50,9 +50,8 @@ TU_FETCH_GMEM_MIN_DRAWS=20, SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-inst
 ## Next (in this order)
 1. WebGL (webgl.md): context fixed (283012f, wg2), frames run, draws fail (GL_INVALID_OPERATION; shader source
    path). Investigator on the failing point and fix routes; then pick a route (likely days: hard item).
-2. Stage 4 spec: VideoToolbox decoder plugin (ExampleIPB.videodecoder slot, loads in mediaserverd) on venusctl's decode
-   path as a library; daemon vs in-process, pmem access from mediaserverd, CVPixelBuffer/IOSurface NV12 out (G7).
-   Also: stage 3 speed on a long 1080p clip (fps, CPU).
+2. Stage 4 (video.md "Stage 4 spec"): 4a0 kernel patch giving the pmem Venus window 0233's write-combined mapping,
+   measure MB/s; then 4a `venusd` + test client (fps on a 60 s 1080p clip).
 3. Metal→Vulkan prior-art survey (the user, 2026-11-03): we are 821 commits behind metal2vulkan (720ef1ce vs
    bf3ce381); AdrenoMetal, darlinghq indium/darling-metal, iglunix indium cloned to research/re; two investigators
    running; decide rebase/cherry-pick before more bridge work. (dipa-studio/ios-extra: not found on GitHub.)
