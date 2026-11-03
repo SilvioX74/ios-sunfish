@@ -216,10 +216,12 @@ static bool listed(void)
 			}
 			fclose(ef);
 		}
-		/* debugging: a GPU trace is for backboardd only, one file per process instance: the other clients and a respawn
-		 * would truncate it. MESA_GPU_TRACES unset: nothing happens. /var/local/turnip is pre-created by root, mode 777 */
+		/* debugging: a GPU trace is for one process (backboardd, or the one named by SWEET_GPU_TRACE_PROC, e.g.
+		 * com.apple.WebKit.GPU for WebGL), one file per process instance: the other clients and a respawn would
+		 * truncate it. MESA_GPU_TRACES unset: nothing happens. /var/local/turnip is pre-created by root, mode 777 */
 		if (getenv("MESA_GPU_TRACES")) {
-			if (strcmp(getprogname(), "backboardd") != 0) {
+			const char *tp = getenv("SWEET_GPU_TRACE_PROC");
+			if (strcmp(getprogname(), tp && *tp ? tp : "backboardd") != 0) {
 				unsetenv("MESA_GPU_TRACES");
 				unsetenv("MESA_GPU_TRACEFILE");
 			} else {
