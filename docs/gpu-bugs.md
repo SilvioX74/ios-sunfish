@@ -281,3 +281,13 @@ build). Safari 1080p colour bars right (one diagonal artefact line). Maps crashe
 /var/local/mtl2-env. Matrix reads 0 (BT.601) for all: the matrix key lookup may be wrong. Investigator on libraryData
 (possible B50 link). Markers g7a..g7d in ../logs/boots/20261103-074436.log.
 
+### 2026-11-03 09:00 Maps after the stitching fix (a1f3952) and with sweetgpucap=512
+Bundle a1f3952 (function stitching refused with an error; SWEET_STITCH=1 off), SWEET_YCBCR_GPU=0 removed (GPU path on).
+- maps1 (kernel160, default cap 256 MB): Maps up 90 s, no crash, map area black. 0 MISSING, 0 `function stitching
+  refused` (the stitching path was not hit this time, so the fix is not proven yet), 0 SWEET YCBCR lines from Maps,
+  1 `54 MB buffer refused (holds 254 MB, 482 MB of the pool free): its cap`, 28 `texture refused: OutOfMemory(Device)`,
+  13 `RenderPass(NoTargets)` command buffers refused.
+- maps2 (reboot, `sweetgpucap=512`): no crash, 0 cap refusals, 0 OutOfMemory, 0 NoTargets, map area still black.
+- Observed: the cap starves Maps of render targets at 256 MB, but lifting it does not bring the map back, so B50 is
+  something else. Phone left on kernel160 + sweetpmemwc=2 + sweetgpucap=512 with bundle a1f3952.
+
