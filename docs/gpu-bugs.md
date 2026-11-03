@@ -317,3 +317,10 @@ VkSamplerYcbcrConversion (Turnip samples G8_B8R8_2PLANE_420 directly).
 ### 2026-11-03 16:30 One GPU fault/hang during the games_fps A/B
 kernel160 boot hevc1, t=2703.671: `SWEET GPU: v2 fence wait: GPU hang or fault (fence 73108, done 73101, smmu fsr 40000002 far 0 fsynr0 2): reset` — between two WebGL runs (the aa=0 page still open), recovered, no backboardd restart. smmu fsr 40000002 = same signature as the 'surface remap' wedge at 3923 s in 20261103-082158.log.
 
+### 2026-11-03 17:10 Suspect: GPU faults right after a Venus session starts
+Two GPU hangs with `smmu fsr 40000002` came 1-2 s after `venusd: session N opened` (vd1 at 2084 s in
+20261103-082158.log; r1 at 3698 s in the hevc1 boot), each with a backboardd restart. Others today (2703 s games_fps, 3923 s)
+had no Venus session nearby. Rate per Venus session start unknown (dozens of starts today without one). Watch: log the
+offset from the last session open for every hang; if the link holds, look at what Venus start does to shared state
+(MMCX/RPMh votes, the CB4 SMMU bank venusctl picks (a possible bootloader leftover, s7b), memory bandwidth votes).
+

@@ -89,6 +89,19 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:10 Remeasure: Range doesn't remove the network-process burn; venusd 4 ms tick small gain
+Range server on :8077 (206 seen). % of one core, 30 s window, single-mp4 clips:
+| run | clip | WebKit (Networking?) | WebContent | GPU proc | backboardd | mediaserverd | venusd | total | dropped |
+|---|---|---|---|---|---|---|---|---|---|
+| old venusd | H.264 1080p | 150 / 149 | 12 | 22 | 102 / 100 | 74 / 71 | 41 / 43 | 471 / 460 | 8-10 |
+| venusd 007f8b1 | H.264 1080p | 148 | 11 | 21 | 101 | 72 | 38 | 454 | 8 |
+| venusd 007f8b1 | HEVC 1080p | 84 | 9 | 18 | 99 | 62 | 37 | 363 | 10 |
+(WebKit roles assigned by exec order; totals include kernel_task 27-34.) Safari asks `bytes=0-` and streams the whole
+file anyway, and WebKit re-grows one buffer per chunk. Real sites stream HLS/MSE segments: HLS test running
+(work/stage0/hls-*; index.html plays `#hls-<clip>`). venusd: 43 -> 38 % (one run each). Still frame right.
+- r1 void: GPU hang 2 s after a venusd session opened (smmu fsr 40000002), backboardd + SpringBoard restarted. The vd1 wedge
+  (11:00) also came 1 s after a session opened, same fsr: a possible Venus-start / GPU-fault link (gpu-bugs.md).
+
 ### 2026-11-03 16:50 videoprof: where Safari hardware-video CPU goes (H.264 1080p, ~392 % total)
 pstack x60 per process (research/notes/videoprof-2026-11-03/). % of one core over 30 s:
 - WebKit Networking ~142 %: `FragmentedSharedBuffer::append` -> `Vector<DataSegmentVectorEntry>::reserveCapacity` on every
