@@ -22,6 +22,14 @@ hangs but only 7.4 fps (GPU-bound); HexGL parked (its loader stalls on iOS Safar
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:02 games_fps shader dump (shdR, kernel161, IR3_SHADER_DEBUG=fs, ~65 s, undone after)
+No fs hash 4b132e36ec68 this run (15 fs compiled, hashes differ with bundle a71ea11); largest fs 1457d61d (prog 40),
+not confirmed as the 57 ms draw: 1249 instr (147 nop), 24 full regs, single threadsize, max_waves 8, preamble 733,
+0 spills, 2 sam, 12 derivatives (6 dsx + 6 dsy: metal2vulkan's InterpolateAtOffset(0) lowering), 466 instr with helpers
+live, sstall 40 / systall 89. Shadow fs fe4830ed: 90 instr, 6 regs, double threadsize, 16 waves. Other fs 378/471/165/157/
+128 instr. Disasm in research/notes/webgl-shader-4b132e-disasm.txt. Lead: replace InterpolateAtOffset(0) with plain
+interpolation in MSAA pipelines (removes the 12 derivatives and most helper work).
+
 ### 2026-11-03 16:01 Hardware MSAA resolve (bridge 0129, a71ea11): games_fps 7.9 -> 8.45 fps
 Bundle work/metal2-next-hwres (LC_UUID 4C4C44C8): RGBA8/BGRA8 unorm MSAA attachments resolved by Turnip (no exact shader
 resolve pass); SWEET_M2V_HW_RESOLVE=0 old path, 2 adds sRGB (off: Turnip averages encoded codes, up to ~60 LSB off at
