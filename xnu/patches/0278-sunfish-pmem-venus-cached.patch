@@ -1,0 +1,140 @@
+From a0022f8bd094cbfc1bc727623d622b928418805c Mon Sep 17 00:00:00 2001
+From: Yofuness <compiledchickennuggets@gmail.com>
+Date: Tue, 3 Nov 2026 07:59:16 -0500
+Subject: [PATCH] sunfish: sweetpmemwc=2 maps the Venus buffer window once
+ cacheable, with DC CIVAC range maintenance around pmem reads/writes, and
+ trims the device window alias at 0xa5400000 (0278)
+
+---
+ bsd/dev/sweet_pmem.c | 56 +++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 45 insertions(+), 11 deletions(-)
+
+diff --git a/bsd/dev/sweet_pmem.c b/bsd/dev/sweet_pmem.c
+index a6be8ff..4b2429e 100644
+--- a/bsd/dev/sweet_pmem.c
++++ b/bsd/dev/sweet_pmem.c
+@@ -12,7 +12,8 @@
+  *     loads/stores only: offset and length must be multiples of 4.
+  *     Reading an unclocked block hangs the SoC, as with poke scripts.
+  *     Exceptions, one write-combined mapping each, any offset and length:
+- *     the camera ring (0233) and the Venus buffer window (0277, sweetpmemwc).
++ *     the camera ring (0233) and the Venus buffer window (0277, sweetpmemwc;
++ *     =2 maps the Venus window cacheable with cache maintenance instead, 0278).
+  *   ioctl PMEM_ALLOC   {size, align} -> {pa}: zeroed, physically contiguous
+  *                      kernel memory (stays until PMEM_FREE, survives exit)
+  *   ioctl PMEM_FREE    {pa}
+@@ -95,9 +96,10 @@ static struct {
+ static struct {
+ 	vm_offset_t va;
+ 	uint64_t win;
++	uint64_t len;           /* 0278: PMEM_WIN, less where the window runs into the Venus window */
+ } pm_map[PMEM_MAPS];
+ static unsigned pm_map_next;
+-static uint32_t pm_venus_wc = 1;        /* 0277: sweetpmemwc, see pm_ven_va */
++static uint32_t pm_venus_wc = 1;        /* 0277: sweetpmemwc, 0 device, 1 write-combined, 2 cached (0278); see pm_ven_va */
+ static uint32_t pm_bounce[PAGE_SIZE / 4];
+ 
+ static LCK_GRP_DECLARE(sweet_pmem_grp, "sweet_pmem");
+@@ -113,23 +115,33 @@ static volatile uint32_t *
+ pm_io(uint64_t pa)
+ {
+ 	uint64_t win = pa & ~(PMEM_WIN - 1);
+-	for (unsigned i = 0; i < PMEM_MAPS; i++) {
+-		if (pm_map[i].va && pm_map[i].win == win) {
+-			return (volatile uint32_t *)(pm_map[i].va + (pa - win));
+-		}
+-	}
+ 	if (pa >= PM_CAM_PA && pa < PM_CAM_PA + PM_CAM_LEN) {
+ 		return NULL;    /* 0233: the camera ring is mapped write-combined (pm_rw); both mappings are uncached */
+ 	}
+ 	if (pm_venus_wc && pa >= PM_VEN_PA && pa < PM_VEN_PA + PM_VEN_LEN) {
+ 		return NULL;    /* 0277: likewise the Venus buffer window */
+ 	}
++	for (unsigned i = 0; i < PMEM_MAPS; i++) {
++		if (pm_map[i].va && pm_map[i].win == win) {
++			return (volatile uint32_t *)(pm_map[i].va + (pa - win));
++		}
++	}
++	/*
++	 * 0278: the window at 0xa5400000 (queue block tail) ends at the Venus
++	 * window, so no device alias of it exists (with sweetpmemwc=2 it is
++	 * mapped cacheable; mixed attributes for one PA are not allowed).
++	 */
++	uint64_t len = PMEM_WIN;
++	if (pm_venus_wc && win < PM_VEN_PA && win + PMEM_WIN > PM_VEN_PA) {
++		len = PM_VEN_PA - win;
++	}
+ 	unsigned i = pm_map_next++ % PMEM_MAPS;
+ 	if (pm_map[i].va) {
+-		ml_io_unmap(pm_map[i].va, PMEM_WIN);
++		ml_io_unmap(pm_map[i].va, pm_map[i].len);
+ 	}
+-	pm_map[i].va = ml_io_map_unmappable((vm_offset_t)win, PMEM_WIN, VM_WIMG_IO);
++	pm_map[i].va = ml_io_map_unmappable((vm_offset_t)win, len, VM_WIMG_IO);
+ 	pm_map[i].win = win;
++	pm_map[i].len = len;
+ 	return pm_map[i].va ? (volatile uint32_t *)(pm_map[i].va + (pa - win)) : NULL;
+ }
+ 
+@@ -152,6 +164,14 @@ static vm_offset_t pm_cam_va;
+  * no cache maintenance and poll their indices). Not cached either, so Venus DMA
+  * needs no cache maintenance. Boot-arg sweetpmemwc=0 (default 1) puts the Venus
+  * window back on the device path.
++ *
++ * 0278 (A55s stall per 16-byte load on uncached memory: ~25 ms per 1080p frame
++ * through WC): sweetpmemwc=2 maps the same window once as normal cacheable
++ * memory instead (only one of the two mappings ever exists per boot). IO is not
++ * coherent here, so pm_rw cleans+invalidates (DC CIVAC to PoC, then dsb sy) the
++ * accessed lines before each read, dropping stale lines so Venus' DMA output is
++ * seen, and after each write, so Venus sees the CPU's data. Reads must come
++ * after Venus is done with the buffer (FBD), as with Linux dma_sync_for_cpu.
+  */
+ static vm_offset_t pm_ven_va;
+ 
+@@ -173,20 +193,33 @@ pm_rw(struct uio *uio, bool write)
+ 		}
+ 		vm_offset_t *wva = NULL;
+ 		uint64_t wpa = 0, wlen = 0;
++		bool cached = false;
+ 		if (pa >= PM_CAM_PA && pa + n <= PM_CAM_PA + PM_CAM_LEN) {
+ 			wva = &pm_cam_va, wpa = PM_CAM_PA, wlen = PM_CAM_LEN;
+ 		} else if (pm_venus_wc && pa >= PM_VEN_PA && pa + n <= PM_VEN_PA + PM_VEN_LEN) {
+ 			wva = &pm_ven_va, wpa = PM_VEN_PA, wlen = PM_VEN_LEN;    /* 0277 */
++			cached = (pm_venus_wc == 2);                              /* 0278 */
+ 		}
+ 		if (wva) {
+ 			if (!*wva) {
+-				*wva = ml_io_map_unmappable((vm_offset_t)wpa, wlen, VM_WIMG_WCOMB);
++				*wva = ml_io_map_unmappable((vm_offset_t)wpa, wlen, cached ? VM_WIMG_DEFAULT : VM_WIMG_WCOMB);
+ 				if (!*wva) {
+ 					err = ENOMEM;
+ 					break;
+ 				}
+ 			}
+ 			caddr_t va = (caddr_t)(*wva + (pa - wpa));
++			if (cached) {
++				/* 0278: flush_dcache by VA = DC CIVAC per 64-byte line over [va, va+n), dsb sy */
++				if (!write) {
++					flush_dcache((vm_offset_t)va, n, FALSE);
++				}
++				err = uiomove(va, (int)n, uio);
++				if (write) {
++					flush_dcache((vm_offset_t)va, n, FALSE);
++				}
++				continue;
++			}
+ 			if (write) {
+ 				err = uiomove(va, (int)n, uio);
+ 				__asm__ volatile ("dsb osh" ::: "memory");
+@@ -439,6 +472,7 @@ sweet_pmem_init(void)
+ 		return;
+ 	}
+ 	devfs_make_node(makedev(major, 0), DEVFS_CHAR, UID_ROOT, GID_WHEEL, 0600, "pmem");
+-	printf("SWEET PMEM: /dev/pmem ready (major %d), Venus window %s\n", major, pm_venus_wc ? "write-combined" : "device");
++	printf("SWEET PMEM: /dev/pmem ready (major %d), Venus window %s\n", major,
++	    pm_venus_wc == 2 ? "cached+maintenance" : pm_venus_wc ? "write-combined" : "device");
+ }
+ #endif /* ARM64_BOARD_CONFIG_SWEET */
+-- 
+2.56.0
+
