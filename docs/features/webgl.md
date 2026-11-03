@@ -22,6 +22,10 @@ renders white; WebGL 2 untested. **Updated:** 2026-11-03.
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 11:55 HexGL retry: page stays white with no scripts loading on the phone
+After the .m4a change, Safari requested only index.html (+ the start beacon), no JS/CSS/audio, no ticks, twice (?v=2,
+?v=3). The same page loads in the desktop browser here (only a favicon 404). Phone-side Safari state (cache?); parked.
+
 ### 2026-11-03 11:30 HexGL white = its loader waits forever on .ogg audio (page bug, not ours)
 Error hook in work/webgl-games/hexgl/index.html (beacons to :8078). WebGL context healthy (ticks `lost=false err=0`
 every 5 s after one initial 1282), 2 programs compiled (SWEET SRC ok, 835 ms each on a cold MTLCompilerService), ~23

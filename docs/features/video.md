@@ -89,6 +89,20 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 11:55 vdcold: cold-start fixes (68ebbab); a firmware fatal kills the session and venusd exits
+venusd 6d0b2c94 + vtvenus 1c30d842 (68ebbab: cold timeouts, reconnect, lazy OPEN, resync, venusd warm-up), boot vdcold
+(kernel160, 4454 mV); logs pulled to research/notes/venus-runs/2026-11-03-vdcold-{venusd,vtvenus}.log.
+- Warm-up at start: `1 frame(s), first frame 8286 ms after the decoder start, 13748 ms in all (bring-up 5461 ms)`.
+- 1080p clip right after boot: vtvenus first refused (venusd still warming up -> software for that instance), then
+  session 1 open in 11291 ms, session 2 in 1013 ms, resync ok; played to frame 1455 (dropped 146 by then), then the
+  firmware: `<VFW_F:VppCr0:...> h264HWProgVpp(1035): WPT wrap-around happened, wpt 0xa5e60200 len 0x190 beg 0xa5e10800
+  size 0x4fb00`, the core's clock/GDSC went off, venusd's shared code: `STOP at doorbell (0xaadf018): a video clock or
+  GDSC is off` -> venusd exited (launchd restarted it, warm-up again); vtvenus's one reconnect got "Connection refused"
+  and gave up. The same VFW_F line appears several times in the log (also beg 0xa5906800 size 0x36b00).
+- 720p clip after that: 1800 frames, 0 dropped (first frame 7418 ms after the first OPEN).
+- The first frame takes 7-8 s after each venusd OPEN through vtvenus (not once per boot).
+- Next: investigator on the WPT ring (which buffer, why too small) + venusd must survive a firmware fatal.
+
 ### 2026-11-03 11:15 stall A-C: the first-use stall does not reproduce in 3 fresh boots
 venusctl f191422 with VENUSCTL_TS=1 (per-line stamps on the phone); first decode of each boot ~60 s after SSH, venusd
 idle (launchd respawns it; /var/local/venus-off kept it from opening Venus). Files research/notes/venus-runs/
