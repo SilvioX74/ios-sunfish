@@ -6,6 +6,7 @@
 int smmu_wlan_identity(void);
 int radio_start(void);		/* after WLFW mission mode: copy engines, HTC, then WMI/HTT/scan from radio_poll */
 void radio_poll(void);		/* called from the link's idle loop */
+void radio_flush(void);		/* wifi batch: tx messages kept by the copy engine out now; at the end of each idle round */
 void radio_summary(void);	/* the networks heard so far */
 void radio_stats(void);
 unsigned radio_scans(void);	/* passive scans completed */

@@ -19,6 +19,7 @@ static int hello_sent;
 static int scan_pending, join_pending;
 static unsigned scans_at;
 static uint64_t scan_deadline, join_deadline, last_bg_scan;
+unsigned bridge_writes;	/* wifi batch: write() calls to /dev/wlan, for the stats line */
 int bridge_joins;	/* wifid has asked for a network (or to leave): wland's own wlan.conf join stands down */
 
 static void bridge_send(uint16_t type, const void *data, size_t len)
@@ -30,6 +31,7 @@ static void bridge_send(uint16_t type, const void *data, size_t len)
 	memcpy(m, &h, sizeof(h));
 	if (len)
 		memcpy(m + sizeof(h), data, len);
+	bridge_writes++;
 	if (write(bfd, m, sizeof(h) + len) < 0 && type != FW_RX)
 		printf("[%6llu] bridge: write type %u: %s\n", (unsigned long long)link_ms(), type, strerror(errno));
 }

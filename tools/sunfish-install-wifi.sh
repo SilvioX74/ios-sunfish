@@ -8,6 +8,7 @@
 #   --job    only (re)write the launchd job, no binaries or firmware
 #   --wland  only replace /var/local/bin/wland (temp file + rename; the running wland keeps its copy until reboot)
 # HT20 association (B57) is on by default; legacy 11g: a line "ht=0" in /var/local/wland.conf, then reboot.
+# Fewer /dev/pmem calls per frame (wifi batch) are on by default; the per-frame calls of before: "batch=0" in /var/local/wland.conf.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 F() { python3 -I tools/flame-files.py "$@"; }

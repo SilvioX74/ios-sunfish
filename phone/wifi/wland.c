@@ -662,6 +662,7 @@ static void net_idle(void)
 	ipnet_poll();
 	bridge_poll();
 	join_poll();
+	radio_flush();	/* wifi batch: what this round sent goes out (one doorbell) */
 }
 
 static int net(unsigned secs)

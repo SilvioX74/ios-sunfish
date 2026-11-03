@@ -8,6 +8,7 @@
 #include "pmem.h"
 
 static int pm_fd = -1;
+unsigned long long pm_calls[2], pm_bytes[2];	/* wifi batch: pread/pwrite calls and bytes ([0] read, [1] write) */
 
 void pm_init(void)
 {
@@ -24,6 +25,7 @@ void pm_init(void)
 int pm_rd(uint64_t pa, void *buf, size_t len)
 {
 	ssize_t n = pread(pm_fd, buf, len, (off_t)pa);
+	pm_calls[0]++, pm_bytes[0] += len;
 	if (n != (ssize_t)len) {
 		fprintf(stderr, "pmem: read %zu at %llx: %s\n", len, (unsigned long long)pa,
 			n < 0 ? strerror(errno) : "short");
@@ -35,6 +37,7 @@ int pm_rd(uint64_t pa, void *buf, size_t len)
 int pm_wr(uint64_t pa, const void *buf, size_t len)
 {
 	ssize_t n = pwrite(pm_fd, buf, len, (off_t)pa);
+	pm_calls[1]++, pm_bytes[1] += len;
 	if (n != (ssize_t)len) {
 		fprintf(stderr, "pmem: write %zu at %llx: %s\n", len, (unsigned long long)pa,
 			n < 0 ? strerror(errno) : "short");

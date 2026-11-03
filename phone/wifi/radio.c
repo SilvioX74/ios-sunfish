@@ -24,6 +24,7 @@
 #include "link.h"
 #include "radio.h"
 #include "smmu.h"
+#include "bridge.h"
 
 #define LOG(fmt, ...)	printf("[%6llu] radio: " fmt "\n", (unsigned long long)link_ms(), ##__VA_ARGS__)
 #define MIN(a, b)	((a) < (b) ? (a) : (b))
@@ -64,6 +65,53 @@ static void mem_rd(uint64_t pa, void *buf, uint32_t len)
 static void mem_wr(uint64_t pa, const void *buf, uint32_t len)
 {
 	pm_wr(pa, buf, (len + 3) & ~3u);
+}
+
+/*
+ * wifi batch: fewer /dev/pmem calls per frame (each pread/pwrite is a syscall; ~10 per received frame before).
+ * CE rx descriptors are read and rewritten one range per pass, CE tx messages to the same CE are kept in a host
+ * copy and written (buffers, descriptors, one doorbell) when the poll round ends or another CE is sent to (the
+ * doorbells keep their order across CEs), HTT rx ring entries go back one range per indication, and an HTT tx
+ * extension descriptor is rewritten only when its frame length changes. Bit 1 (batch=3) also leaves out the
+ * attention-word clear of recycled HTT rx buffers (only a host-side done marker in ath10k; nothing here reads it).
+ * env WLAND_BATCH=0, or a line "batch=0" in /var/local/wland.conf: the per-frame calls of before.
+ */
+static int w_batch = -1;
+static int batch(void)
+{
+	if (w_batch < 0) {
+		const char *e = getenv("WLAND_BATCH");
+		char line[64];
+		FILE *f;
+		w_batch = 1;
+		if (e)
+			w_batch = atoi(e);
+		else if ((f = fopen("/var/local/wland.conf", "r"))) {
+			while (fgets(line, sizeof(line), f))
+				if (!strncmp(line, "batch=", 6))
+					w_batch = atoi(line + 6);
+			fclose(f);
+		}
+		printf("radio: batch %d\n", w_batch);
+	}
+	return w_batch;
+}
+
+/* K entries of SZ bytes from entry I of a ring of N: one call per run that does not wrap */
+static void ring_rd(uint64_t base, uint32_t n, uint32_t sz, uint32_t i, uint32_t k, void *buf)
+{
+	uint32_t a = MIN(k, n - i);
+	mem_rd(base + (uint64_t)i * sz, buf, a * sz);
+	if (k > a)
+		mem_rd(base, (uint8_t *)buf + (size_t)a * sz, (k - a) * sz);
+}
+
+static void ring_wr(uint64_t base, uint32_t n, uint32_t sz, uint32_t i, uint32_t k, const void *buf)
+{
+	uint32_t a = MIN(k, n - i);
+	mem_wr(base + (uint64_t)i * sz, buf, a * sz);
+	if (k > a)
+		mem_wr(base, (const uint8_t *)buf + (size_t)a * sz, (k - a) * sz);
 }
 
 /* ---------------------------------------------------------------- apps SMMU */
@@ -123,6 +171,9 @@ struct ce_state {
 	uint64_t src_pa, dst_pa, rx_pa, tx_pa;
 	uint32_t src_n, dst_n, src_wr, dst_wr, dst_sw;
 	uint32_t rx, tx, tx_full;
+	uint32_t src_sw, src_fl;		/* wifi batch: the last read index seen, the first slot not yet written */
+	uint8_t *txm;				/* wifi batch: host copy of the tx buffers */
+	uint16_t tlen[TX_SLOTS_MAX], tfl[TX_SLOTS_MAX];
 };
 static struct ce_state ce[CE_COUNT];
 static uint64_t rri_pa;
@@ -186,7 +237,7 @@ static int ce_start(void)
 	for (uint32_t c = 0; c < CE_COUNT; c++) {
 		struct ce_state *s = &ce[c];
 		if (s->src_n) {				/* ath10k_ce_init_src_ring */
-			s->src_wr = ce_rd(c, SR_WR_IDX) & (s->src_n - 1);
+			s->src_wr = s->src_fl = ce_rd(c, SR_WR_IDX) & (s->src_n - 1);
 			ce_wr(c, SR_BASE_LO, (uint32_t)s->src_pa);
 			ce_wr(c, SR_BASE_HI, (uint32_t)(s->src_pa >> 32) & ADDR_HI_MASK);
 			ce_wr(c, SR_SIZE, s->src_n);
@@ -216,6 +267,47 @@ static int ce_start(void)
 }
 
 static void htc_rx(uint32_t c, const uint8_t *d, uint32_t len);
+static void htt_recycle(void);
+static uint32_t ce_passes, ce_busy;		/* wifi batch: ce_poll passes, and those with something received */
+
+/*
+ * wifi batch: up to 16 completed messages of CE c (AVAIL by the read index) as ce_poll's loop takes them, with the
+ * descriptors read in one range, then the used descriptors cleared and the same number posted again in one range
+ * each (as ce_post writes them: the buffer of slot % RX_POST, no length), and one doorbell. Each payload is one read.
+ */
+static void ce_rx_batch(uint32_t c, uint32_t avail)
+{
+	struct ce_state *s = &ce[c];
+	static uint8_t buf[RX_BUF_SIZE];
+	uint32_t d[16 * 4], w[16 * 4], k = MIN(avail, 16u), mask = s->dst_n - 1, sw0 = s->dst_sw, wr0 = s->dst_wr, i;
+	ring_rd(s->dst_pa, s->dst_n, DESC, sw0, k, d);
+	for (i = 0; i < k; i++) {
+		uint32_t slot = (sw0 + i) & mask, n = d[4 * i + 2] & 0xffff;
+		if (n == 0)
+			break;				/* index ahead of the descriptor: next round */
+		if (n > RX_BUF_SIZE)
+			n = RX_BUF_SIZE;
+		mem_rd(s->rx_pa + (uint64_t)(slot % RX_POST) * RX_BUF_SIZE, buf, n);
+		s->dst_sw = (slot + 1) & mask;
+		s->rx++;
+		htc_rx(c, buf, n);
+	}
+	if (!i)
+		return;
+	for (uint32_t j = 0; j < i; j++) {		/* the used ones: length cleared, the address kept */
+		uint64_t a = s->rx_pa + (uint64_t)(((sw0 + j) & mask) % RX_POST) * RX_BUF_SIZE;
+		w[4 * j] = (uint32_t)a, w[4 * j + 1] = (uint32_t)(a >> 32) & ADDR_HI_MASK, w[4 * j + 2] = 0, w[4 * j + 3] = 0;
+	}
+	ring_wr(s->dst_pa, s->dst_n, DESC, sw0, i, w);
+	for (uint32_t j = 0; j < i; j++) {		/* ce_post for each */
+		uint64_t a = s->rx_pa + (uint64_t)(((wr0 + j) & mask) % RX_POST) * RX_BUF_SIZE;
+		w[4 * j] = (uint32_t)a, w[4 * j + 1] = (uint32_t)(a >> 32) & ADDR_HI_MASK, w[4 * j + 2] = 0, w[4 * j + 3] = 0;
+	}
+	ring_wr(s->dst_pa, s->dst_n, DESC, wr0, i, w);
+	s->dst_wr = (wr0 + i) & mask;
+	ce_wr(c, DR_WR_IDX, s->dst_wr);
+	link_traffic++;	/* O12 */
+}
 
 static void ce_poll(void)
 {
@@ -224,10 +316,19 @@ static void ce_poll(void)
 	if (!ce_up)
 		return;
 	mem_rd(rri_pa, rri, sizeof(rri));
+	ce_passes++;
+	int busy = 0;
 	for (uint32_t c = 0; c < CE_COUNT; c++) {
 		struct ce_state *s = &ce[c];
+		if (s->src_n && batch())
+			s->src_sw = rri[c] & 0xffff;	/* wifi batch: ce_send's ring-full check reads it again only when full */
 		if (!ce_host_rx(c) || ((rri[c] >> 16) & (s->dst_n - 1)) == s->dst_sw)
 			continue;
+		busy = 1;
+		if (batch()) {
+			ce_rx_batch(c, ((rri[c] >> 16) - s->dst_sw) & (s->dst_n - 1));
+			continue;
+		}
 		int posted = 0;
 		for (int k = 0; k < 16; k++) {
 			uint32_t slot = s->dst_sw, w = rd32(s->dst_pa + (uint64_t)slot * DESC + 8), n = w & 0xffff;
@@ -248,6 +349,47 @@ static void ce_poll(void)
 			link_traffic++;	/* O12 */
 		}
 	}
+	ce_busy += busy;
+	htt_recycle();
+}
+
+static int ce_src_full(uint32_t c, uint32_t sw)
+{
+	uint32_t mask = ce[c].src_n - 1;
+	return ((sw - 1 - ce[c].src_wr) & mask) == 0 || ((ce[c].src_wr - sw) & mask) >= ce_tx_slots(c) - 1;
+}
+
+/*
+ * wifi batch: what ce_send kept for CE tx_pend_ce goes out: the buffers in one write per run that does not wrap
+ * the buffer area (from the first one's start to the last one's end), the descriptors in one range, one doorbell.
+ * wland calls it at the end of each idle round; ce_send before a message to another CE.
+ */
+static int tx_pend_ce = -1;
+
+void radio_flush(void)
+{
+	if (tx_pend_ce < 0)
+		return;
+	uint32_t c = (uint32_t)tx_pend_ce, w[TX_SLOTS_MAX * 4];
+	struct ce_state *s = &ce[c];
+	uint32_t mask = s->src_n - 1, slots = ce_tx_slots(c), sz = ce_tx_sz(c), k = (s->src_wr - s->src_fl) & mask;
+	tx_pend_ce = -1;
+	if (!k)
+		return;
+	for (uint32_t i = 0; i < k;) {
+		uint32_t b0 = (s->src_fl + i) % slots, r = MIN(k - i, slots - b0), last = b0 + r - 1;
+		mem_wr(s->tx_pa + (uint64_t)b0 * sz, s->txm + (size_t)b0 * sz, (last - b0) * sz + s->tlen[last]);
+		i += r;
+	}
+	for (uint32_t i = 0; i < k; i++) {
+		uint32_t b = ((s->src_fl + i) & mask) % slots;
+		uint64_t a = s->tx_pa + (uint64_t)b * sz;
+		w[4 * i] = (uint32_t)a, w[4 * i + 1] = (uint32_t)(a >> 32) & ADDR_HI_MASK;
+		w[4 * i + 2] = s->tlen[b] | (uint32_t)s->tfl[b] << 16, w[4 * i + 3] = 0;
+	}
+	ring_wr(s->src_pa, s->src_n, DESC, s->src_fl, k, w);
+	s->src_fl = s->src_wr;
+	wr32(SHADOW_PA + 4 * c, s->src_wr);		/* shadow SR write index of CE c */
 }
 
 static int ce_send(uint32_t c, const void *data, uint32_t len, uint32_t transfer_id)
@@ -255,16 +397,35 @@ static int ce_send(uint32_t c, const void *data, uint32_t len, uint32_t transfer
 	if (!ce_up || c >= CE_COUNT || !ce_host_tx(c) || len > ce_tx_sz(c))
 		return -1;
 	struct ce_state *s = &ce[c];
-	uint32_t mask = s->src_n - 1, sw = rd32(rri_pa + 4 * c) & 0xffff;
-	if (((sw - 1 - s->src_wr) & mask) == 0 || ((s->src_wr - sw) & mask) >= ce_tx_slots(c) - 1) {
+	uint32_t mask = s->src_n - 1, sw = batch() ? s->src_sw : rd32(rri_pa + 4 * c) & 0xffff;
+	if (batch() && ce_src_full(c, sw))
+		sw = s->src_sw = rd32(rri_pa + 4 * c) & 0xffff;	/* the index ce_poll saw may be old */
+	if (ce_src_full(c, sw)) {
 		s->tx_full++;
 		return -1;
 	}
 	uint32_t slot = s->src_wr;
+	if (batch() && !s->txm)
+		s->txm = malloc((size_t)ce_tx_slots(c) * ce_tx_sz(c));
+	if (batch() && s->txm) {			/* wifi batch: kept until radio_flush (or a send to another CE) */
+		uint32_t b = slot % ce_tx_slots(c);
+		if (tx_pend_ce >= 0 && tx_pend_ce != (int)c)
+			radio_flush();
+		memcpy(s->txm + (size_t)b * ce_tx_sz(c), data, len);
+		s->tlen[b] = (uint16_t)len;
+		s->tfl[b] = (uint16_t)((transfer_id << 4) & 0xfff0);
+		s->src_wr = (slot + 1) & mask;
+		s->tx++;
+		tx_pend_ce = (int)c;
+		return 0;
+	}
+	if (tx_pend_ce >= 0)
+		radio_flush();				/* (no host copy: what is kept goes first) */
 	uint64_t bpa = s->tx_pa + (uint64_t)(slot % ce_tx_slots(c)) * ce_tx_sz(c);
 	mem_wr(bpa, data, len);
 	desc_put(s->src_pa + (uint64_t)slot * DESC, bpa, (uint16_t)len, (uint16_t)((transfer_id << 4) & 0xfff0));
 	s->src_wr = (slot + 1) & mask;
+	s->src_fl = s->src_wr;
 	s->tx++;
 	wr32(SHADOW_PA + 4 * c, s->src_wr);		/* shadow SR write index of CE c */
 	return 0;
@@ -1096,9 +1257,32 @@ static void htt_post(uint64_t pa)
 	htt_alloc = (htt_alloc + 1) & (HTT_RING_SIZE - 1);
 }
 
+/* wifi batch: htt_post for N buffers (N < HTT_RING_SIZE), the ring entries in one range */
+static void htt_post_many(const uint64_t *pa, uint32_t n)
+{
+	if (!(batch() & 2))
+		for (uint32_t i = 0; i < n; i++)
+			wr32(pa[i] + 4 * OFF_ATTENTION, 0);
+	ring_wr(htt_ring_pa, HTT_RING_SIZE, 8, htt_alloc, n, pa);
+	htt_alloc = (htt_alloc + n) & (HTT_RING_SIZE - 1);
+}
+
 static void htt_publish(void)
 {
 	wr32(htt_idx_pa, htt_alloc);			/* device memory: ordered after the entries */
+}
+
+/* wifi batch: the buffers htt_rx has read go back at the end of the ce_poll pass, in one range, one publish */
+static uint64_t htt_pend[HTT_RING_SIZE];
+static uint32_t htt_npend;
+
+static void htt_recycle(void)
+{
+	if (!htt_npend)
+		return;
+	htt_post_many(htt_pend, htt_npend);
+	htt_npend = 0;
+	htt_publish();
 }
 
 static void htt_configure(const char *why)
@@ -1217,9 +1401,16 @@ static void htt_rx(const uint8_t *p, uint32_t len)
 				mem_rd(pa + 4 * OFF_MSDU_PAYLOAD, frame, mlen);
 				sta_rx_native(frame, mlen);
 			}
-			htt_post(pa);				/* recycle the same buffer */
+			if (!batch()) {
+				htt_post(pa);			/* recycle the same buffer */
+				continue;
+			}
+			htt_pend[htt_npend++] = pa;
+			if (htt_npend == HTT_RING_SIZE - 1)	/* (more than the ring has buffers: never, unless the firmware repeats one) */
+				htt_recycle();
 		}
-		htt_publish();
+		if (!batch())
+			htt_publish();
 	}
 }
 
@@ -1310,6 +1501,7 @@ static uint8_t s_rsn_ie[22];
 static uint8_t s_ptk[48], s_anonce[32], s_snonce[32], s_group_cipher;
 static uint64_t s_replay, s_mgmt_pa, tx_pool_pa, tx_busy;
 static uint32_t tx_sent, tx_done, tx_fail, rx_up;
+static uint16_t tx_ext_len[TX_SLOTS];		/* wifi batch: the frame length last written to each extension descriptor */
 
 void (*radio_rx_hook)(const uint8_t *frame, uint32_t len);
 void (*radio_link_hook)(int up);
@@ -1410,7 +1602,9 @@ static int htt_tx_frame(const uint8_t *f, uint32_t len, int clear, uint32_t tid)
 	memcpy(ext + 24, &lo, 4);
 	memcpy(ext + 28, &hi, 2);
 	memcpy(ext + 30, &l16, 2);
-	mem_wr(htt_bank_pa + (uint64_t)id * HTT_EXT_DESC_SIZE, ext, sizeof(ext));
+	if (!batch() || tx_ext_len[id] != l16)	/* wifi batch: the rest of it never changes (only we write the bank) */
+		mem_wr(htt_bank_pa + (uint64_t)id * HTT_EXT_DESC_SIZE, ext, sizeof(ext));
+	tx_ext_len[id] = l16;
 	*p++ = H2T_TX_FRM;
 	*p++ = (uint8_t)(TXF0_MAC_HDR | TXF0_NATIVE | (clear ? TXF0_NO_ENCRYPT : 0));
 	p = put16(p, (uint16_t)(TXF1_TID(tid) | TXF1_POSTPONED));	/* vdev 0 */
@@ -2066,6 +2260,7 @@ static void w_eapol_rx(const uint8_t *e, size_t elen)
 			}
 		}
 		w_eapol_send(0x030a, NULL, NULL, 0);
+		radio_flush();				/* (wifi batch: out now, not after the keys) */
 		delay_ms(5);				/* message 4 out in the clear before the keys go in */
 		w_install_key(0, 0, WMI_CIPHER_CCMP, s_ptk + 32, 16);
 		if (gtk_len)
@@ -2272,6 +2467,7 @@ void radio_poll(void)
 {
 	static uint64_t last;
 	uint64_t now = link_ms();
+	radio_flush();					/* wifi batch: what the last round left */
 	if (!ce_up || now - last < 2)
 		return;
 	last = now;
@@ -2324,8 +2520,22 @@ unsigned radio_scans(void)
 
 void radio_stats(void)
 {
-	LOG("stats: state %u, tx %u sent %u done %u failed, rx %u to the IP side, htt msdus %u, ce tx full %u/%u/%u",
-	    s_state, tx_sent, tx_done, tx_fail, rx_up, htt_msdus, ce[0].tx_full, ce[3].tx_full, ce[4].tx_full);
+	/* wifi batch: since the last stats line: pmem calls (and KB), /dev/wlan writes, ce_poll passes (with rx),
+	 * msdus per rx pass and pmem calls per msdu */
+	static unsigned long long l_calls[2], l_bytes[2];
+	static uint32_t l_passes, l_busy, l_msdus;
+	static unsigned l_bw;
+	unsigned long long cr = pm_calls[0] - l_calls[0], cw = pm_calls[1] - l_calls[1];
+	uint32_t busy = ce_busy - l_busy, msdus = htt_msdus - l_msdus;
+	LOG("stats: state %u, tx %u sent %u done %u failed, rx %u to the IP side, htt msdus %u, ce tx full %u/%u/%u; "
+	    "batch %d: pmem rd %llu (%llu KB) wr %llu (%llu KB), wlan writes %u, passes %u (rx %u), msdus/pass %.1f, "
+	    "pmem/msdu %.1f",
+	    s_state, tx_sent, tx_done, tx_fail, rx_up, htt_msdus, ce[0].tx_full, ce[3].tx_full, ce[4].tx_full, batch(),
+	    cr, (pm_bytes[0] - l_bytes[0]) >> 10, cw, (pm_bytes[1] - l_bytes[1]) >> 10, bridge_writes - l_bw,
+	    ce_passes - l_passes, busy, busy ? (double)msdus / busy : 0.0, msdus ? (double)(cr + cw) / msdus : 0.0);
+	memcpy(l_calls, pm_calls, sizeof(l_calls));
+	memcpy(l_bytes, pm_bytes, sizeof(l_bytes));
+	l_passes = ce_passes, l_busy = ce_busy, l_msdus = htt_msdus, l_bw = bridge_writes;
 }
 
 /* the i-th network heard (any scan): 0, or -1 past the last */

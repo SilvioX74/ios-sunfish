@@ -45,6 +45,7 @@ void wr32(uint64_t pa, uint32_t v);
 void wr64(uint64_t pa, uint64_t v);	/* two 32-bit stores, low first */
 int pm_rd(uint64_t pa, void *buf, size_t len);
 int pm_wr(uint64_t pa, const void *buf, size_t len);
+extern unsigned long long pm_calls[2], pm_bytes[2];	/* wifi batch: pread/pwrite calls and bytes ([0] read, [1] write) */
 uint64_t pm_alloc(uint64_t size, uint64_t align);	/* 0 on failure */
 uint64_t pm_alloc32(uint64_t size, uint64_t align);	/* the same, below 4 GB (32-bit DMA) */
 int pm_free(uint64_t pa);
