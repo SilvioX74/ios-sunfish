@@ -1677,6 +1677,8 @@ static struct {
 	uint32_t ystride, yscan;
 	int frames, want, eos, err, hold, stopping, reconfig, rw, rh, rcount;
 	double cp_sum, cp_max, t_first, t_last;	/* v4a0: frame copy-out time (pread of the window), first/last FBD */
+	double cp_core[8];	/* v4a0: copy time per CPU (0-5 A55, 6-7 A76), counted only when the copy stayed on one core */
+	int n_core[8], n_moved;
 	unsigned acts;		/* msgq packets handled: progress for the timeout */
 	FILE *out;
 	uint8_t *fbuf;
@@ -1833,6 +1835,14 @@ static struct vbuf *find_buf(struct vbuf *v, int n, uint32_t pa)
 
 static double now_s(void);
 
+/* the CPU this thread runs on: xnu keeps it in TPIDR_EL0's low 12 bits (osfmk/arm64/machine_machdep.h:34-42) */
+static unsigned cpu_now(void)
+{
+	uint64_t t;
+	__asm__ volatile("mrs %0, tpidr_el0" : "=r"(t));
+	return (unsigned)(t & 0xfff);
+}
+
 /* one decoded frame: crop to the visible rect, append NV12 (Y w*h, then CbCr w*h/2) to OUT, CRC32 of that luma */
 static void frame_out(uint32_t pa, const uint32_t *f)
 {
@@ -1853,8 +1863,15 @@ static void frame_out(uint32_t pa, const uint32_t *f)
 		dc.frames++;
 		return;
 	}
+	unsigned k0 = cpu_now();
 	int rd = !dc.fbuf || big_io(pa, dc.fbuf, need, 0);
 	double c1 = now_s();
+	unsigned k1 = cpu_now();
+	if (k0 == k1 && k0 < 8) {
+		dc.cp_core[k0] += c1 - c0;
+		dc.n_core[k0]++;
+	} else
+		dc.n_moved++;
 	dc.cp_sum += c1 - c0;
 	if (c1 - c0 > dc.cp_max)
 		dc.cp_max = c1 - c0;
@@ -2456,6 +2473,12 @@ static int decode(uint32_t debug, const char *in, const char *outp, int want, ui
 		       dc.frames, 1e3 * dc.cp_sum / dc.frames, 1e3 * dc.cp_max,
 		       (size_t)dc.ystride * dc.yscan * 3 / 2, dc.frames - 1, dc.t_last - dc.t_first,
 		       dc.frames > 1 && dc.t_last > dc.t_first ? (dc.frames - 1) / (dc.t_last - dc.t_first) : 0.0);
+	for (int k = 0; k < 8; k++)
+		if (dc.n_core[k])
+			printf("venus: copy-out on cpu%d (%s): %d frames, mean %.2f ms\n", k, k < 6 ? "A55" : "A76", dc.n_core[k],
+			       1e3 * dc.cp_core[k] / dc.n_core[k]);
+	if (dc.n_moved)
+		printf("venus: copy-out: %d frames moved between CPUs during the copy\n", dc.n_moved);
 	rc = dc.frames >= want || (dc.eos && dc.frames > 0) ? 0 : 1;
 close:
 	if (dec_close(started))
