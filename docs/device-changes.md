@@ -54,6 +54,7 @@ output in /var/local.
 ## Log
 (Newest first. One line per on-device change: date, what, where, how, what reproduces it.)
 
+- 2026-11-03 Video (unfinished, log only): /var/local/bin/{venusctl,venusd,venusc} a2752c1 via `tools/sunfish-install-venusd.sh --tools` (launchd job not installed; venusd runs by hand from tools/sunfish-venusd-test.sh).
 - 2026-11-03 Metal bundle a1f3952 (LC_UUID 4C4C448D, stitching refused) installed from work/metal2-next-stitch; `SWEET_YCBCR_GPU=0` removed from /var/local/mtl2-env (GPU YCbCr path on). Boot maps512: kernel160 + `sweetpmemwc=2 sweetgpucap=512` (RAM boot).
 - 2026-11-03 Phone booted on kernel160 with sweetpmemwc=2 (`tools/sunfish-test.sh -k 160 v4a1 sweetse9=2 sweetcampmic=2 sweetswapbig=6 sweetampreset=1 sweetpmemwc=2`; RAM boot, nothing persistent).
 - 2026-11-03 Metal bundle fe2d169 (LC_UUID 4C4C443B, G7 YCbCr GPU path) installed from work/metal2-next-fe2d169; /var/local/mtl2-env gets `SWEET_YCBCR_GPU=0` (Maps crash with the GPU path; CPU conversion as before). To reproduce: install as above and append the line.

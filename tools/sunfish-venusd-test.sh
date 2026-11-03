@@ -1,5 +1,5 @@
 #!/bin/sh
-# Video 4a on the running phone (docs/features/video.md "Stage 4 spec"): venusd started by hand (nohup, in the
+# Video 4a on the running phone (docs/features/video.md "Stage 4 spec"): venusd started by hand (detached with &, in the
 # background on the phone), one venusc run through it, venusd stopped (SIGTERM: it shuts Venus down, PAS shutdown
 # first, then power off), then venusd's log lines of this run.
 #   tools/sunfish-venusd-test.sh [IN [OUT]] [venusc options: --frames N, --null]
@@ -28,7 +28,7 @@ if S "[ -e /var/tmp/venusctl.state ]"; then
 fi
 size=$(S "[ -e $LOG ] && wc -c <$LOG || echo 0" | tr -d ' \r')
 echo "=== start: ${VENUSD_ENV:+$VENUSD_ENV }venusd --log $LOG"
-S "nohup env ${VENUSD_ENV:-} /var/local/bin/venusd --log $LOG >/dev/null 2>&1 </dev/null &"
+S "env ${VENUSD_ENV:-} /var/local/bin/venusd --log $LOG >/dev/null 2>&1 </dev/null &"
 i=0
 while ! S "[ -S /var/run/venusd.sock ]"; do
 	i=$((i + 1))

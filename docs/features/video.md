@@ -1,5 +1,5 @@
 # Video playback and hardware decode
-**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus engine decodes H.264 bit-exact from a phone tool, 1080p at 217 fps raw, 52 fps end-to-end with a 1.5 ms cached copy-out (kernel160 sweetpmemwc=2). **Updated:** 2026-11-03.
+**State:** 🟡 Safari plays H.264 and HEVC 720p/1080p in software (250-590 % of one core, 1080p H.264 drops 5.6 %); hardware decode: research done, decoder slot loads, the Venus engine decodes H.264 bit-exact from a phone tool, 1080p at 217 fps raw, 66 fps end-to-end through the venusd daemon (stage 4a), 1.2 ms copy-out (kernel160 sweetpmemwc=2). **Updated:** 2026-11-03.
 
 ## Facts
 - The iPhone X decodes video in hardware (AppleAVD); the port has no AVD, so iOS falls back to software decoders.
@@ -88,6 +88,20 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 09:25 Stage 4a (vd4a): venusd + venusc work: 1080p 66 fps end-to-end over the socket, bit-exact
+Binaries a2752c1 (venusctl 512ac1ed, venusd 6d8f7e50, venusc 638446f3) via tools/sunfish-install-venusd.sh --tools;
+kernel160 boot maps512 (sweetpmemwc=2). Outputs research/notes/venus-runs/2026-11-03-vd4a-*.txt. The test script
+used `nohup`, which the phone lacks (fixed: plain `env ... &`).
+- 1080p 10 frames: `Venus up in 150 ms`; bit-exact (yuvcmp ok, crc 2a544a75); first frame 637 ms after OPEN.
+- 1080p 300 frames to null, 2 sessions: venusc `300 frames of 300 sent; wall 4.54 s = 66.0 fps` and 65.6 fps; venusd
+  `76.3 fps (frame 0 -> 299), copy-out mean 1.21 ms max 3.89 ms, error 0` and 76.0 fps; OPEN 154 ms then 0 ms
+  (Venus stayed up). Round trip per frame mean ~92 ms (pipeline depth, not decode time), max ~650 ms (start-up).
+- 320x240: bit-exact, copy-out 0.06 ms.
+- Refusals: a second OPEN during a session -> -EBUSY (`one session at a time`), /var/local/venus-off -> -ENODEV.
+- Idle 70 s -> `Venus down (idle)`, pas shutdown 0/0, clean power off. No reset, nothing left powered.
+- Observed: the daemon path is faster than venusctl's serial loop (66-76 vs 52 fps). First frame ~0.6 s after OPEN
+  (session setup + SEQUENCE_CHANGED reconfig) — a start-up latency Safari will see on every new video.
 
 ### 2026-11-03 08:45 v4a1: kernel160 sweetpmemwc=2 (cached + DC CIVAC): copy-out 1.54 ms, 1080p 52.6 fps, bit-exact
 Kernel160 = kernel159 + xnu 0278, boot v4a1 (4455 mV) with `... sweetpmemwc=2`. venusctl 94e5e5c. Outputs
