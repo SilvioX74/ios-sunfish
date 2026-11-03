@@ -89,6 +89,16 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 17:30 HLS (as real sites stream): 0 dropped; total 315-383 % of a core
+work/stage0/hls-{h264,hevc}-1080p (ffmpeg -c copy, fmp4 segments ~8 s), index.html `#hls-<clip>`. 30 s window, % of one core:
+| clip | WebContent | Networking | GPU proc | backboardd | mediaserverd | venusd | kernel_task | total | frames/dropped |
+|---|---|---|---|---|---|---|---|---|---|
+| HLS H.264 1080p | 10 | 93 | 20 | 95 | 67 | 36 | 30 | 383 | 1674/0 at t=60 |
+| HLS HEVC 1080p | 8 | 52 | 17 | 95 | 60 | 35 | 23 | 315 | 1734/0 at t=60 |
+venusd: 1800/1800 AUs, 29.8 fps, first frame 543 ms, copy-out ~2.1 ms, error 0. Still frame (paused at 10 s) right.
+No GPU hang. Remaining CPU, biggest first: backboardd's CPU YCbCr conversion (~95 %), the network process (52-93 % for
+~6 Mbit/s: a general networking cost? download-only test next), mediaserverd (~60-67 %), venusd (~35 %).
+
 ### 2026-11-03 17:10 Remeasure: Range doesn't remove the network-process burn; venusd 4 ms tick small gain
 Range server on :8077 (206 seen). % of one core, 30 s window, single-mp4 clips:
 | run | clip | WebKit (Networking?) | WebContent | GPU proc | backboardd | mediaserverd | venusd | total | dropped |
