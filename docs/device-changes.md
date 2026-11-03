@@ -54,6 +54,8 @@ output in /var/local.
 ## Log
 (Newest first. One line per on-device change: date, what, where, how, what reproduces it.)
 
+- 2026-11-03 Metal bundle work/metal2-next 283012f (SweetMetal2 LC_UUID 4C4C448E; supportsFeatureSet: fix, 0125 present but off) installed over 82f6b41: `METAL2_VARIANT=next tools/build-metal2-linux.sh` + `tools/sunfish-metal2-install.sh work/metal2-next/out/phone/metal2/out`.
+- 2026-11-03 Video (unfinished feature, log only): /var/local/bin/venusctl (3d06aae next; d0f1da4, ee0ffd4 earlier) via phone/wifi/build.sh + flame-files put; /var/local/venus/in.h264 = work/stage3/in-320x240.h264 (test input, ffmpeg recipe in video.md Stage 3 spec); /var/local/fw/venus already there (Qualcomm firmware, tools/sunfish-venus-fw.sh).
 - 2026-10-30 btbridge 124c3af installed then reverted (reset in btd1): /var/local/bin/btbridge = btbridge.old again (the pre-124c3af build).
 - 2026-10-30 O12: /var/local/bin/adspboot (408bcb5, old copy adspboot.old), wland and hapticd (e5cd72d, old copies .old) rebuilt with the screen-off/idle waits; via tools/build-userland-linux.sh + flame-files put (wland: tools/sunfish-wifitest.sh installs it; adspboot: tools/sunfish-install-sensors.sh).
 - 2026-10-30 sv1: location prompts answered "Don't Allow" for Reminders, Camera, Weather, Wallet, Compass, Find My, and Watch notifications "Not Now" (fake taps; per-app TCC/location state in the phone's databases; user preference, reset in Settings > Privacy if wanted).
