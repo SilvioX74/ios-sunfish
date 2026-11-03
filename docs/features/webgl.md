@@ -1,6 +1,6 @@
 # WebGL (Safari)
-**State:** ✅ WebGL 1 draws in Safari (400 textured cubes, 24 fps, 15 min, 0 hangs); WebGL 2 untested (needs argument
-encoders). **Updated:** 2026-11-03.
+**State:** 🟡 WebGL 1 draws in Safari without antialiasing (400 cubes, 24 fps, 15 min, 0 hangs); antialiased contexts
+(the default, real games) are lost on the first frame (fix under way); WebGL 2 untested. **Updated:** 2026-11-03.
 
 ## Facts
 - WebKit's GPU process runs ANGLE on Metal (iOS 16: WebKit 615.8.1.10.3, Metal 306.6.6). ANGLE first asks
@@ -21,6 +21,17 @@ encoders). **Updated:** 2026-11-03.
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-03 09:15 hexgl / wgaa: antialiased WebGL is lost on the first frame (depth resolve without texture)
+Bundle a1f3952, kernel160 boot maps512. HexGL (MIT three.js racing game, work/webgl-games/hexgl served on
+192.168.7.1:8078; gitignored): menu and controls-help screen draw correctly; after the continue tap the canvas goes
+black (2 tries, HIGH and LOW quality); 38 requests, no 404, no model/texture requests after START. One line per try:
+`command buffer refused: renderCommandEncoder: render encoder: Invalid(... RenderPass(ResolveWithoutTexture(Depth)))`.
+Reproduced with webgl.html?aa=1 (antialias:true, the WebGL default; wg1-wg5 used antialias:false): same line, then
+`err=contextlost`. Also seen: first shader compiles after a GPU-process restart took 766 / 1014 ms (vs 3-5 ms in wg4).
+Cause (from the runtime source): metal2vulkan rejects a resolving depth store action without a resolve texture, as
+Metal's validation layer does; ANGLE relies on the driver tolerating it. Fix being written in the frontend: downgrade
+to Store/DontCare (SWEET_RESOLVE_FIX=0 off).
 
 ### 2026-11-03 07:58 wg5: AdrenoMetal ports (4ca1221) installed: no change in WebGL, UI fine
 Bundle 4ca1221 (LC_UUID 4C4C4484; swizzle views, missing-selector fallback, presentDrawable:, real LOD clamps), kernel159.
