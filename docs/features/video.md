@@ -89,6 +89,12 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 19:14 Regression: Safari's video area white in the framebuffer (skC, kernel162, bundle 4C4C44D4, credit path)
+flame-shot during HLS H.264 1080p (beacon t=41.4 frames=1136 dropped=5): the 16:9 box is white except a 1-2 px strip of
+colour bars at its top edge, which moves with the video (hls-a/hls-b). Webcam agrees. MTL2 SHADOW lines say "ycbcr
+converted 0" (CPU path). cg1/cg2 at ~17:58 (same bundle, credit path, kernel161) looked right on the webcam. A/B running:
+fresh boot credit path vs VTVENUS_SURF=0, then the 0129-only bundle.
+
 ### 2026-11-03 19:10 Bridge 0131 on the phone (skC, kernel162): faster but drops half the frames; not kept
 "YCBCR FAST: 1920x1080 Converted in place (base 0)". HLS H.264 1080p, % of one core over 30 s, webcam pictures:
 | side | backboardd | mediaserverd | venusd | total | frames/dropped | GPU busy | GPU ms/submit |
