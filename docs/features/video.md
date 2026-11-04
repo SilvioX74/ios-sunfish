@@ -89,6 +89,13 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 19:30 White video A/B (wvA/wvB, kernel162): wrong on every config; not the credit path, not 0130
+flame-shots, 15 s playback each: credit path (bundle 4C4C44D4): HLS 1080p white then partial bands with white gaps, 720p
+top strip only; VTVENUS_SURF=0: same (strip, wide bands with gaps); bundle 0129-only (hwres, socket path): partial bands /
+one band. Beacons normal (1077/4 etc.). No config ever drew full bars + the moving box. Earlier "picture right" webcam
+checks may have seen the page's own still test card (the page shows colour bars before playback). Next suspect: the CPU
+conversion into a buffer-backed texture (SWEET_PLANAR_DIRECT, 691c87d) or vImage (SWEET_VIMAGE); A/B running.
+
 ### 2026-11-03 19:14 Regression: Safari's video area white in the framebuffer (skC, kernel162, bundle 4C4C44D4, credit path)
 flame-shot during HLS H.264 1080p (beacon t=41.4 frames=1136 dropped=5): the 16:9 box is white except a 1-2 px strip of
 colour bars at its top edge, which moves with the video (hls-a/hls-b). Webcam agrees. MTL2 SHADOW lines say "ycbcr
