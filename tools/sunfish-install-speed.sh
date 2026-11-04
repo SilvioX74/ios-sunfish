@@ -1,7 +1,7 @@
 #!/bin/bash
 # Speed defaults, the on-phone parts (docs/setup.md step 6): a bundle whose defaults are SWEET_DEADFILL 3 and
 # M2V_SHADOW_CACHE 1, so /var/local/mtl2-env drops those two lines; Control Center's backdrop scale; luma boost off in
-# backboardd (lb0-lb3, smoothness.md); TU_FETCH_GMEM_MIN_DRAWS=20 in mtl2-env (Control Center about +1 swap/s, cs4;
+# backboardd (lb0-lb3, smoothness.md); TU_FETCH_GMEM_MIN_DRAWS=20 was in mtl2-env (Control Center about +1 swap/s, cs4; removed 2026-11-03: G8, video drawn in bands;
 # off: delete the line); SWEET_SURF_FLUSH=1 (skip the surface cache flush at completion, sf runs, heat only; off: delete
 # the line); SWEET_CULL=3 (cover cull: draws hidden under an opaque blurred backdrop are skipped, Control Center +1.8
 # swaps/s, cv runs; off: delete the line); the PowerLog, CoreDuet and Biome data moved aside. The A55 default (xnu 0260) comes with the kernel, not from here.
@@ -18,7 +18,7 @@ step() { echo "== $1"; shift; "$@" || { echo "FAILED: $*"; fail=1; }; }
 
 env_off() {
 	$S "[ -f $EB ] || if [ -f $E ]; then cp -p $E $EB; else : > $EB; fi; [ -f $EB ] || exit 1
-		grep -vE '^(SWEET_DEADFILL|M2V_SHADOW_CACHE|TU_FETCH_GMEM_MIN_DRAWS|SWEET_SURF_FLUSH|SWEET_CULL)=' $E > $E.new 2>/dev/null; printf 'TU_FETCH_GMEM_MIN_DRAWS=20\nSWEET_SURF_FLUSH=1\nSWEET_CULL=3\n' >> $E.new
+		grep -vE '^(SWEET_DEADFILL|M2V_SHADOW_CACHE|TU_FETCH_GMEM_MIN_DRAWS|SWEET_SURF_FLUSH|SWEET_CULL)=' $E > $E.new 2>/dev/null; printf 'SWEET_SURF_FLUSH=1\nSWEET_CULL=3\n' >> $E.new
 		cat $E.new > $E && rm -f $E.new
 		echo '$E now:'; cat $E"
 }
@@ -51,7 +51,7 @@ case "${1:-}" in
 	;;
 "")
 	[ -s "$BUNDLE/SweetMetal2.bundle/SweetMetal2" ] || { echo "no $BUNDLE: METAL2_VARIANT=next tools/build-metal2-linux.sh" >&2; exit 1; }
-	step "mtl2-env: SWEET_DEADFILL and M2V_SHADOW_CACHE lines out, TU_FETCH_GMEM_MIN_DRAWS=20 SWEET_SURF_FLUSH=1 SWEET_CULL=3 in" env_off
+	step "mtl2-env: SWEET_DEADFILL and M2V_SHADOW_CACHE lines out, (no TU_FETCH_GMEM_MIN_DRAWS: G8) SWEET_SURF_FLUSH=1 SWEET_CULL=3 in" env_off
 	step "bundle $BUNDLE" bundle_on
 	step "Control Center backdrop" tools/sunfish-install-ccscale.sh
 	step "luma boost off" tools/sunfish-install-caenv.sh CA_DISABLE_LUMA_BOOST=1

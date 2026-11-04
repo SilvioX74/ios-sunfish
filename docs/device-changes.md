@@ -54,6 +54,7 @@ output in /var/local.
 ## Log
 (Newest first. One line per on-device change: date, what, where, how, what reproduces it.)
 
+- 2026-11-03 /var/local/mtl2-env: TU_FETCH_GMEM_MIN_DRAWS=20 removed (G8: video drawn in bands); tools/sunfish-install-speed.sh no longer writes it. Backups mtl2-env.pre-bis/.pre-wv on the phone.
 - 2026-11-03 venusd 06f9715 (own jetsam limit 512 MB) via tools/sunfish-install-venusd.sh --tools; /var/local/vtvenus-env removed: the credit path (VTVENUS_SURF default 1) is on.
 - 2026-11-03 Metal bundle d3316ff (bridge 0130, LC_UUID 4C4C44D4) from work/metal2-next-centervary (tools/sunfish-metal2-install.sh). venusd/venusc/venusctl 331e616 + job with JetsamProperties (tools/sunfish-install-venusd.sh), vtvenus 331e616 (tools/sunfish-install-vtvenus.sh install); /var/local/vtvenus-env = VTVENUS_SURF=0 (credit path off until the jetsam kill is fixed).
 - 2026-11-03 hapticd launchd job Interactive (tools/sunfish-install-haptics.sh --job, now the default); sensors and btbridge jobs tried Interactive and put back (their scripts' --job without env). Test helpers /var/local/snap.sh, /var/local/tap.sh left by the A/B (scratch, safe to delete).

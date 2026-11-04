@@ -48,8 +48,8 @@ stops phone work, or doubles in rate after a change (then turn that change off f
 Claude's. On kernel162 (= kernel158 + xnu 0277/0278 Venus window, 0279 RPMh fix, 0280 SPMI retry) since 18:12 (tag spC),
 bundle d3316ff (0129 hardware MSAA resolve + 0130 center varyings), venusd 06f9715 (Interactive, 512 MB limit) + vtvenus 331e616 (avc1/hvc1, credit path), wland 206585d
 (HT20, Interactive, bounds checks), camd + hapticd Interactive, cam41. Everyday boot: `tools/sunfish-test.sh -k 162 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6
-sweetampreset=1 sweetpmemwc=2 sweetgpucap=512`. /var/local/mtl2-env = SWEET_U0011..14=1, TU_FETCH_GMEM_MIN_DRAWS=20,
-SWEET_SURF_FLUSH=1, SWEET_CULL=3 (tools/sunfish-install-speed.sh); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1.
+sweetampreset=1 sweetpmemwc=2 sweetgpucap=512`. /var/local/mtl2-env = SWEET_U0011..14=1,
+SWEET_SURF_FLUSH=1, SWEET_CULL=3 (TU_FETCH_GMEM_MIN_DRAWS=20 removed: G8) (tools/sunfish-install-speed.sh); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1.
 
 ## Next (in this order)
 1. Wi-Fi CPU: userland batching (356c09a) didn't help (bat, 20:40); the per-frame reads + one /dev/wlan write per frame
