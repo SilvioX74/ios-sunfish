@@ -89,6 +89,12 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 19:58 Venus decode is bit-exact over 90 frames of the Safari clip: the tearing is after decode
+venusc on in-s0-1080p-90.h264 (High, B-frames): socket path 90/90 bit-exact vs ffmpeg (cmp IDENTICAL, crc per frame);
+--surf path (60 credited / 30 socket) same md5 on the phone. So the torn pieces come later: suspect VT's pixel-buffer pool
+reusing a surface backboardd still reads (IOSurface in-use count across processes in SweetSurface), or lazy conversion.
+Investigation running. Tool note: flame-files get times out on 280 MB (30 s socket timeout); 8 MB READ chunks work.
+
 ### 2026-11-03 19:51 Stale pieces are not mtl2-env (wvB): long decode check next
 With the banding fixed, the picture still holds torn pieces of older frames in moving areas. Bisect (one run each, all
 STALE): without SWEET_CULL=3; without SWEET_SURF_FLUSH=1; without SWEET_U0011..14; empty mtl2-env; empty + PLANAR_DIRECT=0
