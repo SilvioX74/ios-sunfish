@@ -45,7 +45,8 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 stops phone work, or doubles in rate after a change (then turn that change off first).
 
 ## Phone
-Claude's. On kernel162 (= kernel158 + xnu 0277/0278 Venus window, 0279 RPMh fix, 0280 SPMI retry) since 18:12 (tag spC),
+The user's since 2026-11-03 20:49 (handed over to play with; ask or wait for "the phone's yours" before phone work).
+Booted user1: kernel162 (= kernel158 + xnu 0277/0278 Venus window, 0279 RPMh fix, 0280 SPMI retry),
 bundle d3316ff (0129 hardware MSAA resolve + 0130 center varyings), venusd 06f9715 (Interactive, 512 MB limit) + vtvenus 331e616 (avc1/hvc1, credit path), wland 206585d
 (HT20, Interactive, bounds checks), camd + hapticd Interactive, cam41. Everyday boot: `tools/sunfish-test.sh -k 162 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6
 sweetampreset=1 sweetpmemwc=2 sweetgpucap=512`. /var/local/mtl2-env = SWEET_U0011..14=1,
@@ -53,16 +54,18 @@ SWEET_SURF_FLUSH=1, SWEET_CULL=3 (TU_FETCH_GMEM_MIN_DRAWS=20 removed: G8) (tools
 
 ## Next (in this order)
 0. B62 Safari video picture damaged (decoder bit-exact, cause after decode): leads in video.md 2026-11-03 "state at end
-   of day". The video wins today (credit path CPU) stand; picture correctness never confirmed by flame-shot.
+   of day". Video-only: WebGL, scrolling, home, CC flame-shots are clean (20:45). The credit-path CPU win stands;
+   a correct playing frame has never been confirmed by flame-shot. First: compare a shot with ffmpeg's frame at the
+   same burned-in timecode (the clip has small grey moving shapes too).
 1. Wi-Fi CPU: userland batching (356c09a) didn't help (bat, 20:40); the per-frame reads + one /dev/wlan write per frame
    dominate: a kernel batched input path is the next step (parked behind the items below).
 2. Video CPU: credit path done (mediaserverd 55 -> 20, venusd 32 -> 10, 0 drops). Left: backboardd ~45 (vImage; bridge 0131
-   fast GPU conversion built, to test with SWEET_YCBCR_GPU=1), network ~40, the first-session "error -60 at frame 17" resync.
+   in-place GPU conversion: backboardd 47 -> 16 % but 492/899 dropped, a stall: not kept), network ~40, the first-session "error -60 at frame 17" resync.
 3. Done: launchd Interactive A/B: camd (open 5.7 -> 0.7 s, 30 fps) and hapticd kept; sensors, btbridge cost CPU, reverted.
 4. GPU: suspect link Venus session start → GPU fault (2 of ~5 hangs today); B53 render-server snapshots intermittently
    empty; B50 Maps; WebGL speed (Optimize).
-5. Tonight: night soak n9 on kernel162 with the everyday args above (now the script's default) (`tools/sunfish-nightsoak.sh n9`; it sets
-   work/night at 21:30): watch for RPMh timeouts (0279's new lines) and GPU hangs.
+5. Night soak n9 was cancelled 2026-11-03 20:48 (the user took the phone); run it next night (`tools/sunfish-nightsoak.sh n9`:
+   sets work/night at 21:30, boots kernel162 + everyday args): watch for RPMh timeouts, SPMI retries, GPU hangs.
 
 ## User tasks (details in user-tasks.md; nothing waits on these)
 proximity by hand (U17), battery discharge (U3), headphone plug test (U15), Files check (U13), touch while plugged in (U14).

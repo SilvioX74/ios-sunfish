@@ -89,6 +89,12 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 20:49 B62 is video-only (rsA): non-video flame-shots clean; phone handed to the user
+WebGL cube (2 shots), stage0 page scroll, home pages, Control Center: CLEAN. One garbled link row right after a Safari
+reload while HLS played (t1-reload), clean in the next shot. h264-720p.mp4: grey bars/cross + checker block over the
+bars (clip vs artefact not separated: compare with ffmpeg's frame at the same burned-in timecode first tomorrow).
+Session ended 20:49: night soak n9 cancelled, phone booted user1 (kernel162, everyday args, credit path on) for the user.
+
 ### 2026-11-03 20:42 Not the shadow cache or SWEET_SURF_FLUSH either; state at end of day
 M2V_SHADOW_CACHE=0 (X1) and also without SWEET_SURF_FLUSH (X2): BROKEN in all 4 flame-shots (grey blob/rows in the
 green/yellow bars, diagonal fragmented; the pink/cyan checker block is in the clip). One shot also showed a ghosted page
