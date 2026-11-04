@@ -89,6 +89,11 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 20:28 Venus decode bit-exact over 700 frames (3 GOPs) on both paths
+venusc in-s0-1080p-700.h264 (first 700 frames of h264-1080p.mp4, IDRs at 0/250/500): socket 700/700 per-frame md5 equal to
+ffmpeg (25.2 fps wall, copy-out 1.33 ms), --surf 700/700 (34.2 fps, 460 credited / 240 socket). The decoder is right past
+frame 640; the Safari damage comes from what vtvenus feeds it during playback (resync/drops/flush) or from later stages.
+
 ### 2026-11-03 20:06 Not a pool-reuse race (read-only check): IOSurface use counts work; looks like reference errors
 SweetSurface implements the cross-process use count (traps 0/1, SweetSurface.cpp:1088-1123, global u32[2] in the shared
 state page, 0252 on by default); IOSurfaceIsInUse reads it (IOSurface.s 0x1a39832e8); CoreVideo's pool refuses reuse while
