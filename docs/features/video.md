@@ -89,6 +89,13 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 19:51 Stale pieces are not mtl2-env (wvB): long decode check next
+With the banding fixed, the picture still holds torn pieces of older frames in moving areas. Bisect (one run each, all
+STALE): without SWEET_CULL=3; without SWEET_SURF_FLUSH=1; without SWEET_U0011..14; empty mtl2-env; empty + PLANAR_DIRECT=0
++ VIMAGE=0. mediaserverd ran the socket path (SURF=0 from boot), so the credit path isn't required for it. Next: decode
+90 frames of the Safari clip with venusc (socket and --surf) and compare per frame with ffmpeg
+(work/stage3/in-s0-1080p-90.h264, ref-s0-1080p-90.nv12): decode error vs reorder vs display.
+
 ### 2026-11-03 19:42 Video bands caused by TU_FETCH_GMEM_MIN_DRAWS=20 (mtl2-env); stale pieces remain
 Bisect (wvB, kernel162, bundle 4C4C44D4), flame-shots during HLS 1080p: without SWEET_CULL=3 still bands; without
 TU_FETCH_GMEM_MIN_DRAWS=20 the whole video area is drawn (S2, S2r confirmed) and the white line on Safari's toolbar is
