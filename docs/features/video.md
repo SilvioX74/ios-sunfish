@@ -89,6 +89,13 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 19:01 Seek A/B (skB/skC, kernel162): the ~15 s freeze after a seek happens on both paths
+HLS H.264 1080p, SEEK 30 ~20 s after the tap: credit c3 and socket s2 both froze at t=30.0 for ~15 s, then played on
+(venusd closed those sessions cleanly, no error); credit c2 had one -60 ("at frame 169, reopen") and recovered in ~2 s with
+88 dropped, blank white video area at +20 s; socket s1 seeked in ~3 s. mp4 seek trials void (seek hit before load) except
+credit c5: no stall. So the credit path isn't the cause; guess: the segment fetch after a seek over the slow network
+(B57), or AVPlayer re-buffering. Backlog B61. Credit path stays on.
+
 ### 2026-11-03 18:46 Bridge 0131 SWEET_YCBCR_FAST (9509b3a): in-place YCbCr conversion, bit-exact, not yet on the phone
 Compute pass kept (RGBA16F output unchanged), but it reads the planes through an R8G8_UINT uniform texel buffer over the
 surface's VkBuffer (binding taken from upstream cdf59197 bind/ycbcr_in_place.rs): no staging copy; one invocation per
