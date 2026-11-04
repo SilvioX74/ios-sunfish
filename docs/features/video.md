@@ -89,6 +89,13 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 20:38 Not resync either (rsA): broken with VTVENUS_RESYNC=0 and in sessions with no error at all
+HLS H.264 1080p flame-shots (clip timecodes 16.9/34.7/46.5/54.9 s with resync on; 18.7/36.6/55.0 s with RESYNC=0): all
+BROKEN (grey bars/blobs, diagonal missing). The shot session had no session error, resync, reopen or flush (vtvenus.log),
+and RESYNC=0's single session was clean in the logs. Grey rows stay at the same screen position across shots, as if those
+regions of the video texture are never refreshed: next suspect the bridge's shadow cache (M2V_SHADOW_CACHE, hashed copies)
+or SWEET_SURF_FLUSH. Test running.
+
 ### 2026-11-03 20:28 Venus decode bit-exact over 700 frames (3 GOPs) on both paths
 venusc in-s0-1080p-700.h264 (first 700 frames of h264-1080p.mp4, IDRs at 0/250/500): socket 700/700 per-frame md5 equal to
 ffmpeg (25.2 fps wall, copy-out 1.33 ms), --surf 700/700 (34.2 fps, 460 credited / 240 socket). The decoder is right past
