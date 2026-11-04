@@ -52,6 +52,8 @@ sweetampreset=1 sweetpmemwc=2 sweetgpucap=512`. /var/local/mtl2-env = SWEET_U001
 SWEET_SURF_FLUSH=1, SWEET_CULL=3 (TU_FETCH_GMEM_MIN_DRAWS=20 removed: G8) (tools/sunfish-install-speed.sh); backboardd env CA_DISABLE_LUMA_BOOST=1 CA_FORCE_TIMER=1.
 
 ## Next (in this order)
+0. B62 Safari video picture damaged (decoder bit-exact, cause after decode): leads in video.md 2026-11-03 "state at end
+   of day". The video wins today (credit path CPU) stand; picture correctness never confirmed by flame-shot.
 1. Wi-Fi CPU: userland batching (356c09a) didn't help (bat, 20:40); the per-frame reads + one /dev/wlan write per frame
    dominate: a kernel batched input path is the next step (parked behind the items below).
 2. Video CPU: credit path done (mediaserverd 55 -> 20, venusd 32 -> 10, 0 drops). Left: backboardd ~45 (vImage; bridge 0131

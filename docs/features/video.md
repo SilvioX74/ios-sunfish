@@ -89,6 +89,19 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 20:42 Not the shadow cache or SWEET_SURF_FLUSH either; state at end of day
+M2V_SHADOW_CACHE=0 (X1) and also without SWEET_SURF_FLUSH (X2): BROKEN in all 4 flame-shots (grey blob/rows in the
+green/yellow bars, diagonal fragmented; the pink/cyan checker block is in the clip). One shot also showed a ghosted page
+link above the video, like the earlier white line on Safari's toolbar (G8). mtl2-env back to 6 lines.
+Ruled out today: Venus decode (bit-exact over 700 frames, both paths), credit path, socket copy, resync, IOSurface use
+counts / pool reuse, CPU conversion variants (vImage, direct planar), bridge 0130, every mtl2-env line, shadow cache.
+Fixed: banding (TU_FETCH_GMEM_MIN_DRAWS=20, G8). Correction: the video pictures reported "right" earlier today were webcam
+judgements that likely saw the page's still test card; no correct playing frame has been confirmed by flame-shot.
+Leads for tomorrow: (1) flame-shot the 720p mp4 and a non-video animated page for the same stale/ghost pattern (general
+partial-redraw bug vs video only); (2) dump the converted RGB texture or the NV12 IOSurface backboardd reads at the moment
+of a shot (is the surface itself damaged?); (3) the bundle from before 691c87d (direct planar) and kernel158, to find when
+it started; (4) Safari drops 13-16 frames in the first 10 s: check vtvenus's emitted PTS order.
+
 ### 2026-11-03 20:38 Not resync either (rsA): broken with VTVENUS_RESYNC=0 and in sessions with no error at all
 HLS H.264 1080p flame-shots (clip timecodes 16.9/34.7/46.5/54.9 s with resync on; 18.7/36.6/55.0 s with RESYNC=0): all
 BROKEN (grey bars/blobs, diagonal missing). The shot session had no session error, resync, reopen or flush (vtvenus.log),
