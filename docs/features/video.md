@@ -89,6 +89,16 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 19:10 Bridge 0131 on the phone (skC, kernel162): faster but drops half the frames; not kept
+"YCBCR FAST: 1920x1080 Converted in place (base 0)". HLS H.264 1080p, % of one core over 30 s, webcam pictures:
+| side | backboardd | mediaserverd | venusd | total | frames/dropped | GPU busy | GPU ms/submit |
+| CPU (default) | 47.0 | 25.1 | 10.6 | 229.6 | 899/2 | 2-3 % | ~1.5 |
+| FAST (SWEET_YCBCR_GPU=1) | 16.0 | 22.3 | 10.7 | 176.8 | 899/492 | 16-17 % | 2.9-19 mean, max 21-109 |
+FAST: backboardd -31 points, GPU only 16 % busy, yet 492 dropped: a stall, not GPU load (guess: the full barrier or a
+wait on the conversion's fence per frame). The webcam showed the video area white on BOTH sides (also on the CPU side, and
+in earlier seek runs on other bundles): not judged as a 0131 colour bug until checked with flame-shot. Bundle back to
+the previous one (--undo), mtl2-env restored (7 lines).
+
 ### 2026-11-03 19:01 Seek A/B (skB/skC, kernel162): the ~15 s freeze after a seek happens on both paths
 HLS H.264 1080p, SEEK 30 ~20 s after the tap: credit c3 and socket s2 both froze at t=30.0 for ~15 s, then played on
 (venusd closed those sessions cleanly, no error); credit c2 had one -60 ("at frame 169, reopen") and recovered in ~2 s with
