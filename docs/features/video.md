@@ -89,6 +89,15 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 20:06 Not a pool-reuse race (read-only check): IOSurface use counts work; looks like reference errors
+SweetSurface implements the cross-process use count (traps 0/1, SweetSurface.cpp:1088-1123, global u32[2] in the shared
+state page, 0252 on by default); IOSurfaceIsInUse reads it (IOSurface.s 0x1a39832e8); CoreVideo's pool refuses reuse while
+in use (CoreVideo.s okToReuse ~0x1a1ec09ac); CoreAnimation increments/decrements. The broken shot isn't a tear (no
+two-frame seam): static background right, moving parts missing/stale, grey macroblock rows = a decoder covering for
+wrong/missing references. The 90-frame check covered only the first GOP (IDRs at 0, 250, 500; the shot is at frame ~640).
+Next: 700-frame venusc md5 check; then vtvenus.log resync/EOS lines and VTVENUS_RESYNC=0. Note: the env bisect never
+turned off M2V_SHADOW_CACHE / SWEET_SURF_FLUSH (on when unset).
+
 ### 2026-11-03 19:58 Venus decode is bit-exact over 90 frames of the Safari clip: the tearing is after decode
 venusc on in-s0-1080p-90.h264 (High, B-frames): socket path 90/90 bit-exact vs ffmpeg (cmp IDENTICAL, crc per frame);
 --surf path (60 credited / 30 socket) same md5 on the phone. So the torn pieces come later: suspect VT's pixel-buffer pool
