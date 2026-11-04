@@ -333,3 +333,8 @@ offsets.
 ### 2026-11-03 15:35 Correction
 Today's entry headings after ~12:00 EST run up to ~6.5 h ahead of the real clock (session clock error); the order and the quoted log stamps are right.
 
+
+## G8 (2026-11-03) TU_FETCH_GMEM_MIN_DRAWS=20 leaves parts of render passes undrawn
+Safari video (and a white line on Safari's toolbar): only horizontal bands of the video layer reached the framebuffer
+(flame-shots wvA/wvB/wvV0). Gone with the line removed from /var/local/mtl2-env (S2/S2r). Rate: every video frame checked.
+Line removed from the phone; tools/sunfish-install-speed.sh still writes it (to change).

@@ -89,6 +89,14 @@ Switches: VENUSCTL_PRIMARY=1 (linear NV12 on OUTPUT), VENUSCTL_DPB_SETBUF=1, VEN
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-03 19:42 Video bands caused by TU_FETCH_GMEM_MIN_DRAWS=20 (mtl2-env); stale pieces remain
+Bisect (wvB, kernel162, bundle 4C4C44D4), flame-shots during HLS 1080p: without SWEET_CULL=3 still bands; without
+TU_FETCH_GMEM_MIN_DRAWS=20 the whole video area is drawn (S2, S2r confirmed) and the white line on Safari's toolbar is
+gone. Line left out of /var/local/mtl2-env (6 lines now; backup mtl2-env.pre-bis). Remaining: the picture holds pieces of
+older frames (the clip's continuous diagonal shows as slivers at old positions, grey trails; ffmpeg's frame at 26 s is
+clean: research scratch ref26.png). Bisect of the other lines continues. Earlier "picture right" webcam checks today were
+likely the page's still test card.
+
 ### 2026-11-03 19:30 White video A/B (wvA/wvB, kernel162): wrong on every config; not the credit path, not 0130
 flame-shots, 15 s playback each: credit path (bundle 4C4C44D4): HLS 1080p white then partial bands with white gaps, 720p
 top strip only; VTVENUS_SURF=0: same (strip, wide bands with gaps); bundle 0129-only (hwres, socket path): partial bands /
