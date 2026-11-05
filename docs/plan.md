@@ -45,8 +45,8 @@ Listed with exact log lines and rates in [gpu-bugs.md](gpu-bugs.md) (not auto-lo
 stops phone work, or doubles in rate after a change (then turn that change off first).
 
 ## Phone
-The user's since 2026-11-03 20:49 (handed over to play with; ask or wait for "the phone's yours" before phone work).
-Booted user1: kernel162 (= kernel158 + xnu 0277/0278 Venus window, 0279 RPMh fix, 0280 SPMI retry),
+The user's since 2026-11-03 20:49 (handed over to play with; ask or wait for "the phone's yours" before phone work). Rebooted for them 2026-11-05 09:33 (user2, same setup).
+Booted user2: kernel162 (= kernel158 + xnu 0277/0278 Venus window, 0279 RPMh fix, 0280 SPMI retry),
 bundle d3316ff (0129 hardware MSAA resolve + 0130 center varyings), venusd 06f9715 (Interactive, 512 MB limit) + vtvenus 331e616 (avc1/hvc1, credit path), wland 206585d
 (HT20, Interactive, bounds checks), camd + hapticd Interactive, cam41. Everyday boot: `tools/sunfish-test.sh -k 162 TAG sweetse9=2 sweetcampmic=2 sweetswapbig=6
 sweetampreset=1 sweetpmemwc=2 sweetgpucap=512`. /var/local/mtl2-env = SWEET_U0011..14=1,
