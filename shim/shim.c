@@ -187,6 +187,20 @@ static void log_pmic(void)
 		log_printf(" %x=%x%s", regs[i], v, rc ? "!" : "");
 	}
 	log_printf("\n");
+	/* Watchdog DENTRO il PMIC (qpnp-pon, base 0x800): 854 = S1 timer,
+	   855 = S2 timer, 856 = S2 control (tipo di reset), 857 = enable (bit 7),
+	   858 = pet. In Android lo accarezza Linux; sotto XNU non lo accarezza
+	   nessuno. Sospettato n.1 del reset a ~66 s, costante come un timer
+	   hardware, che resta anche con flamewdt=0 e con SHIM_WDT_S=300.
+	   SOLO LETTURA: qui non si scrive niente al PMIC. */
+	static const uint16_t wd[] = { 0x854, 0x855, 0x856, 0x857, 0x858 };
+	log_printf("pon wd:");
+	for (unsigned i = 0; i < sizeof(wd) / sizeof(wd[0]); i++) {
+		uint8_t v = 0;
+		int rc = spmi_read(0, wd[i], &v);
+		log_printf(" %x=%x%s", wd[i], v, rc ? "!" : "");
+	}
+	log_printf("\n");
 }
 
 static void log_gic(void)
