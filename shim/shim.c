@@ -282,6 +282,9 @@ void shim_main(uintptr_t dtb)
 	ufs_ok = !ufs_init();
 	if (ufs_ok)
 		ramlog_rescue();
+#ifndef SHOWLOG_NOW_MS
+#define SHOWLOG_NOW_MS 12000	/* quanto resta a schermo il log di questo giro */
+#endif
 #ifdef SHIM_SHOWLOG
 	/* Read-only: the shim log on UFS is the previous run's, keep it. */
 	sde_probe();
@@ -289,6 +292,13 @@ void shim_main(uintptr_t dtb)
 	uint32_t sstride = sde.pipe ? rd32(sde.pipe + 0x24) & 0xffff : 0;
 	if (!con_init(sfb, sstride)) {
 		sde_autorefresh(1);
+		/* Prima il log di QUESTO giro, che e' solo in RAM: contiene la riga
+		   "pon: ..." e "reboot reason: ..." lette adesso dal PMIC, cioe' la
+		   causa del reset che ha chiuso il boot precedente. Le pagine di
+		   showlog_run() vengono dal ring su UFS e sono piu' vecchie di un giro. */
+		con_clear(0xff000040);
+		con_text(log_buf, log_len, WHITE);
+		delay_ms(SHOWLOG_NOW_MS);
 		showlog_run(ufs_ok);
 	}
 	reset();
@@ -330,8 +340,20 @@ void shim_main(uintptr_t dtb)
 
 	/* An XNU payload in the ramdisk means: boot it. */
 	struct loader_fb lfb = { fb, stride, FB_W, FB_H, save_before_jump };
-	if (loader_has_payload(dtb))
-		wdt_arm(30);
+	/* SHIM_WDT_S: secondi prima del morso del watchdog hardware, 0 = non armarlo.
+	   Serve per il bring-up su sunfish: XNU resta MUTO e FERMO a lungo in
+	   IOKitInitializeTime(): un solo IOService::waitForService da 30 s su
+	   IORTC (verificato 2026-11-17 disassemblando work/kernel162: la funzione
+	   fa resourceMatching("IORTC"), waitForService con mov w8, #0x1e = 30,
+	   poi clock_initialize_calendar). Con i 30 s fissi di prima lo shim lo
+	   uccideva li' dentro, dando l'impressione di un hang.
+	   ATTENZIONE con 0: se XNU si pianta davvero, il telefono NON si riavvia
+	   da solo: tieni premuto POWER ~10 s. */
+#ifndef SHIM_WDT_S
+#define SHIM_WDT_S 30
+#endif
+	if (loader_has_payload(dtb) && (SHIM_WDT_S) > 0)
+		wdt_arm(SHIM_WDT_S);
 	const char *why = loader_boot(dtb, &lfb);
 	log_printf("loader: %s\n", why);
 
