@@ -97,6 +97,38 @@ static int batch(void)
 	return w_batch;
 }
 
+/*
+ * hakios: scansioni in background limitate mentre si e' associati.
+ * Su kernel 0196 il guscio apple80211 non risponde a get 103 (CURRENT_NETWORK, errore 6),
+ * quindi wifid non si convince di essere connesso e chiede una scansione ogni ~3 s. Ogni
+ * scansione porta la radio fuori dal canale di servizio e abbatte la banda. Qui le
+ * diradiamo: non piu' di una ogni scanmin ms finche' s_state == S_UP (da associati).
+ * 0 = comportamento di prima. env WLAND_SCAN_MIN_MS, oppure "scanmin=N" in
+ * /var/local/wland.conf. Non toglie nulla da fermi (S_IDLE): la lista reti resta vera.
+ */
+static int w_scanmin = -1;
+static int scan_min_ms(void)
+{
+	if (w_scanmin < 0) {
+		const char *e = getenv("WLAND_SCAN_MIN_MS");
+		char line[64];
+		FILE *f;
+		w_scanmin = 15000;
+		if (e)
+			w_scanmin = atoi(e);
+		else if ((f = fopen("/var/local/wland.conf", "r"))) {
+			while (fgets(line, sizeof(line), f))
+				if (!strncmp(line, "scanmin=", 8))
+					w_scanmin = atoi(line + 8);
+			fclose(f);
+		}
+		if (w_scanmin < 0)
+			w_scanmin = 0;
+		printf("radio: scanmin %d ms\n", w_scanmin);
+	}
+	return w_scanmin;
+}
+
 /* K entries of SZ bytes from entry I of a ring of N: one call per run that does not wrap */
 static void ring_rd(uint64_t base, uint32_t n, uint32_t sz, uint32_t i, uint32_t k, void *buf)
 {
@@ -875,6 +907,8 @@ struct bss {
 static struct bss bss[NBSS];
 static uint32_t nbss, scans, scan_frames;
 static int scan_started, scanning;
+static uint64_t last_bg_scan_ms;	/* hakios: ultima scansione in background da associati */
+static unsigned bg_scans_diradate;	/* hakios: quante richieste di wifid abbiamo diradato */
 static uint64_t next_scan_ms;
 static int scan_asked;
 
@@ -2492,10 +2526,19 @@ void radio_poll(void)
 	/* asked for (wifid, bridge.c): also while joined, as a background scan (the firmware rests on the home
 	 * channel between the others: min/max rest in scan_send_start), never in the middle of a join */
 	if (scan_asked && scan_started && !scanning && !s_join_asked && (s_state == S_IDLE || s_state == S_UP)) {
-		scan_asked = 0;
-		scanning = !scan_send_start();
-		if (s_state == S_UP)
-			LOG("scan: in the background (joined)");
+		/* hakios: da associati non piu' di una ogni scan_min_ms(); scan_asked resta
+		 * alzato, cosi' la richiesta di wifid viene servita appena la finestra passa. */
+		if (s_state == S_UP && scan_min_ms() && last_bg_scan_ms &&
+		    now - last_bg_scan_ms < (uint64_t)scan_min_ms()) {
+			bg_scans_diradate++;
+		} else {
+			scan_asked = 0;
+			scanning = !scan_send_start();
+			if (s_state == S_UP) {
+				last_bg_scan_ms = now;
+				LOG("scan: in the background (joined; %u diradate)", bg_scans_diradate);
+			}
+		}
 	}
 	sta_poll();
 }
