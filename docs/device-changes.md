@@ -217,3 +217,6 @@ output in /var/local.
 - 2026-11-13 19:05 PLANNED: rewrite ufsroot1 (userdata) with ../restore/root27/root27-d-at16g.simg (18,934,943,864 B; root profile d: UIKit Assets.car, PosterBoard, staged apps; ssh/bt/wifi tweaks) via fastboot -S 256M flash userdata; user approved overwrite 10:55.
 - 2026-11-13 19:10 DONE: ufsroot1 rewrite with root27-d-at16g.simg, fastboot -S 256M, 195 s, 73 chunks OKAY.
 - 2026-11-13 19:07-19:15 k317d RAM boot (kernel317, rd=ufsroot1 rw, root27-d) wrote to ufsroot1 only; iOS 16 back via k167nofstab21.
+- 2026-11-19 15:20 /var/local/wlan.conf written by the user with ~/progetti/hakios/scrivi-wlan-conf.sh (SSID + PSK on stdin, mode 600, phone only, never in git): wland joins the home network at boot. Reproduce: run that script (it asks for the password hidden).
+- 2026-11-19 15:36 /var/local/wland.conf = `nss=2` (second spatial stream; the built-in default, so the file is only there to pin it). Reproduce: `printf 'nss=2\n' > f; python3 -I tools/flame-files.py put f /var/local/wland.conf 644`. `nss=1` goes back to one stream.
+- 2026-11-19 15:30 /var/local/bin/wland replaced with the build carrying the group-key rekey fix (tools/sunfish-install-wifi.sh --wland from work/userland-linux/out).

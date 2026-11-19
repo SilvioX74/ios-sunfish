@@ -1,5 +1,5 @@
 # Wi-Fi
-**State:** ✅ wland joins the home network at boot from /var/local/wlan.conf (the user: enough for daily use, 2026-10-29); joining a new network from Settings (wifid) is untested. **Updated:** 2026-10-29.
+**State:** ✅ wland joins the home network at boot from /var/local/wlan.conf; 5 GHz ch 52 HT20 two streams, 52.7 Mbit/s measured, group-key rekey survived (2026-11-19). Joining a new network from Settings (wifid) is untested; the status-bar bar count needs a kernel change (no RSSI in fw_link). **Updated:** 2026-11-19.
 
 ## How to use
 - wland reads /var/local/wlan.conf (mode 600, phone only, never in git) at every boot (since 2026-10-28). Install: `tools/sunfish-install-wifi.sh`. Guarded join test: `tools/sunfish-wifitest.sh` (WIFI_PSK via env only).
@@ -18,6 +18,48 @@
 
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
+
+### 2026-11-19 15:45 group-key rekey handled, second spatial stream: 36.8 -> 52.7 Mbit/s (nss2b)
+
+Two bugs in wland's radio.c, both found on the user's FRITZ!Box 5530 JN (5260 MHz, ch 52, HT20, -47 dBm).
+
+1. **Group-key rekey (the link died every ~8 min).** `w_eapol_rx` returned early unless `s_state == S_4WAY`, so
+   once joined every EAPOL-Key frame was dropped, including the AP's group-key message 1. The AP retried and then
+   deauthenticated: `join: the AP ended the link, reason 16 (state 5)` at 709046 ms after joining at 249311 ms
+   (7'40"). Fix: accept EAPOL in S_UP too; new branch for a group message (not pairwise, MIC, Secure) that checks
+   the MIC with the current PTK, unwraps the GTK from the encrypted Key Data (`w_unwrap_gtk`, GTK KDE 00:0f:ac
+   type 1), installs it and answers info 0x0302 **encrypted** (`w_eapol_send(..., clear)`; the 4-way messages keep
+   clear=1). The initial handshake path is untouched.
+   Validated 2026-11-19 (tag rekey2): `wpa: *** chiave di gruppo rinnovata (idx 2, 16 byte) ***` at 208061 ms,
+   link up, no reason 16. Three further boots (nss2, nss1, nss2b) stayed associated through the measurements.
+2. **One spatial stream declared in three places** although the 4a's WCN3990 is 2x2 and the vdev already asks for
+   two chains (`radio: vdev: nss 2 ok`): the assoc request's MCS bitmap (`p[3]` only), the rate set to the firmware
+   (only `ht[5]`, MCS 0-7) and PEER_ASSOC's `nss` field (hard 1). Fix: `nss_want()` (default 2, `nss=N` in
+   /var/local/wland.conf or WLAND_NSS, clamped by SERVICE_READY's rf chains), MCS 8-15 added from `ht[6]`,
+   `p[4] = 0xff` in the assoc request, nss passed through. Log now `assoc HT20 (MCS0-15, A-MPDU), WMM`.
+
+Measured (60 MB TCP downlink, PC 192.168.178.51 -> phone 192.168.178.80, SSH control channel over USB so the
+air carries only the test; PC link 2.2 Gbit/s on the same channel, not the limit):
+
+| nss | runs (Mbit/s) | mean |
+|-----|---------------|------|
+| 1 (tag nss1)  | 35.2, 38.9, 36.3 | 36.8 |
+| 2 (tag nss2/nss2b) | 49.1, 54.7, 54.2 | 52.7 |
+
++43%. Not the 2x the PHY rate suggests (72 -> 144 Mbit/s), and the reason is the host path, not the air: wland
+burned 6.38 s of CPU for an 8.86 s transfer (72% of one core, psx before/after), i.e. ~106 ns per byte, so this
+code tops out near 75 Mbit/s on one core even with a faster PHY. Next levers, in order of expected value: cheaper
+pmem traffic per frame (A-MSDU would carry more bytes per pread; RX_BUF_SIZE is 2048, HT cap declares no A-MSDU
+length), then HT40 (the AP has 80 MHz on ch 52; needs the channel-width HT cap bit, the centre frequency and the
+HT40 phymode in vdev start / PEER_ASSOC).
+
+Also confirmed today, previously untested: 5 GHz works (ch 52) and the status-bar Wi-Fi icon goes white once
+joined (`sweetwifiev=1`).
+
+**Open, kernel-side:** the status bar shows 1 bar of 3 at -47 dBm. iOS asks `get 16 (RSSI)` and the kernel refuses
+it (error 6, like `get 4 CHANNEL`, `get 9 BSSID`, `get 103 CURRENT_NETWORK`): `struct fw_link` (flamewlan.h) has
+no RSSI/channel field at all, so wland cannot publish them. Fixing it needs both sides (a new FW_LINK field or an
+FW_SIGNAL message, plus the apple80211 answers), and there is no macOS VM on this machine to build xnu.
 
 ### 2026-11-13 17:30 wland + firmware on the iOS 27.2.1 c1 root (tools/root27/tweaks27.py Wi-Fi part; not booted)
 - wland, netsvc, /var/local/fw/modem (38 files, 72 MB), rmtfs images and job org.iosonpixel.wland (`wland auto`) put

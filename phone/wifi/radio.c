@@ -1795,6 +1795,43 @@ static uint16_t w_own_htcap(void)
 	return c;
 }
 
+/*
+ * hakios: secondo flusso spaziale (MCS 8-15). Il WCN3990 del 4a e' 2x2 e il vdev
+ * chiede gia' 2 catene (vdev NSS dal chain mask), ma tre punti dicevano "una
+ * antenna": la richiesta di associazione dichiarava solo MCS 0-7 (p[3]), il rate
+ * set verso il firmware leggeva solo ht[5], e PEER_ASSOC mandava nss 1. In HT20 un
+ * flusso ha un PHY di 72 Mbit/s (misurati 26 Mbps reali su 5 GHz ch 52, -48 dBm);
+ * due flussi portano il PHY a 144.
+ * "nss=1" in /var/local/wland.conf, o WLAND_NSS=1, torna al comportamento di prima.
+ * Mai piu' catene di quelle che il firmware dichiara in SERVICE_READY.
+ */
+static int w_nss = -1;
+static int nss_want(void)
+{
+	if (w_nss < 0) {
+		const char *e = getenv("WLAND_NSS");
+		char line[64];
+		FILE *f;
+		w_nss = 2;
+		if (e)
+			w_nss = atoi(e);
+		else if ((f = fopen("/var/local/wland.conf", "r"))) {
+			while (fgets(line, sizeof(line), f))
+				if (!strncmp(line, "nss=", 4))
+					w_nss = atoi(line + 4);
+			fclose(f);
+		}
+		if (w_nss < 1)
+			w_nss = 1;
+		if (w_nss > 2)
+			w_nss = 2;
+		if (wmi_rf_chains >= 1 && (uint32_t)w_nss > wmi_rf_chains)
+			w_nss = (int)wmi_rf_chains;
+		printf("radio: nss %d (catene dichiarate dal firmware: %u)\n", w_nss, wmi_rf_chains);
+	}
+	return w_nss;
+}
+
 /* a WMM element (00:50:f2 type 2) of subtype 0 (information) or 1 (parameters) */
 static const uint8_t *find_wmm(const uint8_t *ies, uint32_t len)
 {
@@ -1819,10 +1856,12 @@ static uint32_t w_mpdu_density(uint32_t d)
  */
 static int w_peer_assoc(uint32_t caps, const uint8_t *ht, int qos)
 {
-	uint8_t m[4 + 76 + 4 + 16 + 4 + 8 + 4 + 16] = { 0 }, *p, *r, rates[16], hr[8];
+	/* hakios: hr[] e il suo TLV vanno a 16 voci (MCS 0-15); con 8 il buffer era esatto al byte */
+	uint8_t m[4 + 76 + 4 + 16 + 4 + 16 + 4 + 16] = { 0 }, *p, *r, rates[16], hr[16];
 	uint32_t n = w_ap_rates(rates), rl = (MIN(n, 16u) + 3) & ~3u, nht = 0, hl;
 	uint32_t flags = PEER_FLAG_AUTH | (s_rsn ? PEER_FLAG_NEED_PTK_4WAY : 0) | (qos ? PEER_FLAG_QOS : 0);
 	uint32_t htc = 0, mpdu = 0, dens = 0, rc = 0, phy = s_freq < 4000 ? 1 : 0;	/* 11g / 11a */
+	uint32_t nss = 1;				/* hakios: flussi spaziali concordati */
 	if (ht) {
 		uint16_t own = w_own_htcap();
 		htc = (uint32_t)(ht[2] | ht[3] << 8) & (own | ~(uint32_t)HTCAP_PEER_MASK) & 0xffff;
@@ -1843,6 +1882,14 @@ static int w_peer_assoc(uint32_t caps, const uint8_t *ht, int qos)
 		if (!nht)				/* ath10k: no rx mask -> MCS 0-7 (the fw asserts else) */
 			for (; nht < 8; nht++)
 				hr[nht] = (uint8_t)nht;
+		/* hakios: secondo flusso, MCS 8-15, solo quelli che l'AP dice di ricevere */
+		if (nss_want() >= 2 && ht[6]) {
+			for (uint32_t i = 0; i < 8; i++)
+				if (ht[6] & (1u << i))
+					hr[nht++] = (uint8_t)(8 + i);
+			if (nht > 8)
+				nss = 2;
+		}
 		phy = s_freq < 4000 ? 5 : 4;		/* 11NG_HT20 / 11NA_HT20 */
 	}
 	hl = (nht + 3) & ~3u;
@@ -1858,7 +1905,7 @@ static int w_peer_assoc(uint32_t caps, const uint8_t *ht, int qos)
 	p = put32(p, mpdu);
 	p = put32(p, dens);
 	p = put32(p, rc);
-	p = put32(p, 1);				/* nss */
+	p = put32(p, nss);				/* nss (hakios: 2 se l'AP riceve MCS 8-15) */
 	p = put32(p, 0);				/* vht caps */
 	p = put32(p, phy);
 	p += 8;
@@ -1960,6 +2007,8 @@ static void w_build_assoc_req(void)
 		p[1] = (uint8_t)(c >> 8);
 		p[2] = 0x03 | (6 << 2);			/* A-MPDU: 64K (factor 3), density 8 us (ath10k) */
 		p[3] = 0xff;				/* RX MCS 0-7 */
+		if (nss_want() >= 2)
+			p[4] = 0xff;			/* hakios: RX MCS 8-15, secondo flusso */
 		p[15] = 0x01;				/* TX MCS set defined */
 		p += 26;
 		memcpy(p, wmm, sizeof(wmm));
@@ -2142,7 +2191,8 @@ static void sta_mgmt_rx(const uint8_t *f, uint32_t len)
 		if (ht && (ht[1] < 26 || !s_qos))
 			ht = NULL;
 		if (ht)
-			LOG("assoc HT20 (MCS0-7, A-MPDU)%s", s_qos ? ", WMM" : "");
+			LOG("assoc HT20 (MCS0-%d, A-MPDU)%s", nss_want() >= 2 ? 15 : 7,
+			    s_qos ? ", WMM" : "");
 		else
 			LOG("assoc legacy %s (%s)%s", s_freq < 4000 ? "11g" : "11a",
 			    !s_ht ? s_ht_why : "assoc reply has no HT/WMM", s_qos ? ", WMM" : "");
@@ -2194,7 +2244,8 @@ static void sta_wmi_event(uint32_t id, const uint8_t *t, uint32_t len)
 
 /* ---- WPA2 4-way handshake (EAPOL-Key, descriptor version 2: HMAC-SHA1-128 MIC, AES key wrap) */
 
-static void w_eapol_send(uint16_t info, const uint8_t *nonce, const uint8_t *data, uint16_t dlen)
+/* hakios: clear=1 manda in chiaro (handshake iniziale), clear=0 protetto dalla PTK (rekey di gruppo) */
+static void w_eapol_send(uint16_t info, const uint8_t *nonce, const uint8_t *data, uint16_t dlen, int clear)
 {
 	uint8_t e[14 + 4 + 95 + 64] = { 0 }, *k = e + 14 + 4, mic[20];
 	memcpy(e, s_bssid, 6);
@@ -2219,7 +2270,7 @@ static void w_eapol_send(uint16_t info, const uint8_t *nonce, const uint8_t *dat
 		memcpy(k + 95, data, dlen);
 	hmac_sha1(s_ptk, 16, e + 14, 4 + body, mic);
 	memcpy(k + 77, mic, 16);
-	w_tx_ether(e, 14 + 4 + body, 1);
+	w_tx_ether(e, 14 + 4 + body, clear);
 }
 
 static int w_eapol_mic_ok(uint8_t *eapol, size_t len)
@@ -2234,10 +2285,36 @@ static int w_eapol_mic_ok(uint8_t *eapol, size_t len)
 	return !memcmp(want, got, 16);
 }
 
+/*
+ * hakios: la GTK dentro il Key Data cifrato (KDE 00:0f:ac tipo 1), scartata con la
+ * KEK = s_ptk+16. Stessa logica del messaggio 3, tenuta separata di proposito: il
+ * percorso dell'handshake iniziale non si tocca.
+ */
+static uint8_t w_unwrap_gtk(const uint8_t *k, uint16_t dlen, uint16_t info, uint8_t *gtk, uint8_t *gtk_idx)
+{
+	uint8_t plain[256], len = 0;
+	*gtk_idx = 1;
+	if (!(info & 0x1000) || dlen < 24 || dlen > sizeof(plain) + 8 ||
+	    !aes_unwrap(s_ptk + 16, k + 95, dlen, plain))
+		return 0;
+	for (uint32_t o = 0; o + 2 <= (uint32_t)dlen - 8 && o + 2 + plain[o + 1] <= (uint32_t)dlen - 8;
+	     o += 2 + plain[o + 1])
+		if (plain[o] == 0xdd && plain[o + 1] >= 6 && plain[o + 2] == 0x00 && plain[o + 3] == 0x0f &&
+		    plain[o + 4] == 0xac && plain[o + 5] == 0x01) {
+			*gtk_idx = plain[o + 6] & 3;
+			len = (uint8_t)MIN((uint32_t)plain[o + 1] - 6, 32u);
+			memcpy(gtk, plain + o + 8, len);
+		}
+	memset(plain, 0, sizeof(plain));
+	return len;
+}
+
 static void w_eapol_rx(const uint8_t *e, size_t elen)
 {
 	uint8_t frame[512];
-	if (s_state != S_4WAY || elen < 14 + 4 + 95 || elen - 14 > sizeof(frame) || memcmp(e + 6, s_bssid, 6))
+	/* hakios: anche da connessi (S_UP), per il rinnovo della chiave di gruppo */
+	if ((s_state != S_4WAY && s_state != S_UP) || elen < 14 + 4 + 95 || elen - 14 > sizeof(frame) ||
+	    memcmp(e + 6, s_bssid, 6))
 		return;
 	size_t len = elen - 14;
 	memcpy(frame, e + 14, len);
@@ -2251,7 +2328,7 @@ static void w_eapol_rx(const uint8_t *e, size_t elen)
 	if (95 + (size_t)dlen > len - 4)
 		return;
 	int pairwise = info & 0x0008, ack = info & 0x0080, has_mic = info & 0x0100, install = info & 0x0040;
-	if (pairwise && ack && !has_mic) {
+	if (s_state == S_4WAY && pairwise && ack && !has_mic) {
 		/* message 1: ANonce -> PTK, answer with message 2 */
 		if (++s_msg1s > 3) {
 			LOG("wpa: the AP keeps sending message 1: wrong passphrase");
@@ -2269,11 +2346,11 @@ static void w_eapol_rx(const uint8_t *e, size_t elen)
 		memcpy(data + 12, nmin ? s_anonce : s_snonce, 32);
 		memcpy(data + 44, nmin ? s_snonce : s_anonce, 32);
 		prf(s_pmk, 32, "Pairwise key expansion", data, sizeof(data), s_ptk, 48);
-		w_eapol_send(0x010a, s_snonce, s_rsn_ie, sizeof(s_rsn_ie));
+		w_eapol_send(0x010a, s_snonce, s_rsn_ie, sizeof(s_rsn_ie), 1);
 		LOG("wpa: message 1 -> message 2 sent");
 		return;
 	}
-	if (pairwise && ack && has_mic && install) {
+	if (s_state == S_4WAY && pairwise && ack && has_mic && install) {
 		/* message 3: check, unwrap the GTK, answer with message 4, install the keys */
 		if (!w_eapol_mic_ok(frame, len)) {
 			LOG("wpa: message 3 MIC wrong: wrong passphrase");
@@ -2293,7 +2370,7 @@ static void w_eapol_rx(const uint8_t *e, size_t elen)
 				}
 			}
 		}
-		w_eapol_send(0x030a, NULL, NULL, 0);
+		w_eapol_send(0x030a, NULL, NULL, 0, 1);
 		radio_flush();				/* (wifi batch: out now, not after the keys) */
 		delay_ms(5);				/* message 4 out in the clear before the keys go in */
 		w_install_key(0, 0, WMI_CIPHER_CCMP, s_ptk + 32, 16);
@@ -2304,6 +2381,34 @@ static void w_eapol_rx(const uint8_t *e, size_t elen)
 		memset(gtk, 0, sizeof(gtk));
 		LOG("*** WPA2 keys installed (group key %s, idx %u) ***", gtk_len ? "yes" : "NO", gtk_idx);
 		w_join_end(0);
+	}
+	/*
+	 * hakios: rinnovo periodico della chiave di gruppo. Il FRITZ!Box 5530 lo fa ogni
+	 * pochi minuti; prima questa funzione guardava solo S_4WAY, quindi il messaggio 1
+	 * di gruppo veniva scartato e l'AP chiudeva il link con reason 16 (Group Key
+	 * Handshake timeout): visto dopo 7'40" dal collegamento, ogni volta.
+	 * Messaggio 1 di gruppo: Key Type 0 (non pairwise), MIC presente, Secure, Key Data
+	 * cifrato con la GTK nuova. Si installa la GTK e si risponde col messaggio 2
+	 * (info 0x0302 = versione 2, gruppo, MIC, Secure), protetto dalla PTK e con lo
+	 * stesso replay counter.
+	 */
+	if (s_state == S_UP && s_ptk_set && !pairwise && has_mic && (info & 0x0200)) {
+		uint8_t gtk[32], gidx = 1, glen;
+		if (!w_eapol_mic_ok(frame, len)) {
+			LOG("wpa: rekey di gruppo col MIC sbagliato: ignorato");
+			return;
+		}
+		s_replay = replay;
+		glen = w_unwrap_gtk(k, dlen, info, gtk, &gidx);
+		if (!glen) {
+			LOG("wpa: rekey di gruppo senza GTK nel Key Data: ignorato");
+			return;
+		}
+		w_install_key(1, gidx, s_group_cipher == 2 ? WMI_CIPHER_TKIP : WMI_CIPHER_CCMP, gtk, glen);
+		w_eapol_send(0x0302, NULL, NULL, 0, 0);
+		radio_flush();
+		memset(gtk, 0, sizeof(gtk));
+		LOG("wpa: *** chiave di gruppo rinnovata (idx %u, %u byte) ***", gidx, glen);
 	}
 }
 
