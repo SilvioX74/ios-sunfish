@@ -88,6 +88,41 @@ device identity data to Apple's servers: parked for the user's decision (plan Qu
 - Speed: Settings long swipe 34.3 / 34.6 swaps/s, swap-to-swap p50 29.1 / p95 31.7, first submit 26.0, second 0.56: same as kernel131. Home fpsbench 35.3 swaps/s (no earlier reference with the fixed bench).
 - kernel132 sweetswapbig=6 is the everyday boot. Key-count rule is a heuristic: a client with 10+ keys that ignores the rounded row would stay sheared (11-12 key candidates: 135x55, 787x1705): that may be Compass and Tips. Writer not proven: "CA archive decoder" is still a strong guess; the rule works anyway.
 
+### 2026-11-19 17:30 the 32 stock apps installed at last: invalidate lsd's store, not lsreg (apps3/apps4)
+
+The user asked why so many system apps were missing. They were not missing from the phone at all: all 32 sat
+in /var/staged_system_apps (Mail, Calendar, Clock, Notes, Maps, Weather, Calculator, Contacts, Files, Health,
+Home, Music, News, Podcasts, Reminders, Shortcuts, Stocks, Tips, Voice Memos, FaceTime, Find My, Fitness,
+Freeform, Measure, Magnifier, Compass, Books, TV, Wallet, MobileStore, Bridge, SequoiaTranslator), real bundles
+with arm64 executables. /Applications held only the 143 system view services plus Photos, App Store, Settings,
+Phone, Safari and Messages, because our /var never went through MobileInstallation, so installd never staged
+them (the same cause as the Files container note of 2026-10-30).
+
+What did not work, in order:
+- Copying a bundle into /Applications and rebooting: SpringBoard ignores it.
+- `lsreg /Applications/Calculator.app` and `lsreg -r`: both return 0 (NO). oslog shows
+  `Constructing NSError NSOSStatusErrorDomain/-9499 at _LSRegisterBundleNode:2445`, with no reason logged,
+  although lsd is running and lsreg does load the LS database (seq 762, 5,210,112 bytes over XPC).
+- Giving com.apple.mobile.installd a `RunAtLoad` job in /System/Library/xpc/launchd.plist and a
+  LastBuildInfo.plist with a changed SystemImageID/BuildID, to make it think the build had changed: installd
+  does start (pid 52, uid 33) and reads its preferences, but stages nothing and does not rewrite
+  LastBuildInfo. There is no launchctl on this root to kick it any other way.
+
+**What works:** copy the bundles into /Applications, then move lsd's store aside and reboot. lsd rebuilds the
+database by scanning /Applications, which is how the original 143 got registered in the first place. The store
+is per-root, in lsd's own data container:
+`/private/var/mobile/Containers/Data/InternalDaemon/<uuid>/Library/Caches/com.apple.LaunchServices-4035-v2.csstore`
+(and `SystemDataOnly-...`), both kept in /var/local/lsdb-backup. Scripted: `tools/sunfish-install-stagedapps.sh`
+(`--undo` removes the copies), then reboot.
+
+Result (apps3, flame-shot work/shots/home-apps.png): Home shows FaceTime, Calendar, Photos, Mail, Notes,
+Reminders, Clock, News, TV, Podcasts, App Store, Maps, Health, Wallet, Settings, and Music joins the dock.
+`lsreg -l` counts 163 bundles under /Applications. The launchd and LastBuildInfo changes were both reverted
+afterwards and the apps survived that reboot (apps4), so neither was part of the fix.
+
+Space: /Applications is on the 16 GB root volume, 84% full after the copy (2.5 GB free). Opening the new apps
+has not been surveyed yet, and several will want services this port does not have (iCloud, cellular, the camera).
+
 ### 2026-11-19 16:50 B29 comes back on any kernel before xnu 0251: `sweetsurfalign=0` is the workaround
 
 On kernel-up0196-20261028 (the newest kernel the upstream CI ever published as an artifact; builds moved local
