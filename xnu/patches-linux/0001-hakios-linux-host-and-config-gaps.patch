@@ -1,0 +1,136 @@
+diff --git a/EXTERNAL_HEADERS/AppleKeyStore/AppleKeyStoreFSServices.h b/EXTERNAL_HEADERS/AppleKeyStore/AppleKeyStoreFSServices.h
+new file mode 100644
+index 0000000..6cbfaa1
+--- /dev/null
++++ b/EXTERNAL_HEADERS/AppleKeyStore/AppleKeyStoreFSServices.h
+@@ -0,0 +1,19 @@
++/*
++ * hakios: the macOS SDK/KDK header bsd/sweet_hfs/core/hfs_iokit.h includes under CONFIG_PROTECT; Apple
++ * does not publish it, so a Linux build has nothing to find. Everything hfs uses from it is these three
++ * opaque pointer types, which only travel through its own prototypes (grep aks_ over the staged hfs tree:
++ * aks_cred_t, aks_raw_key_t, aks_wrapped_key_t and nothing else). The keystore itself is the project's
++ * own iokit/Kernel/arm/SweetKeyStore.cpp (patch 0038).
++ */
++#ifndef _HAKIOS_APPLEKEYSTORE_FSSERVICES_H_
++#define _HAKIOS_APPLEKEYSTORE_FSSERVICES_H_
++#include <sys/cdefs.h>
++__BEGIN_DECLS
++struct aks_cred_s;
++struct aks_wrapped_key_s;
++struct aks_raw_key_s;
++typedef struct aks_cred_s *aks_cred_t;
++typedef struct aks_wrapped_key_s *aks_wrapped_key_t;
++typedef struct aks_raw_key_s *aks_raw_key_t;
++__END_DECLS
++#endif
+diff --git a/SETUP/installfile/installfile.c b/SETUP/installfile/installfile.c
+index 8e1c914..3a32f74 100644
+--- a/SETUP/installfile/installfile.c
++++ b/SETUP/installfile/installfile.c
+@@ -36,6 +36,39 @@
+ 
+ #include <copyfile.h>
+ 
++#ifdef __linux__
++/* hakios: BSD/Darwin helpers glibc does not have. getprogname() is err(3)'s program name; setmode()/
++ * getmode() parse a file mode -- xnu's build only ever passes an octal string such as "0644", so the
++ * octal form is all this handles (a symbolic mode returns NULL and installfile reports it). */
++#include <ctype.h>
++extern char *program_invocation_short_name;
++static inline const char *getprogname(void) { return program_invocation_short_name; }
++static inline void *setmode(const char *p)
++{
++	mode_t *m;
++	char *end;
++	unsigned long v;
++	if (!p || !*p)
++		return NULL;
++	for (const char *q = p; *q; q++)
++		if (*q < '0' || *q > '7')
++			return NULL;
++	v = strtoul(p, &end, 8);
++	if (*end || v > 07777)
++		return NULL;
++	m = (mode_t *)malloc(sizeof(*m));
++	if (m)
++		*m = (mode_t)v;
++	return m;
++}
++static inline mode_t getmode(const void *set, mode_t mode)
++{
++	(void)mode;
++	return set ? *(const mode_t *)set : 0;
++}
++#endif /* __linux__ */
++
++
+ void usage(void);
+ 
+ int
+diff --git a/SETUP/replacecontents/replacecontents.c b/SETUP/replacecontents/replacecontents.c
+index 5b14bc3..c237937 100644
+--- a/SETUP/replacecontents/replacecontents.c
++++ b/SETUP/replacecontents/replacecontents.c
+@@ -30,6 +30,39 @@
+ #include <err.h>
+ #include <sysexits.h>
+ 
++#ifdef __linux__
++/* hakios: BSD/Darwin helpers glibc does not have. getprogname() is err(3)'s program name; setmode()/
++ * getmode() parse a file mode -- xnu's build only ever passes an octal string such as "0644", so the
++ * octal form is all this handles (a symbolic mode returns NULL and installfile reports it). */
++#include <ctype.h>
++extern char *program_invocation_short_name;
++static inline const char *getprogname(void) { return program_invocation_short_name; }
++static inline void *setmode(const char *p)
++{
++	mode_t *m;
++	char *end;
++	unsigned long v;
++	if (!p || !*p)
++		return NULL;
++	for (const char *q = p; *q; q++)
++		if (*q < '0' || *q > '7')
++			return NULL;
++	v = strtoul(p, &end, 8);
++	if (*end || v > 07777)
++		return NULL;
++	m = (mode_t *)malloc(sizeof(*m));
++	if (m)
++		*m = (mode_t)v;
++	return m;
++}
++static inline mode_t getmode(const void *set, mode_t mode)
++{
++	(void)mode;
++	return set ? *(const mode_t *)set : 0;
++}
++#endif /* __linux__ */
++
++
+ #include <sys/stat.h>
+ #include <sys/fcntl.h>
+ #include <sys/param.h>
+diff --git a/osfmk/vm/vm_compressor.c b/osfmk/vm/vm_compressor.c
+index 1e7ca07..a82a099 100644
+--- a/osfmk/vm/vm_compressor.c
++++ b/osfmk/vm/vm_compressor.c
+@@ -4128,12 +4128,17 @@ c_seg_allocate(c_segment_t *current_chead)
+ 		for (int i = 0; i < vm_pageout_state.vm_compressor_thread_count; i++) {
+ #if XNU_TARGET_OS_OSX
+ 			donate_queue_head = (c_segment_t*) &(pgo_iothread_internal_state[i].current_early_swapout_chead);
+-#else /* XNU_TARGET_OS_OSX */
++#elif CONFIG_JETSAM /* XNU_TARGET_OS_OSX */
+ 			if (memorystatus_swap_all_apps) {
+ 				donate_queue_head = (c_segment_t*) &(pgo_iothread_internal_state[i].current_late_swapout_chead);
+ 			} else {
+ 				donate_queue_head = NULL;
+ 			}
++#else
++			/* hakios: memorystatus_swap_all_apps is declared under CONFIG_JETSAM (bsd/sys/kern_memorystatus.h),
++			 * which the SWEET config turns off, while this branch is the non-OSX one -- a combination Apple
++			 * never shipped. Without jetsam there is no swap-all-apps mode, so there is no late swapout queue. */
++			donate_queue_head = NULL;
+ #endif /* XNU_TARGET_OS_OSX */
+ 
+ 			if (current_chead == donate_queue_head) {

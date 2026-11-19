@@ -38,6 +38,9 @@ prepare_source() {
 	for p in portable-kalloc-type-builtins linux-host-tools iig-method-forwarders linux-link-shims; do
 		git apply "$W/allenwdk/patches/xnu/$p.patch"
 	done
+	# ours: the host-tool gaps Allenwdk's patch does not cover on xnu-8796, the AppleKeyStore header
+	# Apple does not publish, and the CONFIG_JETSAM/non-OSX mismatch in vm_compressor.c
+	for f in "$R"/xnu/patches-linux/*.patch; do git apply "$f"; done
 	git add -A && git -c user.email=noreply@anthropic.com -c user.name=hakios commit -q \
 		-m "xnu-8796.141.3 + staged libpthread/bearssl/hfs + project patches + Linux portability patches"
 }

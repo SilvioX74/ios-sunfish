@@ -51,22 +51,31 @@ include path, not the SDK).
 
 ## Status
 
-2026-11-19, end of the first session. The build reaches the SETUP phase -- the host tools xnu builds for itself
-(config, decomment, installfile, kextsymboltool, replacecontents, setsegname, json_compilation_db) -- and stops
-there. Three walls were passed in turn: `compat/hostcompat.h` (fake SDK), `libc.h` and `copyfile.h` (CPATH), and
-the Mach-O headers (cctools' own include tree). Nothing of the kernel proper has been compiled yet, so nothing
-can be claimed about that part.
+**2026-11-19, end of the first session: the kernel compiles. Nine object files out of the whole tree do not.**
 
-What is left on the host tools, all small and all Darwin-specific:
+The build runs `DEVELOPMENT_ARM64_SWEET` to completion except for those nine, through roughly two million lines
+of output: 3,237 headers installed, 87 MIG interfaces, 34 IIG (DriverKit) interfaces generated, every SETUP host
+tool built, and the great majority of the kernel's C and assembly compiled. Walls passed, in order, each needing
+its own fix: `compat/hostcompat.h`; `libc.h` and `copyfile.h` (host tools resolve those against the host include
+path, so they go on CPATH, not in the SDK); the Mach-O headers (cctools' own `include/` and the pruned
+`include/foreign`, which must NOT be added wholesale -- its `strings.h` and friends clash with glibc); the
+Mach-O byte-swap functions and `NXGetLocalArchInfo` (libstuff, plus our own `archcompat.o`, because libstuff's
+version asks the Mach kernel); `availability.pl`, which the iPhoneOS SDK has no copy of (replacement in the fake
+SDK); `Kernel.framework/.../PrivateHeaders/platform`; and `-Werror`, which clang 21 trips over 17,362 times on
+Apple's own exported typedefs (`BUILD_WERROR=0`, exported so the recursive makes inherit it).
 
-| file | missing |
+What is left, by object file:
+
+| object | problem |
 |---|---|
-| setsegname.c | `mach-o/swap.h` |
-| kextsymboltool.c | `mach/mach_init.h` |
-| replacecontents.c | `getprogname` |
-| installfile.c | `setmode`, `getmode` (BSD, in libbsd), `fcopyfile`, `getprogname` |
+| `sha256_compress_arm64.o` | 32 "invalid operand for instruction" from clang 21's integrated assembler on `osfmk/arm64/corecrypto/sha256_compress_arm64.s`. Allenwdk's answer is a **clang** patch (`llvm-clang-arm64-crypto-asm.patch`), so this one may force a patched compiler after all -- unless the macros can be rewritten or a C implementation substituted. |
+| `hfs_cprotect.o`, `hfs_readwrite.o`, `hfs_vfsops.o`, `hfs_vfsutils.o` | `struct aks_cred_s` is dereferenced somewhere, so the opaque typedefs in our `EXTERNAL_HEADERS/AppleKeyStore/AppleKeyStoreFSServices.h` are not enough; `io_params` undeclared in two places. |
+| `hfs_encodings.o` | `unicode_to_hfs_func_t` / `unicode_to_mac_roman` missing: the staged HFS expects an encoding piece that is not in the tree. |
+| `log.o`, `subr_log.o` | not yet read. |
+| `vm_compressor.o` | one error fixed (the CONFIG_JETSAM guard below); whether another remains is not yet known. |
 
-Allenwdk's `linux-host-tools.patch` is meant for exactly this but is written against their fork's versions of
-these files, so it applies without fixing ours. The next step is a small host-tool patch of our own for
-xnu-8796: point CPATH at cctools' include tree for the Mach headers, declare `getprogname`, and replace
-`setmode`/`getmode`/`fcopyfile` in installfile.c. A few dozen lines across four files.
+Our own source changes live in `xnu/patches-linux/`, applied by the setup script after the portability patches:
+the host-tool gaps Allenwdk's patch does not cover on xnu-8796 (`getprogname`, `setmode`/`getmode` in
+installfile and replacecontents), the AppleKeyStore header Apple does not publish, and a guard in
+`osfmk/vm/vm_compressor.c`, where the non-OSX branch uses `memorystatus_swap_all_apps` while its declaration
+sits under `CONFIG_JETSAM`, which the SWEET config turns off -- a combination Apple never shipped.
