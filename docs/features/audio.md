@@ -32,6 +32,29 @@ Firmware (adsp.*, cs35l41 bins) stays on the phone in /var/local, out of git.
 - Do audiomxd / mediaserverd run at all on the phone?
 
 ## Log
+
+### 2026-11-19 17:05 no sound on kernel-up0196-20261028: the kernel does not turn the SE9 I2C clocks on
+
+The user asked whether anything is audible. Nothing of the audio stack had ever been installed on this phone: no
+SunfishAudio.driver in /System/Library/Audio/Plug-Ins/HAL (only Apple's six), no adspboot, no /var/local/speaker.on.
+
+Installed all of it (tools/sunfish-install-audio.sh; adspboot, apr_tone, aprtest from work/userland-linux/out;
+speaker.on = -20) and booted `sweetgpu=1 sweetmtl=2 sweetsurfalign=0 sweetse9=2 sweetampreset=1 sweetmotion=0`
+(tag audio1; sweetmotion=0 only because the line hit the 591-byte cap by one byte).
+
+`apr_tone --probe`, which is read-only and needs no ADSP, stops at the first step both before and after that boot:
+
+    i2c: gcc_vote1 0x41001bc0, qupv3_wrap1_s3_cbcr 0x80004220
+    i2c: SE9 clocks off (no GCC writes from here): stop
+
+gcc_vote1 did change with the boot arg (0x41bc1bc0 -> 0x41001bc0), so the kernel reads the argument, but the SE9
+clocks stay off and the tool refuses to write GCC itself. This kernel is the 2026-10-28 06:06 CI artifact; the
+SE9 I2C work is first seen in a boot at 18:25 that same day (kernel93, gpu-memory.md sk93) and the first actual
+sound came on 2026-10-31 with kernel134. So this kernel predates the amplifier bring-up.
+
+**Conclusion: audio cannot work here until a kernel newer than 2026-10-28 is available**, which is the same wall
+as the camera (Camera.app needs the 2026-10-30 stack) and as B29 (fixed 2026-10-31, worked around with
+sweetsurfalign=0). mediaserverd is healthy with the driver installed, so everything stays in place, ready.
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
 ### 2026-10-31 06:00 sp26: iOS SOUND PLAYS THROUGH THE SPEAKER: the Clock timer alarm reaches the mic; streams no longer fail
