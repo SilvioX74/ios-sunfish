@@ -88,6 +88,32 @@ device identity data to Apple's servers: parked for the user's decision (plan Qu
 - Speed: Settings long swipe 34.3 / 34.6 swaps/s, swap-to-swap p50 29.1 / p95 31.7, first submit 26.0, second 0.56: same as kernel131. Home fpsbench 35.3 swaps/s (no earlier reference with the fixed bench).
 - kernel132 sweetswapbig=6 is the everyday boot. Key-count rule is a heuristic: a client with 10+ keys that ignores the rounded row would stay sheared (11-12 key candidates: 135x55, 787x1705): that may be Compass and Tips. Writer not proven: "CA archive decoder" is still a strong guess; the rule works anyway.
 
+### 2026-11-19 16:50 B29 comes back on any kernel before xnu 0251: `sweetsurfalign=0` is the workaround
+
+On kernel-up0196-20261028 (the newest kernel the upstream CI ever published as an artifact; builds moved local
+on 2026-10-28, so nothing newer is downloadable and this machine has no macOS VM) the lock-screen camera button
+is the old B29 noise. That kernel has 0159, which rounds single-plane IOSurface rows to 64, but not 0251, which
+kept the explicit row and fixed it on 2026-10-31.
+
+Since 0159 has an off switch, the fix needs no kernel at all. Shown both ways on the same kernel, same boot
+args otherwise, flame-shot PNGs in work/shots/:
+
+| boot | boot arg | lock-screen camera button |
+|------|----------|---------------------------|
+| surfalignon | (default, rounding on) | noise, `lock-on.png` |
+| surfalign / buono / ok1 | `sweetsurfalign=0` | the camera glyph, clean (`lock-surfalign2.png`, `lock-finale.png`, `lock-ok.png`) |
+
+Home screen, dock and Control Center icons were clean in both. **Everyday iOS 16 boot on this phone should carry
+`sweetsurfalign=0` until a kernel with 0251 is available.**
+
+Cost not established: `tools/sunfish-fpsbench.sh` over 30 s gave 96.2 swaps/s with the rounding off and
+53.5 / 119.6 / 58.7 with it on (1-2 samples each). The spread inside one configuration is bigger than the
+difference between them, so the bench at this sample size says nothing either way; upstream's expectation was
+that turning 0159 off costs shadow copies. A longer run is the way to settle it.
+
+Still open on that screen, both ways: the flashlight button is missing (creating /var/local/sweet-flashlight,
+the Control Center tile flag, did not bring it back) and a stray light-blue bar sits under the battery icon.
+
 ### 2026-10-31 00:25 B44/B29 CAUSE: client stride 32-byte aligned, our kernel's row rounded to 64
 - d1, kernel131, bridge 0115 M2V_SHADOW_DUMP=all, research/b44/d1 (lines.txt, 33 viewable dumps). Backboardd, new_texture_with_iosurface_plane, RG8, wider-alias:
 
