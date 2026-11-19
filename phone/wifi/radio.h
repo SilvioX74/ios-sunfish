@@ -9,6 +9,7 @@ void radio_poll(void);		/* called from the link's idle loop */
 void radio_flush(void);		/* wifi batch: tx messages kept by the copy engine out now; at the end of each idle round */
 void radio_summary(void);	/* the networks heard so far */
 void radio_stats(void);
+void radio_cpu_bench(void);	/* hakios: memcpy speed of the core wland runs on, into the log */
 unsigned radio_scans(void);	/* passive scans completed */
 void radio_scan_now(void);	/* a scan as soon as it can, also while joined (a background scan) */
 void radio_rescan(unsigned ms);	/* another passive scan in MS (while idle: not joining, not joined) */

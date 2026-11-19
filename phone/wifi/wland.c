@@ -657,8 +657,21 @@ static void on_usr1(int sig)
 	drop_asked = 1;
 }
 
+/* hakios: SIGUSR2 prints the radio stats now, so a throughput run can read the counters before and after
+ * instead of waiting for the 30-second line (`psx | grep wland`, then `kill -USR2 <pid>`). */
+static volatile sig_atomic_t stats_asked;
+static void on_usr2(int sig)
+{
+	stats_asked = 1;
+}
+
 static void net_idle(void)
 {
+	if (stats_asked) {		/* hakios: here, not only in net()'s loop: this is the loop that runs once the radio is up */
+		stats_asked = 0;
+		radio_cpu_bench();
+		radio_stats();
+	}
 	if (drop_asked) {
 		drop_asked = 0;
 		radio_disconnect();
@@ -677,6 +690,7 @@ static int net(unsigned secs)
 		verbose_link = atoi(getenv("WLAND_VERBOSE"));
 	link_idle = net_idle;
 	signal(SIGUSR1, on_usr1);
+	signal(SIGUSR2, on_usr2);
 	signal(SIGCHLD, SIG_IGN);	/* netsvc children (ipnet.c) reap themselves */
 	if (link_up(net_cb, 5000))
 		return -1;
@@ -688,6 +702,11 @@ static int net(unsigned secs)
 	uint64_t end = link_ms() + (uint64_t)secs * 1000, stats = link_ms() + 30000;
 	while (!secs || link_ms() < end) {
 		link_poll(100);
+		if (stats_asked) {
+			stats_asked = 0;
+			radio_cpu_bench();
+			radio_stats();
+		}
 		if (link_ms() > stats) {
 			radio_stats();
 			stats = link_ms() + 30000;

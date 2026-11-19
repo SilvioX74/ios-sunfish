@@ -113,7 +113,9 @@ void delay_ms(unsigned ms)
 double mono_ms(void)
 {
 	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
+	/* hakios: CLOCK_UPTIME_RAW: CLOCK_MONOTONIC steps backwards here when the RTC offset lands (link.c) */
+	if (clock_gettime(CLOCK_UPTIME_RAW, &ts))
+		clock_gettime(CLOCK_MONOTONIC, &ts);
 	return ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
 }
 

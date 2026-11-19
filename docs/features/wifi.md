@@ -19,6 +19,41 @@
 ## Log
 (Newest first, append-only. When this Log passes about 150 lines, move its oldest entries to the archive.)
 
+### 2026-11-19 16:25 the clock wland measures time with stepped backwards; 61.9 Mbit/s measured (finale)
+
+Looking for the ceiling behind the 52.7 Mbit/s above, the instrumentation itself turned out to be broken, and
+the cause is worth more than the measurement:
+
+- **`now_ms()` used CLOCK_MONOTONIC, which on this port follows the RTC correction.** When sweetrtcoff lands,
+  a few seconds into the boot, the clock steps backwards (seen: 2.675e9 ms = 31 days). `now_ms() - t0` then
+  underflowed, `link_ms()` returned 18446744066291034256, and **every deadline in radio.c** (scan timeouts, join
+  deadlines, BSS ageing) and the 30-second stats line were broken for the rest of the run, on every boot since
+  this code existed. Now CLOCK_UPTIME_RAW (mach_absolute_time, untouched by the RTC) in link.c and pmem.c, plus
+  sane-delta accumulation as a belt. A first attempt that re-anchored t0 instead made link_ms() a constant and
+  **starved the WLAN firmware**: `dog_hb.c:367 Task starvation: WLAN BE`, modem ERR-FATAL, radio gone until the
+  next boot (15:50). Logged here as the dead end it was; the committed version is the clock change.
+- `radio_stats()` now fflushes and can be asked for at any moment with SIGUSR2 (`psx | grep wland`, then
+  `kill -USR2 <pid>`), checked in net_idle (the loop that actually runs once the radio is up) as well as net().
+
+What the counters then showed, 60 MB downlink on 5260 MHz: 8.1 pmem calls per MSDU (one carries the 1.5 KB
+payload, ~7 are register/descriptor words), 1756 ce_poll passes per 30 s window, 21 MSDUs per pass.
+
+**Busy-poll: tried and rejected.** `usleep(1000)` returns after ~15 ms here, so 58 passes/s looked like the
+pacer. Skipping the sleep while traffic flows (`spin=1`, off by default) raised the pass rate but every empty
+pass re-reads the CE indices: pmem reads per MSDU went 8 -> 139 (4.3 M calls in one window) and throughput
+**fell**, 46.2 -> 43.5 Mbit/s. So the loop pace was never the limit.
+
+Final state of the day (tag finale, wland addb4f5606d2b739, /var/local/wland.conf = `nss=2`): joined
+2442 MHz at -45 dBm, `assoc HT20 (MCS0-15, A-MPDU)`, **61.9 and 61.5 Mbit/s** in two runs. Per band, same AP,
+same test: 2.4 GHz 60-62 Mbit/s, 5 GHz 46-55. 5 GHz loses here although the RSSI is similar, and the band is
+picked by RSSI alone, so no change was made: the band that measures better is the one it picks.
+
+Where the remaining cost sits is still open. CPU per transferred byte is ~105 ns (63-79% of one core), yet
+giving the loop more CPU made it worse and cutting pmem calls 5x (batch) bought 20%, so neither the air alone
+nor the syscalls alone explain it. The next honest step is a profile of the per-frame path (sta_rx_native, the
+802.11 -> Ethernet rewrite, the /dev/wlan write), not another guess. For bandwidth beyond ~110 Mbit/s the air
+needs HT40 or VHT80 anyway: HT20 with two streams is a 144 Mbit/s PHY.
+
 ### 2026-11-19 15:45 group-key rekey handled, second spatial stream: 36.8 -> 52.7 Mbit/s (nss2b)
 
 Two bugs in wland's radio.c, both found on the user's FRITZ!Box 5530 JN (5260 MHz, ch 52, HT20, -47 dBm).

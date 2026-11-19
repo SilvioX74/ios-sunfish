@@ -35,19 +35,38 @@ unsigned link_stats[4];
 void (*link_idle)(void);
 #define LOG(...) do { if (verbose_link) { printf("[%6llu] ", (unsigned long long)link_ms()); printf(__VA_ARGS__); } } while (0)
 
+/*
+ * hakios: CLOCK_UPTIME_RAW, not CLOCK_MONOTONIC. On this port CLOCK_MONOTONIC follows the RTC correction
+ * (sweetrtcoff lands a few seconds into the boot) and steps backwards; CLOCK_UPTIME_RAW is mach_absolute_time,
+ * untouched by it. CLOCK_MONOTONIC cost us the 30-second stats line and every deadline in radio.c from the
+ * step onwards (2026-11-19).
+ */
 static uint64_t now_ms(void)
 {
 	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
+	if (clock_gettime(CLOCK_UPTIME_RAW, &ts))
+		clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-static uint64_t t0;
+/*
+ * hakios: CLOCK_MONOTONIC on this port follows the RTC correction, so it can step backwards (seen:
+ * 2.675e9 ms = 31 days, which made the old `now_ms() - t0` underflow to 18446744066291034256 and stopped
+ * the 30-second stats line for the rest of the run). So accumulate sane steps only and count any jump,
+ * in either direction, as zero elapsed time: the result always moves forward, never freezes (a first
+ * attempt that re-anchored t0 instead returned a constant, and the frozen deadlines in radio.c starved
+ * the WLAN firmware: `dog_hb.c:367 Task starvation: WLAN BE` then modem ERR-FATAL, 2026-11-19 15:50).
+ */
+static uint64_t elapsed, last_n;
 uint64_t link_ms(void)
 {
-	if (!t0)
-		t0 = now_ms();
-	return now_ms() - t0;
+	uint64_t n = now_ms();
+	if (!last_n)
+		last_n = n;
+	if (n >= last_n && n - last_n < 60000)	/* a sane step: count it. A jump (either way) counts as zero */
+		elapsed += n - last_n;
+	last_n = n;
+	return elapsed;
 }
 
 static void send_open(void)
@@ -241,6 +260,35 @@ static int rx_one(void)
  * pollers count in link_traffic), doubling to 10 ms after 50 ms without; WLAND_POLL1MS=1 = the fixed 1 ms */
 unsigned link_traffic;
 
+/*
+ * hakios: OFF by default -- measured and rejected 2026-11-19, kept behind a switch.
+ * The idea: usleep(1000) on this port returns after ~15 ms (the throttling noted in pmem.h), and under a
+ * download the receive loop ran only 58 passes/s taking 21 MSDUs each, so the sleep looked like the pacer.
+ * Busy-polling instead ("spin=1" in /var/local/wland.conf or WLAND_SPIN=1) raised passes to ~170/s but each
+ * empty pass re-reads the CE indices: pmem reads per MSDU went 8 -> 139 (4.3 M calls in one window) and
+ * throughput FELL, 46.2 -> 43.5 Mbit/s on the same AP and channel. So the pace was never the limit; the host
+ * cost per frame is, and adding passes only adds syscalls.
+ */
+static int w_spin = -1;
+static int spin_on(void)
+{
+	if (w_spin < 0) {
+		const char *e = getenv("WLAND_SPIN");
+		char line[64];
+		FILE *f;
+		w_spin = 0;
+		if (e)
+			w_spin = atoi(e);
+		else if ((f = fopen("/var/local/wland.conf", "r"))) {
+			while (fgets(line, sizeof(line), f))
+				if (!strncmp(line, "spin=", 5))
+					w_spin = atoi(line + 5);
+			fclose(f);
+		}
+	}
+	return w_spin;
+}
+
 int link_poll(unsigned ms)
 {
 	static int fixed = -1;
@@ -266,6 +314,8 @@ int link_poll(unsigned ms)
 			nap = nap * 2 > 10 ? 10 : nap * 2;
 		}
 		unsigned d = nap;
+		if (nap == 1 && spin_on())
+			continue;		/* traffic now: next pass straight away, no 15 ms sleep */
 		if (now + d > end)
 			d = now < end ? (unsigned)(end - now) : 1;
 		delay_ms(d);

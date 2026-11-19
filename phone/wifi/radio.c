@@ -2684,6 +2684,40 @@ void radio_stats(void)
 	memcpy(l_calls, pm_calls, sizeof(l_calls));
 	memcpy(l_bytes, pm_bytes, sizeof(l_bytes));
 	l_passes = ce_passes, l_busy = ce_busy, l_msdus = htt_msdus, l_bw = bridge_writes;
+	/* hakios: stdout is block-buffered into /var/local/wland.log, so a stats line could sit unwritten for
+	 * minutes and a throughput run saw no counters at all (2026-11-19). */
+	fflush(stdout);
+}
+
+/*
+ * hakios: how fast is the core wland actually runs on? The receive path costs ~105 ns per byte (60 MB in
+ * 7.98 s at 79% of a core, 2026-11-19), about 190 cycles/byte if the core ran at 1.8 GHz, which would be
+ * absurd for a couple of copies -- unless the core is clocked far lower. One memcpy of a buffer that does
+ * not fit in L1/L2 answers it: compare with the ~2-6 GB/s a big Cortex-A76 core does.
+ */
+void radio_cpu_bench(void)
+{
+	enum { SZ = 4 << 20, LOOPS = 8 };
+	uint8_t *a = malloc(SZ), *b = malloc(SZ);
+	double t0, dt;
+	if (!a || !b) {
+		free(a), free(b);
+		return;
+	}
+	volatile uint8_t sink = 0;
+	memset(a, 0xa5, SZ);
+	memset(b, 0, SZ);
+	t0 = mono_ms();
+	for (unsigned i = 0; i < LOOPS; i++) {
+		a[i] = (uint8_t)i;		/* the copies must not be dead code: the first run printed 0.0 ms */
+		memcpy(b, a, SZ);
+		sink ^= b[i] ^ b[SZ - 1 - i];
+	}
+	dt = mono_ms() - t0;
+	LOG("cpu: memcpy %u MB in %.1f ms = %.0f MB/s (bigger than the caches; sink %02x)", (SZ >> 20) * LOOPS, dt,
+	    dt > 0 ? (double)SZ * LOOPS / 1e3 / dt : 0.0, sink);
+	fflush(stdout);
+	free(a), free(b);
 }
 
 /* the i-th network heard (any scan): 0, or -1 past the last */
