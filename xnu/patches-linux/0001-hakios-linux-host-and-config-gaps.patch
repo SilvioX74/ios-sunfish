@@ -1,28 +1,253 @@
 diff --git a/EXTERNAL_HEADERS/AppleKeyStore/AppleKeyStoreFSServices.h b/EXTERNAL_HEADERS/AppleKeyStore/AppleKeyStoreFSServices.h
 new file mode 100644
-index 0000000..6cbfaa1
+index 0000000..2a0cb5b
 --- /dev/null
 +++ b/EXTERNAL_HEADERS/AppleKeyStore/AppleKeyStoreFSServices.h
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,71 @@
 +/*
-+ * hakios: the macOS SDK/KDK header bsd/sweet_hfs/core/hfs_iokit.h includes under CONFIG_PROTECT; Apple
-+ * does not publish it, so a Linux build has nothing to find. Everything hfs uses from it is these three
-+ * opaque pointer types, which only travel through its own prototypes (grep aks_ over the staged hfs tree:
-+ * aks_cred_t, aks_raw_key_t, aks_wrapped_key_t and nothing else). The keystore itself is the project's
-+ * own iokit/Kernel/arm/SweetKeyStore.cpp (patch 0038).
++ * hakios: the SDK header bsd/sweet_hfs includes under CONFIG_PROTECT. Apple does not publish it; upstream
++ * only gets it from the macOS SDK, so a Linux build has nothing to find.
++ *
++ * The three structs are NOT invented here: they mirror, field for field, xnu's own equivalents in
++ * bsd/sys/cprotect.h (cp_cred_s, cp_wrapped_key_s, cp_raw_key_s), which exist precisely because the AKS
++ * kext and the kernel pass these shapes to each other. aks_cred_s additionally carries volume_uuid, which
++ * hfs_cprotect.c fills with uuid_copy().
 + */
 +#ifndef _HAKIOS_APPLEKEYSTORE_FSSERVICES_H_
 +#define _HAKIOS_APPLEKEYSTORE_FSSERVICES_H_
++
 +#include <sys/cdefs.h>
++#include <sys/cprotect.h>
++#include <sys/_types/_uuid_t.h>
++
 +__BEGIN_DECLS
-+struct aks_cred_s;
-+struct aks_wrapped_key_s;
-+struct aks_raw_key_s;
++
++struct aks_cred_s {
++	union {
++		ino64_t			inode;
++		cp_crypto_id_t		crypto_id;
++	};
++	uint32_t			volume;
++	pid_t				pid;
++	uid_t				uid;
++	cp_key_revision_t		key_revision;
++	uuid_t				volume_uuid;
++};
++
++struct aks_wrapped_key_s {
++	void				*key;
++	unsigned			key_len;
++	cp_key_class_t			dp_class;
++};
++
++struct aks_raw_key_s {
++	void				*key;
++	unsigned			key_len;
++	void				*iv_key;
++	unsigned			iv_key_len;
++	uint32_t			flags;
++};
++
 +typedef struct aks_cred_s *aks_cred_t;
 +typedef struct aks_wrapped_key_s *aks_wrapped_key_t;
 +typedef struct aks_raw_key_s *aks_raw_key_t;
++
++/*
++ * A flag bit of the HFS content-protection root xattr, read once in hfs_vfsutils.c to set
++ * hfsmp->cp_crypto_generation. Apple's value is not public and nothing in this tree ever writes the bit.
++ * Defining it as 0 makes the test always false, i.e. crypto generation 0, which is what the volumes this
++ * port creates are: mkiosroot builds a plain HFSX root with no content protection. A volume that really
++ * used crypto generation 1 would be misread here -- if the true value is ever learned, it goes here.
++ */
++#ifndef CP_ROOT_CRYPTOG1
++#define CP_ROOT_CRYPTOG1	0
++#endif
++
++/*
++ * A flag of aks_raw_key_s.flags: the key the keystore handed back is itself wrapped by the SEP. Same
++ * reasoning as above -- Apple's value is not public, nothing here ever sets the bit, and this kernel has
++ * no AKS provider at all (hfs_iokit.cpp's table is never registered, so hfs_unwrap_key returns ENXIO).
++ * 0 makes the test always false, which is the honest answer for a kernel that never gets a wrapped key.
++ */
++#ifndef AKS_RAW_KEY_WRAPPEDKEY
++#define AKS_RAW_KEY_WRAPPEDKEY	0
++#endif
++
 +__END_DECLS
 +#endif
+diff --git a/EXTERNAL_HEADERS/os/firehose_buffer_private.h b/EXTERNAL_HEADERS/os/firehose_buffer_private.h
+new file mode 100644
+index 0000000..04a45bd
+--- /dev/null
++++ b/EXTERNAL_HEADERS/os/firehose_buffer_private.h
+@@ -0,0 +1,167 @@
++/*
++ * Copyright (c) 2015 Apple Inc. All rights reserved.
++ *
++ * @APPLE_APACHE_LICENSE_HEADER_START@
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ *
++ * @APPLE_APACHE_LICENSE_HEADER_END@
++ */
++
++#ifndef __FIREHOSE_BUFFER_PRIVATE__
++#define __FIREHOSE_BUFFER_PRIVATE__
++
++/* hakios: taken from apple-oss-distributions/libdispatch (os/firehose_buffer_private.h), which the
++ * iPhoneOS SDK does not carry and libkern/os/log.c needs. Its body sits under OS_FIREHOSE_SPI alone,
++ * while xnu's own firehose headers (libkern/firehose/chunk_private.h) accept KERNEL as well; without
++ * that the body vanished and log.c failed on __firehose_buffer_tracepoint_reserve. */
++#if OS_FIREHOSE_SPI || defined(KERNEL)
++#ifdef KERNEL
++#include <stdint.h>
++#else
++#include <os/base.h>
++#include <os/availability.h>
++#include <os/base_private.h>
++#include <dispatch/dispatch.h>
++#endif
++
++#define OS_FIREHOSE_SPI_VERSION 20180226
++
++/*!
++ * @group Firehose SPI
++ * SPI intended for logd only
++ * Layout of structs is subject to change without notice
++ */
++
++#define FIREHOSE_BUFFER_LIBTRACE_HEADER_SIZE	2048ul
++#define FIREHOSE_BUFFER_KERNEL_MIN_CHUNK_COUNT	16
++#define FIREHOSE_BUFFER_KERNEL_MAX_CHUNK_COUNT	64
++
++typedef struct firehose_buffer_range_s {
++	uint16_t fbr_offset; // offset from the start of the buffer
++	uint16_t fbr_length;
++} *firehose_buffer_range_t;
++
++#ifdef KERNEL
++
++typedef struct firehose_chunk_s *firehose_chunk_t;
++
++// implemented by the kernel
++extern void __firehose_buffer_push_to_logd(firehose_buffer_t fb, bool for_io);
++extern void __firehose_critical_region_enter(void);
++extern void __firehose_critical_region_leave(void);
++extern void __firehose_allocate(vm_offset_t *addr, vm_size_t size);
++extern uint8_t __firehose_buffer_kernel_chunk_count;
++extern uint8_t __firehose_num_kernel_io_pages;
++
++#define FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT FIREHOSE_BUFFER_KERNEL_MIN_CHUNK_COUNT
++#define FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES    8
++
++#define FIREHOSE_BUFFER_KERNEL_CHUNK_COUNT __firehose_buffer_kernel_chunk_count
++#define FIREHOSE_BUFFER_CHUNK_PREALLOCATED_COUNT (__firehose_buffer_kernel_chunk_count - 1) // the first chunk is the header
++
++// exported for the kernel
++firehose_tracepoint_t
++__firehose_buffer_tracepoint_reserve(uint64_t stamp, firehose_stream_t stream,
++		uint16_t pubsize, uint16_t privsize, uint8_t **privptr);
++
++void
++__firehose_buffer_tracepoint_flush(firehose_tracepoint_t vat,
++		firehose_tracepoint_id_u vatid);
++
++firehose_buffer_t
++__firehose_buffer_create(size_t *size);
++
++bool
++__firehose_merge_updates(firehose_push_reply_t update);
++
++int
++__firehose_kernel_configuration_valid(uint8_t chunk_count, uint8_t io_pages);
++
++#else
++
++#define __firehose_critical_region_enter()
++#define __firehose_critical_region_leave()
++
++OS_EXPORT
++const uint32_t _firehose_spi_version;
++
++OS_ALWAYS_INLINE
++static inline const uint8_t *
++_firehose_tracepoint_reader_init(firehose_chunk_t fc, const uint8_t **endptr)
++{
++	const uint8_t *start = fc->fc_data;
++	const uint8_t *end;
++
++	if (fc->fc_pos.fcp_next_entry_offs <= FIREHOSE_CHUNK_SIZE) {
++		end = fc->fc_start + fc->fc_pos.fcp_next_entry_offs;
++	} else {
++		end = start;
++	}
++	*endptr = end;
++	return start;
++}
++
++OS_ALWAYS_INLINE
++static inline firehose_tracepoint_t
++_firehose_tracepoint_reader_next(const uint8_t **ptr, const uint8_t *end)
++{
++	const uint16_t ft_size = offsetof(struct firehose_tracepoint_s, ft_data);
++	struct ft_unaligned_s {
++		struct firehose_tracepoint_s ft;
++	} __attribute__((packed, aligned(1))) *uft;
++
++	do {
++		uft = (struct ft_unaligned_s *)*ptr;
++		if (uft->ft.ft_data >= end) {
++			// reached the end
++			return NULL;
++		}
++		if (!uft->ft.ft_length) {
++			// tracepoint write didn't even start
++			return NULL;
++		}
++		if (uft->ft.ft_length > end - uft->ft.ft_data) {
++			// invalid length
++			return NULL;
++		}
++		*ptr += roundup(ft_size + uft->ft.ft_length, 8);
++		// test whether write of the tracepoint was finished
++	} while (os_unlikely(uft->ft.ft_id.ftid_value == 0));
++
++	return (firehose_tracepoint_t)uft;
++}
++
++#define firehose_tracepoint_foreach(ft, fbc) \
++		for (const uint8_t *end, *p = _firehose_tracepoint_reader_init(fbc, &end); \
++				((ft) = _firehose_tracepoint_reader_next(&p, end)); )
++
++OS_ALWAYS_INLINE
++static inline bool
++firehose_buffer_range_validate(firehose_chunk_t fc, firehose_tracepoint_t ft,
++		firehose_buffer_range_t range)
++{
++	if (range->fbr_offset + range->fbr_length > FIREHOSE_CHUNK_SIZE) {
++		return false;
++	}
++	if (fc->fc_start + range->fbr_offset < ft->ft_data + ft->ft_length) {
++		return false;
++	}
++	return true;
++}
++
++#endif // !KERNEL
++
++#endif // OS_FIREHOSE_SPI
++
++#endif // __FIREHOSE_BUFFER_PRIVATE__
 diff --git a/SETUP/installfile/installfile.c b/SETUP/installfile/installfile.c
 index 8e1c914..3a32f74 100644
 --- a/SETUP/installfile/installfile.c
@@ -111,11 +336,110 @@ index 5b14bc3..c237937 100644
  #include <sys/stat.h>
  #include <sys/fcntl.h>
  #include <sys/param.h>
+diff --git a/bsd/sweet_hfs/core/hfs_readwrite.c b/bsd/sweet_hfs/core/hfs_readwrite.c
+index 6a182c4..aabea75 100644
+--- a/bsd/sweet_hfs/core/hfs_readwrite.c
++++ b/bsd/sweet_hfs/core/hfs_readwrite.c
+@@ -74,6 +74,13 @@
+ #include	"hfs_cnode.h"
+ #include	"hfs_dbg.h"
+ 
++#if CONFIG_PROTECT
++/* hakios: this file calls cp_handle_vnop(), cp_io_params() and the CP_*_ACCESS constants
++ * 14 times under CONFIG_PROTECT but never included their header; upstream gets away with it only
++ * because some other header in its SDK include chain drags it in. */
++#include	"hfs_cprotect.h"
++#endif
++
+ #if HFS_CONFIG_KEY_ROLL
+ #include	"hfs_key_roll.h"
+ #endif
+diff --git a/bsd/sweet_hfs/hfs_encodings/hfs_encodings.h b/bsd/sweet_hfs/hfs_encodings/hfs_encodings.h
+index 02b1336..cc767f0 100644
+--- a/bsd/sweet_hfs/hfs_encodings/hfs_encodings.h
++++ b/bsd/sweet_hfs/hfs_encodings/hfs_encodings.h
+@@ -32,10 +32,17 @@
+ #ifndef _HFS_ENCODINGS_H_
+ #define _HFS_ENCODINGS_H_
+ 
+-#if !TARGET_OS_IPHONE
+-
++/* hakios: upstream builds this tree with the macOS SDK, where TARGET_OS_IPHONE is 0 and this include
++ * happens; ours is an iPhoneOS SDK, so it was skipped and every declaration below -- which sits under
++ * __APPLE_API_UNSTABLE, defined unconditionally by appleapiopts.h -- disappeared, taking
++ * hfs_to_unicode_func_t and unicode_to_hfs_func_t with it. The include is harmless either way. */
+ #include <sys/appleapiopts.h>
+ 
++/* ...and the guard itself has to go, not just the include: everything below, the two converter
++ * function typedefs included, sat inside it, so on an iPhoneOS SDK this header declared nothing
++ * at all and hfs_encodings.c could not compile against its own interface. */
++#if 1 /* was: #if !TARGET_OS_IPHONE */
++
+ #ifdef __APPLE_API_UNSTABLE
+ 
+ #define CTL_HFS_NAMES { \
+diff --git a/bsd/sweet_hfs/sweet_hfs_compat.h b/bsd/sweet_hfs/sweet_hfs_compat.h
+index df55151..ffbc714 100644
+--- a/bsd/sweet_hfs/sweet_hfs_compat.h
++++ b/bsd/sweet_hfs/sweet_hfs_compat.h
+@@ -21,6 +21,16 @@
+ #undef HFS_COMPRESSION
+ #include "core/kext-config.h"
+ 
++/*
++ * hakios: and again afterwards. kext-config.h turns CONFIG_PROTECT back on under
++ * (TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR); upstream never sees that because it builds with the
++ * macOS SDK, where TARGET_OS_IPHONE is 0, while this Linux build uses the iPhoneOS SDK. Leaving it
++ * on pulls in AppleKeyStore, and the kernel then fails to link on hfs_unwrap_key, hfs_rewrap_key,
++ * hfs_new_key and hfs_backup_key -- which nothing here implements, exactly as the comment above says.
++ */
++#undef CONFIG_PROTECT
++#define CONFIG_PROTECT 0
++
+ /* Built in, not a loadable kext (see sweet_hfs_iokit.c). */
+ #define OSKextGetCurrentLoadTag sweet_hfs_current_load_tag
+ #endif
+diff --git a/osfmk/arm64/corecrypto/arm64_isa_compatibility.h b/osfmk/arm64/corecrypto/arm64_isa_compatibility.h
+index b9549da..11795a3 100644
+--- a/osfmk/arm64/corecrypto/arm64_isa_compatibility.h
++++ b/osfmk/arm64/corecrypto/arm64_isa_compatibility.h
+@@ -28,7 +28,11 @@
+ // #include <Availability.h>
+ #include <sys/cdefs.h>
+ 
+-#if defined(__clang__) && ((defined(__apple_build_version__) && __apple_build_version__ > 5010000))
++/* hakios: the test asked for Apple's clang, so an upstream LLVM fell through to the `q` register form
++ * of the ARMv8 crypto instructions -- the old Apple assembler syntax, which LLVM's own assembler
++ * rejects ("invalid operand for instruction" on sha256su0 q0, q1 and 79 more). Every clang that is
++ * not Apple's wants the canonical v<N>.4s form, which is what the first branch emits. */
++#if defined(__clang__) && (!defined(__apple_build_version__) || __apple_build_version__ > 5010000)
+ #define __USES_V_CRYPTO_INTRINSICS 1
+ #else
+ #define __USES_V_CRYPTO_INTRINSICS 0
 diff --git a/osfmk/vm/vm_compressor.c b/osfmk/vm/vm_compressor.c
-index 1e7ca07..a82a099 100644
+index 1e7ca07..e3ab4b8 100644
 --- a/osfmk/vm/vm_compressor.c
 +++ b/osfmk/vm/vm_compressor.c
-@@ -4128,12 +4128,17 @@ c_seg_allocate(c_segment_t *current_chead)
+@@ -3211,13 +3211,17 @@ vm_compressor_process_special_swapped_in_segments_locked(void)
+ 
+ #if XNU_TARGET_OS_OSX
+ 	special_swappedin_list_head = &c_early_swappedin_list_head;
+-#else /* XNU_TARGET_OS_OSX */
++#elif CONFIG_JETSAM /* XNU_TARGET_OS_OSX */
+ 	if (memorystatus_swap_all_apps) {
+ 		special_swappedin_list_head = &c_late_swappedin_list_head;
+ 	} else {
+ 		/* called on unsupported config*/
+ 		return;
+ 	}
++#else
++	/* hakios: as above -- memorystatus_swap_all_apps lives under CONFIG_JETSAM, which SWEET turns off,
++	 * so there is no swap-all-apps mode and this really is the unsupported config. */
++	return;
+ #endif /* XNU_TARGET_OS_OSX */
+ 
+ 	yield_after_considered_per_pass = MAX(min_csegs_per_major_compaction, DELAYED_COMPACTIONS_PER_PASS);
+@@ -4128,12 +4132,17 @@ c_seg_allocate(c_segment_t *current_chead)
  		for (int i = 0; i < vm_pageout_state.vm_compressor_thread_count; i++) {
  #if XNU_TARGET_OS_OSX
  			donate_queue_head = (c_segment_t*) &(pgo_iothread_internal_state[i].current_early_swapout_chead);

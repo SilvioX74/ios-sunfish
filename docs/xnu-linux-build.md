@@ -49,33 +49,55 @@ include path, not the SDK).
 > `https://raw.githubusercontent.com/theos/sdks/master/iPhoneOS16.5.sdk/usr/include/copyfile.h` (4,546 bytes);
 > it was the only file damaged. The setup script now deletes the symlink before writing.
 
+## The one thing that bites over and over: our SDK is iPhoneOS, upstream's is macOS
+
+Upstream builds with `MACOS_VERSION=13.5` and the macOS SDK, so `TARGET_OS_IPHONE` is 0 and `PLATFORM` is
+MacOSX. The only Apple SDK on this machine is iPhoneOS 16.5, so both flip, and three separate failures came
+from that single difference:
+
+- `hfs_encodings.h` hides its whole body behind `#if !TARGET_OS_IPHONE`, so the HFS converter typedefs vanished.
+- `kext-config.h` turns `CONFIG_PROTECT` on under `TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR`, which drags in
+  AppleKeyStore -- a keystore this kernel does not have. The project's own `sweet_hfs_compat.h` says so in
+  plain words ("SWEET has no AppleKeyStore, so content protection stays off"); it just never had to force it.
+- `MakeInc.def` enables the minimal UBSan runtime for DEVELOPMENT only `ifeq ($(PLATFORM),iPhoneOS)`, while the
+  SWEET config deliberately leaves `ubsan_minimal` out, so every `__ubsan_handle_*_minimal` was undefined.
+
+Setting `PLATFORM=MacOSX` is not the answer: the toolchain's `target-clang` shim treats
+`-mmacosx-version-min` as the signal for a host-tool build and hands the compile to the host compiler, so the
+kernel ended up being compiled for x86_64 Linux. Each site is forced individually instead.
+
 ## Status
 
-**2026-11-19, end of the first session: the kernel compiles. Nine object files out of the whole tree do not.**
+**2026-11-20: the kernel builds. `mach.development.sweet`, 16,176,472 bytes, Mach-O 64-bit arm64, Darwin
+Kernel Version 22.6.0, built on Linux with no macOS and no Xcode.** Installed as `work/kernel285/` with its
+provenance; patch level 0285, which is 89 patches ahead of the 0196 CI artifact the phone runs today.
 
-The build runs `DEVELOPMENT_ARM64_SWEET` to completion except for those nine, through roughly two million lines
-of output: 3,237 headers installed, 87 MIG interfaces, 34 IIG (DriverKit) interfaces generated, every SETUP host
-tool built, and the great majority of the kernel's C and assembly compiled. Walls passed, in order, each needing
-its own fix: `compat/hostcompat.h`; `libc.h` and `copyfile.h` (host tools resolve those against the host include
-path, so they go on CPATH, not in the SDK); the Mach-O headers (cctools' own `include/` and the pruned
-`include/foreign`, which must NOT be added wholesale -- its `strings.h` and friends clash with glibc); the
-Mach-O byte-swap functions and `NXGetLocalArchInfo` (libstuff, plus our own `archcompat.o`, because libstuff's
-version asks the Mach kernel); `availability.pl`, which the iPhoneOS SDK has no copy of (replacement in the fake
-SDK); `Kernel.framework/.../PrivateHeaders/platform`; and `-Werror`, which clang 21 trips over 17,362 times on
-Apple's own exported typedefs (`BUILD_WERROR=0`, exported so the recursive makes inherit it).
+Verified in the binary: `sweetsurfalign`, `sweetgpu`, `sweetmtl`, `sweetwifiev`, `sweetrtcoff`, `flame_wlan`,
+`SweetKeyStore`, and the compiled-in default boot-arg string from xnu 0244 (which carries `sweetgpufreq=6
+sweethwcg=1 sweetsmmutcr...`, newer than 0196's).
 
-What is left, by object file:
+It has **not been booted**. The first boot of a never-tried kernel can hang the phone into a manual power-cycle,
+so it waits for the user to be at the phone.
 
-| object | problem |
+What the build still does not do: `make install`'s last step, `check_all_exports`, fails with "exported name
+not in import list" for IOKit C++ symbols (`IOService::Stop_async`, `IOFilterInterruptEventSource::...`). That
+is the KPI symbol-set validation for loadable kexts, run after the kernel is linked, stripped and dSYM'd --
+the kernel binary is already complete at that point. The likely cause is the Python `iig` reimplementation
+emitting a slightly different set of DriverKit stubs than Apple's. Nothing we boot depends on it.
+
+### The order of the fixes, for whoever repeats this
+
+| wall | fix |
 |---|---|
-| `sha256_compress_arm64.o` | 32 "invalid operand for instruction" from clang 21's integrated assembler on `osfmk/arm64/corecrypto/sha256_compress_arm64.s`. Allenwdk's answer is a **clang** patch (`llvm-clang-arm64-crypto-asm.patch`), so this one may force a patched compiler after all -- unless the macros can be rewritten or a C implementation substituted. |
-| `hfs_cprotect.o`, `hfs_readwrite.o`, `hfs_vfsops.o`, `hfs_vfsutils.o` | `struct aks_cred_s` is dereferenced somewhere, so the opaque typedefs in our `EXTERNAL_HEADERS/AppleKeyStore/AppleKeyStoreFSServices.h` are not enough; `io_params` undeclared in two places. |
-| `hfs_encodings.o` | `unicode_to_hfs_func_t` / `unicode_to_mac_roman` missing: the staged HFS expects an encoding piece that is not in the tree. |
-| `log.o`, `subr_log.o` | not yet read. |
-| `vm_compressor.o` | one error fixed (the CONFIG_JETSAM guard below); whether another remains is not yet known. |
-
-Our own source changes live in `xnu/patches-linux/`, applied by the setup script after the portability patches:
-the host-tool gaps Allenwdk's patch does not cover on xnu-8796 (`getprogname`, `setmode`/`getmode` in
-installfile and replacecontents), the AppleKeyStore header Apple does not publish, and a guard in
-`osfmk/vm/vm_compressor.c`, where the non-OSX branch uses `memorystatus_swap_all_apps` while its declaration
-sits under `CONFIG_JETSAM`, which the SWEET config turns off -- a combination Apple never shipped.
+| `compat/hostcompat.h` | written into the fake SDK; `hostcompat_init` is a no-op there, so `-lhostcompat` can go |
+| `libc.h`, `copyfile.h` | host tools resolve `<...>` against the host path: ours go on `CPATH`, never into the SDK |
+| Mach-O headers | cctools' `include/`, plus a **pruned** `include/foreign` (whole, its `strings.h` clashes with glibc) |
+| byte swaps, `NXGetLocalArchInfo` | `libstuff.a` plus our `hostlib/archcompat.o` (libstuff's own asks the Mach kernel) |
+| `availability.pl` | replacement in the fake SDK; it only has to print OS version lists |
+| `Kernel.framework/.../PrivateHeaders/platform` | created empty |
+| `-Werror` | `BUILD_WERROR=0`, exported: clang 21 raises 17,362 `-Wreserved-identifier` on Apple's own typedefs |
+| SETUP host tools | `getprogname`, `setmode`/`getmode`, `fcopyfile`, `mach_vm_round_page` (xnu/patches-linux) |
+| corecrypto SHA-256 assembly | `arm64_isa_compatibility.h` asked for Apple's clang before using the canonical `v<N>.4s` crypto syntax; any non-Apple clang now takes that branch |
+| `os/firehose_buffer_private.h` | from libdispatch **1415.140.2** (the macOS 13.5 pairing; `main` wants a `firehose_stream_metric` this xnu lacks), with its guard widened to accept `KERNEL` like xnu's own firehose headers |
+| `-lfirehose_kernel` | `work/xnu-linux/build-firehose.sh`: two MIG headers plus one source file, compiled against xnu's *installed* headers, never the SDK's user-space Mach ones |
+| `dsymutil` | `/usr/bin/dsymutil` (LLVM's); the shim pointed at a path that does not exist |
